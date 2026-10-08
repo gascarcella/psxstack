@@ -6,7 +6,10 @@
  * value (2D, clamped, the shadow off) stays where it was. Its attributes cannot come from render_gpu.c's integer
  * plane equations, which need whole-pixel vertices: this file computes float planes (raster.frag.hlsl F_PRECISE), the
  * same sample point and rounding as the integer path's (an attribute at (P + 1/2) / N - 1/2, rounded to the nearest).
- * Nothing here changes what gpu.c draws: the software picture, the stream and internal scale 1 are untouched. */
+ * With video.subpixel "perspective" a triangle whose three vertices have the shadow's depth (SZ) is textured and
+ * shaded perspective-correct (attribute / z interpolated, divided by 1 / z): the PS1's affine mapping makes large
+ * polygons' textures swim. Nothing here changes what gpu.c draws: the software picture, the stream and internal scale
+ * 1 are untouched. */
 #ifdef PSXSTACK_SDL
 #include <math.h>
 #include <string.h>
@@ -15,18 +18,19 @@
 #include "render_gpu.h"
 #include "render_gpu_subpixel.h"
 
-static int subpixel_on = 1; /* video.subpixel / --subpixel */
+static int subpixel_on = 1; /* video.subpixel / --subpixel: 0 off, 1 on, 2 perspective */
 static int subpixel_active;  /* the shadow is on for the rasteriser */
 
-void render_gpu_set_subpixel(int on) {
-    subpixel_on = on != 0;
+void render_gpu_set_subpixel(int mode) {
+    subpixel_on = mode < 0 ? 0 : mode > 2 ? 2 : mode;
 }
 
 void render_subpixel_start(int scale) {
     subpixel_active = subpixel_on && scale > 1;
     if (subpixel_active) {
         psyq_gte_shadow_enable(1);
-        port_log("renderer: gpu: sub-pixel vertices on (video.subpixel)");
+        port_log("renderer: gpu: sub-pixel vertices on%s (video.subpixel)",
+                 subpixel_on == 2 ? ", perspective-correct" : "");
     }
 }
 
@@ -58,8 +62,8 @@ static void plane(float out[4], const double x[3], const double y[3], const doub
 }
 
 int render_subpixel_triangle(const GpuEvent *ev, float pos[3][2], float planes[SUBPIXEL_PLANES][4]) {
-    double x[3], y[3], q[3], a[5][3];
-    int i, k, any = 0;
+    double x[3], y[3], q[3], a[5][3], zmin = 0.0;
+    int i, k, any = 0, deep = subpixel_on == 2;
 
     if (!subpixel_active) {
         return 0;
@@ -72,6 +76,9 @@ int render_subpixel_triangle(const GpuEvent *ev, float pos[3][2], float planes[S
         x[i] = v->x + (precise ? v->fx / 65536.0 - 0.5 : 0.0);
         y[i] = v->y + (precise ? v->fy / 65536.0 - 0.5 : 0.0);
         q[i] = 1.0;
+        /* perspective: every vertex needs its depth (the shadow's SZ) */
+        deep = deep && precise && v->z > 0;
+        zmin = i == 0 || v->z < zmin ? v->z : zmin;
         a[0][i] = v->u;
         a[1][i] = v->v;
         a[2][i] = v->r;
@@ -80,6 +87,13 @@ int render_subpixel_triangle(const GpuEvent *ev, float pos[3][2], float planes[S
     }
     if (!any) {
         return 0;
+    }
+    if (deep) {
+        /* Perspective-correct: u, v and the colour interpolate as value / z, divided by 1 / z per pixel (q, scaled to
+         * 1 at the nearest vertex). A triangle with a vertex of unknown depth stays affine, as the PS1 draws it. */
+        for (i = 0; i < 3; i++) {
+            q[i] = zmin / ev->v[i].z;
+        }
     }
     for (i = 0; i < 3; i++) {
         pos[i][0] = (float)x[i];
