@@ -2,7 +2,8 @@
  * tests/replay/run.lua: the RAM cleared, the machine back through the BIOS to the game's start, the memory cards and
  * the disc kept, the frame count going on.
  *
- * port_reset_request (from the script's step, inside a vsync tick, deep in the game's stack) longjmps to main(), which
+ * port_reset_request (from the script's step, inside a vsync tick, deep in the game's stack, on whichever fiber the game
+ * runs: fiber.c) longjmps to main(), which
  * calls port_reset_state and runs game_main() again. Nothing on the host stack needs unwinding: the game's frames hold
  * no host resources, and no "inside a tick" flag is kept anywhere (the pump, the shim's VSync and StGetNext keep none).
  * port_reset_state puts back what the PS1's power-on state is:
@@ -42,6 +43,7 @@ void port_reset_state(void) {
     port_reset_count++;
     port_log("reset %ld: the game's data, the arena and the shim back to power-on; game_main again", port_reset_count);
     port_framelog_reset();
+    port_fiber_reset(); /* every fiber dropped: game_main starts over on the main fiber (fiber.c) */
     port_overlay_reset();
     port_arena_reset();
     psyq_reset();

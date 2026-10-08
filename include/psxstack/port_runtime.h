@@ -81,6 +81,16 @@ void port_pump_reset(void);                    /* pump.c: the watchdog re-armed 
 void port_reset_check(const char *when);       /* reset.c: <PREFIX>_PORT_RESET_CHECK=1 or --trace */
 void port_exit(int status, const char *reason) __attribute__((noreturn)); /* logs the frame count and the reason */
 
+/* ---- Fibers (fiber.c; the game's interface is psxstack/hooks.h "Fibers") */
+void port_fiber_pump_point(void);              /* pump.c, the end of a vsync tick: the switch a handler asked for */
+int port_fiber_on_fiber(void);                 /* 1 when the game runs on a fiber, 0 on the main fiber */
+int port_fiber_current_stack(uint8_t **lo, size_t *size); /* the current fiber's stack; 0 for the main fiber */
+void port_fiber_set_main_stack(uint8_t *lo, size_t size); /* savestate.c: the main fiber's stack is its game stack */
+int port_fiber_leave(const void *bottom, size_t size);    /* before a longjmp to the main thread's stack (ASan) */
+void port_fiber_enter_current(void);           /* savestate.c, before resuming a loaded state: the platform's bounds */
+void port_fiber_reset(void);                   /* reset.c: every fiber dropped */
+long port_fiber_switch_count(void);            /* switches so far (the trace, the debug channel's status) */
+
 /* ---- The crash report (crash.c; docs/PORT.md "Crash report") */
 void port_crash_init(const char *dir);        /* the handlers; the report goes to `dir` (NULL: the current directory) */
 void port_crash_watchdog_install(void);       /* POSIX: SIGALRM reports too; Windows: records the main thread */

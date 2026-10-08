@@ -26,7 +26,7 @@ python3 tests/game_gen_test.py           # the description generator's test
 
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, fibers (a game's own tasks) |
 | `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the Psy-Q declarations the shim implements (`psyq/`), the runtime's headers |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh`. Its declarations are `include/psxstack/psyq/*.h` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
@@ -37,9 +37,9 @@ python3 tests/game_gen_test.py           # the description generator's test
 | `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `psyq_decls.py` (a game's Psy-Q declarations against the stack's), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`), `mcp/` (the debug channel's MCP server, client and symbols) |
 | `scripts/` | `setup.sh` (SDL3, ImGui, DXC, llvm-mingw, SDL3 for Windows, cmake), `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`: the game description |
-| `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test |
+| `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test; `tasks/`, the same with its work in tasks on the stack's fibers |
 | `docs/` | `GAME_CONTRACT.md`, `PORT.md`, `RUNTIME.md`, `LAUNCHER.md`, `DECISIONS.md`, `THIRD_PARTY.md` |
-| `tests/` | The stack's own tests: `hello_test.py`, `game_gen_test.py`, the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
+| `tests/` | The stack's own tests: `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
 
 ## Using it from a game
 ```cmake
@@ -48,7 +48,8 @@ psxstack_add_game(mygame GAME_JSON port/game/game.json UNITS build/gen/units.txt
                   OVERLAYS build/gen/overlays.txt INCLUDE_DIRS include . ADAPTER port/game/state.c ...)
 ```
 `cmake/psxstack.cmake` documents every argument; `docs/GAME_CONTRACT.md` what the game provides; `examples/hello` is
-the smallest consumer, dw2003recomp's `port/CMakeLists.txt` the first real one. The launcher is its own project:
+the smallest consumer (`examples/tasks` the same with its work in tasks on the stack's fibers), dw2003recomp's
+`port/CMakeLists.txt` the first real one. The launcher is its own project:
 `cmake -S psxstack/launcher -B build/launcher -DPSXSTACK_GAME_JSON=... -DPSXSTACK_VERSION_ROOT=...`.
 
 ## How it got here

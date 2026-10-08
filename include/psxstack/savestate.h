@@ -31,6 +31,7 @@ void psyq_state(PortState *s);           /* psyq/psyq.c: every library of the sh
 void spu_state(PortState *s);            /* spu.c: the SPU's registers, voices and RAM */
 void port_framelog_state(PortState *s);  /* framelog.c: the record so far (sequences, checkpoints, input trace) */
 void port_script_state(PortState *s);    /* script.c: the script's progress (resumed by a run with the same script) */
+void port_fiber_state(PortState *s);     /* fiber.c: the fiber table and every suspended fiber's stack */
 
 /* ---- The runtime's side (savestate.c) */
 /* Options (main.c): --save-state WHEN:FILE (WHEN a frame number, or a script checkpoint's name: the end of the frame

@@ -95,6 +95,11 @@ extern int port_mod_skip_dialogues;  /* the game's mod hooks, read only inside #
 #define OVERLAY_ENTRY(addr) SLOT_FUNC(s32 (*)(void), addr)
 ```
 The macro names and meanings of `hooks.h` are stable API (table in `docs/PORT.md "Hook macros"` once it moves here).
+A game that schedules its own tasks (a hand-written context switch over kernel thread blocks, Psy-Q's
+`OpenTh`/`ChangeTh`) replaces its switch glue under `PC_PORT` with the stack's fibers (`hooks.h` "Fibers":
+`port_fiber_create`, `port_fiber_switch`, `port_fiber_exit`, `port_fiber_destroy`, `port_fiber_preempt` from a vblank
+handler, `port_fiber_main`, `port_fiber_current`); the task records, priorities, waits and wake-ups stay the game's C
+(docs/PORT.md "Fibers").
 `hooks.h` gets the slot constants from `psxstack_game_gen.h` ("The generated header"): `PORT_SLOT<n>_BASE`,
 `PORT_SLOT<n>_SIZE`, `port_slot<n>` for every slot in `memory.slots`, `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`. The
 `tier` argument of `OVERLAY_COPY`, `OVERLAY_FN`, `LATE_FUNC` and `SLOT_PTR` is the slot's 1-based index. The PS1 side's
@@ -209,7 +214,9 @@ What a game supplies to the replay runners (the first game: `tests/replay/replay
   and address tables, the interrupt pump and timing at `video.rate`, the reset, the disc source with the SHA-1 check
   over `discs[]`, the memory cards, settings (schema 1, `--config`), the per-frame log and record, the input script,
   the window and input over SDL3, the software GPU, the hardware renderer, the SPU and audio, the crash report, the
-  debug channel, save states (`--save-state`, `--load-state`).
+  debug channel, save states (`--save-state`, `--load-state`), fibers for a game's own tasks (each on a host stack
+  of the runtime's, switched where the game's scheduler says and at the end of a vsync tick a vblank handler asked
+  for; held whole by save states).
 - **The Psy-Q shim:** the libraries' behavior over the hardware models. It implements what its games call; a new
   game's missing function stops with `port_unimplemented(name)` and is added to the shim (the shim grows per game and
   stays generic).

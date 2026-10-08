@@ -186,3 +186,16 @@ the cross-core view against the expected file) were the first game's `tests/repl
 the adapter's `game_state_*` report, read from the emulated RAM) and a configuration call per driver. A second game
 starts with them instead of copying. The emulator and the disc stay the game's pins: the stack downloads nothing by
 itself, and the record and script formats are unchanged (the first game's expected files are read as they are).
+
+## Fibers: a hand-written switch, preemption at the tick's end (2026-10-08)
+The second game (Digimon Digital Card Battle) schedules up to 32 tasks itself, cooperatively and from its vblank
+handler; Psy-Q's `OpenTh`/`ChangeTh` games are the same shape. On the host each task is a fiber on a static stack of
+the runtime's (`runtime/fiber.c`; docs/PORT.md "Fibers"). The switch is hand-written (x86-64 SysV and Win64, i386,
+AArch64) rather than `ucontext` or Win32 fibers, because a save state must hold every live fiber as bytes at fixed
+addresses and resume the one that was running: a saved stack pointer and the callee-saved registers on the fiber's
+own stack can be saved and restored, glibc's `ucontext_t` (self-pointing, with the signal mask) and `CreateFiber`'s
+heap object cannot. A vblank handler's switch (`port_fiber_preempt`) is performed by the pump at the end of the vsync
+tick, not where the handler runs: the handler is inside the tick, and a switch there would leave the tick half-done on
+the interrupted fiber; at the tick's end the interrupted fiber is suspended right after its tick, as the PS1's task
+right after the interrupt. So every switch is a deterministic function of the game's execution, and a run with
+fibers is as repeatable as one without.

@@ -52,10 +52,10 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `tools/` | `game_gen.py` (`game.json` → header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate a game configures), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`; docs/RUNTIME.md "The replay runners"), `mcp/` (the debug channel's MCP server, client, symbols; `tools/mcp/README.md`); built tools under `tools/<name>` (gitignored) |
 | `scripts/` | `setup.sh`, `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`, the game description |
-| `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack) |
-| `tests/` | `hello_test.py`, `game_gen_test.py`, `fixtures/` (the launcher self-test's mod manifests) |
+| `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack), `tasks/` (the same with its work in tasks on the stack's fibers) |
+| `tests/` | `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, `fixtures/` (the launcher self-test's mod manifests) |
 | `docs/` | See below |
-| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello`, `mcp`, `launcher` (build + self-test), `windows` (cross-build + self-test under Wine); no disc, no game |
+| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers), `mcp`, `launcher` (build + self-test), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game |
 
 ## Commands
 ```sh
@@ -63,6 +63,7 @@ scripts/setup.sh [sdl3 imgui llvm-mingw sdl3-windows dxc sdl3-desktop cmake link
 scripts/dev_link_tools.sh ../dw2003recomp/tools   # reuse another checkout's built tools
 python3 tests/game_gen_test.py                    # the description generator; python3 tools/game_gen.py FILE --check validates one
 python3 tests/hello_test.py [--record]            # the smoke test: examples/hello built through psxstack_add_game(), run headless, its picture hashed
+python3 tests/tasks_test.py [--sanitize|--m32]    # the fibers: examples/tasks (three tasks, one preempted), its picture, its log twice, a state saved on a task's fiber and resumed
 python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine --gpu   # its Windows build (-DPSXSTACK_SDL=ON, cross-built) under Wine; --gpu: the hardware renderer's picture too (D3D12)
 cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.json] && cmake --build build/launcher
 SDL_VIDEO_DRIVER=offscreen build/launcher/<id>-launcher --self-test build/selftest   # <id> from game.json (dw2003 by default)

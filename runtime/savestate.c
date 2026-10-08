@@ -9,7 +9,9 @@
  *  - the Psy-Q shim (psyq.c psyq_state: every library's state the game can observe), the SPU;
  *  - the run's record so far (framelog.c) and the script's progress (script.c), so that a script resumed from a state
  *    ends with the record of the straight run;
- *  - the game's execution context: the game's stack and the registers of its vsync.
+ *  - the fibers (fiber.c port_fiber_state: the table, every suspended fiber's live stack, the pending preemption);
+ *  - the game's execution context: the stack the vsync ended on (the game stack, or a fiber's) and the registers of
+ *    its vsync.
  * Not in it: what the host owns (the window, the audio device, files, the debug channel, the options, caches that
  * are rebuilt: gpu.c's decoded textures, the hardware renderer's VRAM, reloaded from the software VRAM as at power-on),
  * the memory cards' contents (media, like the disc: the loading run's --memcard1/2) and the game's mods' own state.
@@ -86,7 +88,10 @@ struct PortState {
 static u8 state_stack[STATE_STACK_SIZE] __attribute__((aligned(64)));
 int port_savestate_armed;          /* the game runs on state_stack; port_frame keeps its context */
 void *port_savestate_ctx[5];       /* __builtin_setjmp's buffer at the last vsync's end (pump.c) */
-static u8 *state_stack_lo;         /* the lowest byte of the stack the context needs, at the last capture */
+/* The stack the context is on: the game stack, or the fiber's the vsync ended on (fiber.c): a state resumes that one. */
+static u8 *state_cur_base;         /* that stack's lowest byte and its size, at the last capture */
+static size_t state_cur_size;
+static u8 *state_stack_lo;         /* the lowest byte of it the context needs, at the last capture */
 static u8 *state_stack_copy;       /* [state_stack_lo, top) at the last capture (a save while paused uses it) */
 static size_t state_stack_copy_n, state_stack_copy_cap;
 #ifdef STATE_ASAN
@@ -334,15 +339,23 @@ static void state_sync(PortState *s, StateHeader *h) {
     port_framelog_state(s);
     port_script_state(s);
     game_savestate(s); /* the adapter's own (its mods' state) */
-    /* the context: the stack above the capture point, then the registers' buffer */
-    lo = (uint64_t)(state_stack_lo - state_stack);
+    port_fiber_state(s); /* the fiber table and every suspended fiber's stack; the current one is the context's */
+    /* the context: the current stack (the game stack, or the fiber's the vsync ended on) above the capture point,
+     * then the registers' buffer */
+    if (s->loading) {
+        if (!port_fiber_current_stack(&state_cur_base, &state_cur_size)) {
+            state_cur_base = state_stack;
+            state_cur_size = STATE_STACK_SIZE;
+        }
+    }
+    lo = (uint64_t)(state_stack_lo - state_cur_base);
     PORT_STATE_VAR(s, lo);
     if (s->loading) {
-        if (lo >= STATE_STACK_SIZE) {
+        if (lo >= state_cur_size) {
             state_fail(s, "the game stack's bound is outside the stack");
         }
-        state_stack_lo = state_stack + lo;
-        port_state_bytes(s, "stack", state_stack_lo, STATE_STACK_SIZE - (size_t)lo);
+        state_stack_lo = state_cur_base + lo;
+        port_state_bytes(s, "stack", state_stack_lo, state_cur_size - (size_t)lo);
     } else {
         port_state_bytes(s, "stack", state_stack_copy, state_stack_copy_n);
     }
@@ -371,8 +384,8 @@ static int state_write(const char *path, char *err, size_t err_size) {
         remove(tmp);
         return 0;
     }
-    port_log("state: frame %ld saved to %s (%zu KB, %.1f ms)", port_frames, path, s.n >> 10,
-             (double)(port_clock_ns() - t0) / 1e6);
+    port_log("state: frame %ld saved to %s (%zu KB, %.1f ms; on fiber %d)", port_frames, path, s.n >> 10,
+             (double)(port_clock_ns() - t0) / 1e6, port_fiber_index(port_fiber_current()));
     free(s.data);
     return 1;
 }
@@ -484,6 +497,7 @@ void port_savestate_arm(int required) {
     (void)required;
 #endif
     port_savestate_armed = 1;
+    port_fiber_set_main_stack(state_stack, STATE_STACK_SIZE); /* the main fiber's stack, for the fibers' states */
 }
 
 /* ---- Running the game on its stack */
@@ -516,12 +530,18 @@ static void __attribute__((noinline, noreturn)) state_call_on_stack(void (*fn)(v
     __builtin_unreachable();
 }
 
-/* The console's reset leaves the game stack for main's (reset.c, before its longjmp). */
+/* The console's reset (reset.c) and a state load leave the current stack (the game stack, or a fiber's) for main's
+ * thread stack, before their longjmp: one announcement to AddressSanitizer for the whole move. */
 void port_savestate_leave_stack(void) {
 #ifdef STATE_ASAN
+    if (port_fiber_leave(port_savestate_armed ? state_main_bottom : NULL, port_savestate_armed ? state_main_size : 0)) {
+        return;
+    }
     if (port_savestate_armed) {
         __sanitizer_start_switch_fiber(NULL, state_main_bottom, state_main_size);
     }
+#else
+    port_fiber_leave(NULL, 0);
 #endif
 }
 
@@ -551,8 +571,9 @@ void port_savestate_run(int jumped) {
         port_log("state: frame %ld loaded from %s (%.1f ms)", port_frames, s->path, (double)(port_clock_ns() - t0) / 1e6);
         state_drop(s);
 #ifdef STATE_ASAN
-        __sanitizer_start_switch_fiber(NULL, state_stack, STATE_STACK_SIZE);
+        __sanitizer_start_switch_fiber(NULL, state_cur_base, state_cur_size); /* the stack the context is on */
 #endif
+        port_fiber_enter_current(); /* Windows: the thread block's bounds for a fiber's stack */
         state_set_canary(h.canary);
         __builtin_longjmp(port_savestate_ctx, 1);
     }
@@ -570,7 +591,7 @@ void port_savestate_checkpoint(const char *name) {
 }
 
 static void state_keep_stack(void) {
-    size_t n = (size_t)(state_stack + STATE_STACK_SIZE - state_stack_lo);
+    size_t n = (size_t)(state_cur_base + state_cur_size - state_stack_lo);
     if (n > state_stack_copy_cap) {
         state_stack_copy = realloc(state_stack_copy, n);
         if (state_stack_copy == NULL) {
@@ -594,10 +615,15 @@ static int state_save_due(const StateSave *sv) {
 
 void port_savestate_captured(void) {
     int i, due = 0, left = 0;
-    /* everything from this function's frame up: port_frame's frame and its callers' (the stack grows down) */
+    /* everything from this function's frame up: port_frame's frame and its callers' (the stack grows down), on the
+     * game stack or on the fiber's the vsync ended on */
     state_stack_lo = (u8 *)((uintptr_t)__builtin_frame_address(0) & ~(uintptr_t)63);
-    if (state_stack_lo < state_stack || state_stack_lo >= state_stack + STATE_STACK_SIZE) {
-        port_fatal("state: the vsync is not on the game stack (%p)", (void *)state_stack_lo);
+    if (!port_fiber_current_stack(&state_cur_base, &state_cur_size)) {
+        state_cur_base = state_stack;
+        state_cur_size = STATE_STACK_SIZE;
+    }
+    if (state_stack_lo < state_cur_base || state_stack_lo >= state_cur_base + state_cur_size) {
+        port_fatal("state: the vsync is not on the game stack or a fiber's (%p)", (void *)state_stack_lo);
     }
     for (i = 0; i < state_save_count; i++) {
         due |= state_save_due(&state_saves[i]);
