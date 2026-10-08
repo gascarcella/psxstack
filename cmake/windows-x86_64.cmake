@@ -12,6 +12,13 @@ set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
 
 get_filename_component(_psx_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+# PSXSTACK_TOOLS_DIR from the environment too (scripts that drive several builds export it). CMake reads this file
+# again for every try_compile project, without the main project's cache: hand those the two variables, or the
+# lookup there falls back to the stack's own tools/ (absent in a game's checkout) and fails.
+if(NOT PSXSTACK_TOOLS_DIR AND DEFINED ENV{PSXSTACK_TOOLS_DIR})
+    set(PSXSTACK_TOOLS_DIR "$ENV{PSXSTACK_TOOLS_DIR}" CACHE PATH "A tools/ directory holding llvm-mingw/, sdl3-windows/, dxc/, ...")
+endif()
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES PSXSTACK_TOOLS_DIR PSXSTACK_LLVM_MINGW)
 set(_psx_tool_dirs "")
 if(PSXSTACK_TOOLS_DIR)
     list(APPEND _psx_tool_dirs "${PSXSTACK_TOOLS_DIR}")

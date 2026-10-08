@@ -41,7 +41,7 @@ python3 tests/game_gen_test.py           # the description generator's test
 
 ## Using it from a game
 ```cmake
-include(psxstack/cmake/psxstack.cmake)          # the submodule (or a sibling clone linked at psxstack/)
+include(psxstack/cmake/psxstack.cmake)          # the submodule, pinned by commit
 psxstack_add_game(mygame GAME_JSON port/game/game.json UNITS build/gen/units.txt MAIN_UNIT src/main.c
                   OVERLAYS build/gen/overlays.txt INCLUDE_DIRS include . ADAPTER port/game/state.c ...)
 ```
@@ -56,8 +56,8 @@ the smallest consumer, dw2003recomp's `port/CMakeLists.txt` the first real one. 
 2. **Bootstrap** (done): the runtime, the shim, the tools and scripts moved here; `examples/hello`; this repo's CI. A
    scratch copy of dw2003recomp consumes it by local path and passes its full test suite.
 3. **Launcher** (done): branding and disc identity from the game description, self-test driven by it.
-4. **Converge**: the first game switches to the submodule; its release, CI and setup scripts adapted.
-5. **Public and switch**: tag `v0.1.0`; dw2003recomp replaces `port/` and `launcher/` with the pin.
+4. **Converge** (done): the first game pins the submodule (`v0.1.0-rc.1`); its release, CI and setup scripts adapted.
+5. **Public and switch**: this repository public, tag `v0.1.0`, the game's pin on the tag.
 
 ## License
 
