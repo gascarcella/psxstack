@@ -9,8 +9,15 @@
  * end of that tick (port_fiber_preempt). So every operation runs: create, switch, exit, destroy (and a slot reused),
  * and the preemption from inside a vsync tick. The picture at a given vsync and the frame log are the same on every
  * run, and a run resumed from a save state continues them (the test checks both). hello's common.h serves this
- * example too (examples/hello/include); the Psy-Q declarations are the stack's (include/psxstack/psyq/). */
+ * example too (examples/hello/include); the Psy-Q declarations are the stack's (include/psxstack/psyq/).
+ *
+ * The vblank handler is a root counter 3 event, as Digimon Digital Card Battle installs its scheduler's
+ * (OpenEvent(RCntCNT3, EvSpINT, EvMdINTR, handler), SetRCnt, StartRCnt, inside a critical section); a VSyncCallback
+ * handler counts the vsyncs too, and both counts must equal VSync's every frame: the event fires once per tick, after
+ * the VSyncCallback handler (psyq/libapi.c). A frame where they differ gets a red bar, which the picture's hash
+ * would show. */
 #include "common.h"
+#include "psxstack/psyq/libapi.h"
 #include "psxstack/psyq/libetc.h"
 #include "psxstack/psyq/libgpu.h"
 
@@ -27,7 +34,11 @@ typedef struct Task {
 static Task tasks[TASKS];
 static PortFiber *main_fiber;
 static int vblanks;      /* the handler's count */
+static int callbacks;    /* the VSyncCallback handler's count */
+static int callback_last; /* the handler's count when the VSyncCallback handler last ran (it runs first) */
+static int out_of_order; /* the counts disagreed: the red bar */
 static int preemptions;  /* how often the handler found a task running */
+static POLY_F4 bar[2];
 static u32 ot[2][OT_LEN];
 static POLY_F4 quad[2];
 static POLY_G4 grad[2];
@@ -36,11 +47,14 @@ static DISPENV disp[2];
 static DRAWENV draw[2];
 static int db;
 
-/* The vblank handler (VSyncCallback): it runs inside the vsync tick, on whichever fiber ticked. A sleeping task
- * sleeps one vblank less; a task that is running (not main) is preempted at the end of the tick. */
-static void vblank(void) {
+/* The vblank handler (the root counter 3 event): it runs inside the vsync tick, on whichever fiber ticked. A sleeping
+ * task sleeps one vblank less; a task that is running (not main) is preempted at the end of the tick. */
+static s32 vblank(void) {
     int i;
     vblanks++;
+    if (callbacks != vblanks || callback_last != vblanks - 1) {
+        out_of_order = 1; /* the VSyncCallback handler has not run first in this tick */
+    }
     for (i = 0; i < TASKS; i++) {
         if (tasks[i].alive && tasks[i].wait > 0) {
             tasks[i].wait--;
@@ -50,6 +64,13 @@ static void vblank(void) {
         preemptions++;
         port_fiber_preempt(main_fiber);
     }
+    return 0;
+}
+
+/* The VSyncCallback handler: counts. */
+static void count_vsync(void) {
+    callbacks++;
+    callback_last = vblanks;
 }
 
 static void task_yield(void) {
@@ -141,7 +162,12 @@ int main(void) {
     setRGB0(&draw[0], 16, 16, 32);
     setRGB0(&draw[1], 16, 16, 32);
     SetDispMask(1);
-    VSyncCallback(vblank);
+    VSyncCallback(count_vsync);
+    EnterCriticalSection();
+    EnableEvent(OpenEvent(RCntCNT3, EvSpINT, EvMdINTR, vblank));
+    SetRCnt(RCntCNT3, 1, RCntMdINTR);
+    StartRCnt(RCntCNT3);
+    ExitCriticalSection();
     quad_t = task_start("quad", quad_task);
     blink_t = task_start("blink", blink_task);
     for (;;) {
@@ -158,10 +184,18 @@ int main(void) {
             port_fiber_destroy(quad_t->fiber);
             busy_t = task_start("busy", busy_task);
         }
+        if (out_of_order) {
+            setPolyF4(&bar[db]);
+            setRGB0(&bar[db], 255, 0, 0);
+            setXY4(&bar[db], 0, 230, 320, 230, 0, 240, 320, 240);
+            addPrim(ot[db], &bar[db]);
+        }
         SetDrawEnv(&draw[db].dr_env, &draw[db]);
         addPrim(ot[db] + OT_LEN - 1, &draw[db].dr_env);
         DrawSync(0);
-        VSync(0);
+        if (VSync(0) != vblanks) {
+            out_of_order = 1; /* the event did not fire once per tick */
+        }
         PutDispEnv(&disp[db]);
         DrawOTag(ot[db] + OT_LEN - 1);
         db ^= 1;

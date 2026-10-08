@@ -75,20 +75,25 @@ echo "compile: $(ls "$OUT"/*.o | wc -l) objects -> $OUT/libpsyq.a"
 
 # Coverage: the Psy-Q functions the game's objects need (undefined in the probe's objects and named in the game's
 # symbol files as library code: the game's tools/port_inventory.py link -v lists them) against what the shim
-# defines; LIBC2 and LIBAPI are the host libc, so they are checked against libc's exports instead.
+# defines (open, read, write, lseek and close as its psyq_api_*: include/psxstack/psyq_names.h); what it does not
+# define (LIBC2's string functions, ...) is checked against the host libc's exports instead.
 if [[ ! -d "$probe/m64/obj" ]]; then
     echo "check: $probe/m64/obj is missing: run the game's tools/port_inventory.py probe" >&2
     exit 2
 fi
 game_objs=$(find "$probe/m64/obj" -name '*.o')
 [[ -f "$inv" ]] || { echo "check: $inv is missing: pass --inventory FILE (the game's port_inventory.py wrapper)" >&2; exit 2; }
-need=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q function:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
-need_data=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q data:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
+# (`link` exits 1 while the game has duplicate or undefined globals: its lists are what is read here)
+link_report=$("$py" "$inv" link -v 2>/dev/null || true)
+need=$(echo "$link_report" | awk '/Psy-Q function:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
+need_data=$(echo "$link_report" | awk '/Psy-Q data:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
 have=$(nm -g --defined-only "$OUT"/*.o | awk '$2 ~ /^[TDBR]$/ {print $3}' | sort -u)
 libc=$(nm -D --defined-only "$(gcc -print-file-name=libc.so.6)" | awk '{print $3}' | sed 's/@.*//' | sort -u)
 missing=0; via_libc=0; via_shim=0
 for s in $need $need_data; do
-    if grep -qx "$s" <<<"$have"; then via_shim=$((via_shim+1))
+    # the BIOS file calls the host libc also has: the game's units call the shim's psyq_api_* (psyq_names.h)
+    if grep -qx "psyq_api_$s" <<<"$have"; then via_shim=$((via_shim+1))
+    elif grep -qx "$s" <<<"$have"; then via_shim=$((via_shim+1))
     elif grep -qx "$s" <<<"$libc"; then via_libc=$((via_libc+1)); echo "  host libc: $s"
     else missing=$((missing+1)); echo "  MISSING: $s"; fi
 done

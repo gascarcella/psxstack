@@ -343,7 +343,7 @@ it. The blocks, in order:
 | `port_frames`, `audio_vsync` | The frame count; the vsyncs the audio rendered (each vsync's sample count) |
 | one per game section, `port_current`, `port_word0` | The EXE's and every overlay's `.data` and `.bss` (named by the overlay), the current overlay and the first word per tier |
 | `arena` | The PS1's RAM: the slots and the heap (when the description has one) |
-| `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command |
+| `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command, LIBAPI's events and root counters, LIBCARD's open files and command |
 | `spu` | The SPU: registers, voices, its RAM |
 | `count`, `overlay_seq`, `map_seq`, `checkpoints`, `inputs`, ... | The record so far and what the next frame's log compares with |
 | `name`, `index`, `started`, `held`, ... | The script's name and progress |

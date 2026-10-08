@@ -90,7 +90,7 @@ static void seq_set_step(SndSeq *e) {
 
 /* One sequence of a SEP at `data` (the SEP's start for sequence 0, else where the previous one ended): its header
  * (FORMATS "SEP") and the first delta time. Returns the bytes it takes, or -1. */
-int snd_seq_open(int s, int t, int vab, const u8 *data) {
+static int seq_open(int s, int t, int vab, const u8 *data, int is_seq) {
     SndSeq *e = seq_at(s, t);
     const u8 *p = data;
     int head = 0, ch;
@@ -144,8 +144,11 @@ int snd_seq_open(int s, int t, int vab, const u8 *data) {
     e->bpm0 = (s32)((tempo >> 1) < rem ? q + 1 : q);
     e->bpm = e->bpm0;
     p += 2; /* the rhythm */
-    size = (u32)p[0] << 24 | (u32)p[1] << 16 | (u32)p[2] << 8 | p[3];
-    p += 4;
+    size = 0;
+    if (!is_seq) { /* a SEP's sequence has its size; a SEQ file's data follows its header */
+        size = (u32)p[0] << 24 | (u32)p[1] << 16 | (u32)p[2] << 8 | p[3];
+        p += 4;
+    }
     e->pos = p;
     e->first_delta = read_delta(e);
     e->delta = e->first_delta;
@@ -154,6 +157,16 @@ int snd_seq_open(int s, int t, int vab, const u8 *data) {
     seq_set_step(e);
     e->step0 = e->step;
     return head + 11 + (int)size;
+}
+
+int snd_seq_open(int s, int t, int vab, const u8 *data) {
+    return seq_open(s, t, vab, data, 0);
+}
+
+/* A SEQ file (a SEP's single-sequence sibling: "pQES", a 4-byte version, the resolution, the tempo, the rhythm, then the
+ * events, with no sequence number and no size) as the access number's sequence 0, as SsSeqOpen opens it. 0, or -1. */
+int snd_seq_open_seq(int s, int vab, const u8 *data) {
+    return seq_open(s, 0, vab, data, 1) == -1 ? -1 : 0;
 }
 
 /* ---- Events ---- */

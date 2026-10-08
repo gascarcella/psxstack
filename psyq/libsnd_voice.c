@@ -593,11 +593,24 @@ int snd_pitch_bend(s16 owner, s16 vab, s16 prog, int msb) {
 
 /* ---- SsUtKeyOn / SsUtKeyOff / SsUtAllKeyOff ---- */
 
-int snd_ut_key_on(s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr) {
+/* A voice given by the caller (SsUtKeyOnV): taken whatever it plays, the others aging as an allocation makes them. */
+static int snd_force(int voice) {
+    int v;
+
+    for (v = 0; v < snd.nvoices; v++) {
+        snd.voice[v].age++;
+    }
+    snd.voice[voice].age = 0;
+    snd.voice[voice].prio = (s8)snd.cur.prio;
+    return voice;
+}
+
+/* SsUtKeyOn (voice -1: the allocator picks one) and SsUtKeyOnV (that voice). */
+static int snd_ut_key_on_at(s16 voice, s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr) {
     const u8 *rec, *t;
     int v;
 
-    if (snd.lock == 1) {
+    if (snd.lock == 1 || voice >= snd.nvoices) {
         return -1;
     }
     snd.lock = 1;
@@ -631,7 +644,7 @@ int snd_ut_key_on(s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16
     snd.cur.center = t[4];
     snd.cur.shift = t[5];
     snd.cur.mode = t[1];
-    if ((s16)snd.cur.vag == 0 || (v = snd_alloc() & 0xFF) == snd.nvoices) {
+    if ((s16)snd.cur.vag == 0 || (v = (voice < 0 ? snd_alloc() : snd_force(voice)) & 0xFF) == snd.nvoices) {
         snd.lock = 0;
         return -1;
     }
@@ -658,6 +671,28 @@ int snd_ut_key_on(s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16
 }
 
 /* LIBSND keys the voice off whatever it holds now (the arguments only pick the noise case). */
+int snd_ut_key_on(s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr) {
+    return snd_ut_key_on_at(-1, vab, prog, tone, note, fine, voll, volr);
+}
+
+int snd_ut_key_on_voice(s16 voice, s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr) {
+    if (voice < 0) {
+        return -1;
+    }
+    return snd_ut_key_on_at(voice, vab, prog, tone, note, fine, voll, volr);
+}
+
+/* SsUtKeyOffV: the voice keyed off at the next flush, whatever it plays. 0, or -1. */
+int snd_ut_key_off_voice(s16 voice) {
+    if (snd.lock == 1 || voice < 0 || voice >= snd.nvoices) {
+        return -1;
+    }
+    snd.lock = 1;
+    snd_key_off_now(voice);
+    snd.lock = 0;
+    return 0;
+}
+
 int snd_ut_key_off(s16 voice, s16 vab, s16 prog, s16 tone, s16 note) {
     const SndVoice *vo;
 

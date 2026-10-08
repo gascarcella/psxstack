@@ -98,12 +98,11 @@ typedef struct {
 } PsyqShadowStats;
 void psyq_gte_shadow_stats(PsyqShadowStats *out);
 
-/* LIBC2 (strlen, strcpy, strncpy, memcpy, strcspn, atoi) and LIBAPI (open, read, write, close) are the host libc:
- * the shim defines none of them, on purpose (a definition in the executable would replace libc's for every shared
- * library in the process, SDL included). Our include/psyq/libc2.h declares strlen/strcspn as returning s32 and
- * memcpy's length as u32, libapi.h's read/write take an s32 length; on the LP64 host ABIs (x86-64, AArch64) the low
- * 32 bits of a size_t return and a 32-bit length register agree with the real prototypes, so the game's calls
- * resolve to libc unchanged. SHOCKTST's `sim:C:\...` paths do not exist on the host, so its open() fails (-1) as
- * the skeleton wants (README.md "LIBC2 and LIBAPI"). */
+/* LIBC2 (strlen, strcpy, memcpy, sprintf, rand, ...) is the host libc: the shim defines none of it, on purpose (a
+ * definition in the executable would replace libc's for every shared library in the process, SDL included); the s32
+ * returns and lengths of include/psxstack/psyq/libc2.h agree with libc's on the LP64 host ABIs. rand is the host's
+ * sequence, not the PS1's. LIBAPI's open, read, write, lseek, close and EnterCriticalSection/ExitCriticalSection are
+ * the shim's (libcard.c, libapi.c) under the link names psyq_api_*: include/psxstack/psyq_names.h, forced into the
+ * game's units, renames them (README.md "LIBC2, and LIBAPI's names the host has too"). */
 
 #endif /* PORT_PSYQ_H */

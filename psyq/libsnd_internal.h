@@ -1,6 +1,7 @@
 /* psyq/libsnd_internal.h: what LIBSND's files share. Our own LIBSND over the port's SPU core (include/psxstack/spu.h):
  * libsnd.c the public calls and the VABs, libsnd_seq.c the sequencer, libsnd_voice.c the voice manager, libsnd_spu.c
- * the SPU side (what LIBSPU does on the PS1; the game never calls LIBSPU, so there is no LIBSPU API here).
+ * the SPU side (what LIBSPU does on the PS1 under LIBSND); the three LIBSPU calls the second game makes itself are
+ * libspu.c.
  *
  * Provenance (docs/SOUND.md section 7 "Provenance"): the behaviour is the PS1's, learnt from the EXE's LIBSND/LIBSPU
  * disassembly (constants, tables, formulas, the order of operations) and from the emulator's SPU write traces
@@ -29,6 +30,7 @@ enum {
 void snd_spu_reset(void);
 void snd_spu_init(void);               /* the hardware set-up at SsInit: registers, voices, the silent block */
 void snd_spu_clear_reverb_area(void);  /* SsInit: the largest work area zeroed by DMA, one wait per block */
+int snd_spu_clear_reverb_type(int type); /* SpuClearReverbWorkArea: that type's area; 0, or -1 */
 void snd_spu_set_key(int on, u32 voices);                    /* KON (on) or KOFF, 24 voice bits */
 void snd_spu_set_voice_mask(int reg, u32 bits, u32 keep);    /* EON or NON: `bits`, the register's bits in `keep` */
 u16 snd_spu_envelope(int voice);                             /* ENVX */
@@ -156,6 +158,8 @@ typedef struct SndState {
     u32 open_mask;           /* access numbers in use (and the ones beyond s_max) */
     int s_max, t_max;
     int tick_rate;           /* sequencer ticks per second */
+    int notick;              /* SsSetTickMode's SS_NOTICK (0x1000): the game calls SsSeqCalledTbyT itself */
+    int ticking;             /* SsStart started LIBSND's own tick: one per vsync (psyq_snd_vsync) */
     SndSeq seq[SND_SEQS];
     SndVab vab[SND_VABS];
     int vab_count;
@@ -190,11 +194,14 @@ int snd_set_volume(s16 owner, s16 vab, s16 prog, u16 vol, u16 pan);
 int snd_pitch_bend(s16 owner, s16 vab, s16 prog, int msb);
 int snd_ut_key_on(s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr);
 int snd_ut_key_off(s16 voice, s16 vab, s16 prog, s16 tone, s16 note);
+int snd_ut_key_on_voice(s16 voice, s16 vab, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr);
+int snd_ut_key_off_voice(s16 voice);
 void snd_all_key_off(void);
 
 /* libsnd_seq.c */
 void snd_seq_table(int s_max, int t_max);
 int snd_seq_open(int access, int seq, int vab, const u8 *data); /* bytes used, or -1 */
+int snd_seq_open_seq(int access, int vab, const u8 *data);      /* a SEQ file as sequence 0: 0, or -1 */
 void snd_seq_tick(void);
 void snd_seq_play(int access, int seq, int mode, int count);
 void snd_seq_stop(int access, int seq);

@@ -50,6 +50,8 @@ void psyq_reset(void) {
     psyq_press_reset();
     psyq_snd_reset();
     psyq_mcrd_reset();
+    psyq_api_reset();
+    psyq_card_reset();
 }
 
 /* A save state (savestate.h): every library's part, in a fixed order. */
@@ -66,4 +68,6 @@ void psyq_state(PortState *s) {
     psyq_snd_state(s);
     snd_spu_state(s);
     psyq_mcrd_state(s);
+    psyq_api_state(s);
+    psyq_card_state(s);
 }

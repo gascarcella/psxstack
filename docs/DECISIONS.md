@@ -199,3 +199,14 @@ tick, not where the handler runs: the handler is inside the tick, and a switch t
 the interrupted fiber; at the tick's end the interrupted fiber is suspended right after its tick, as the PS1's task
 right after the interrupt. So every switch is a deterministic function of the game's execution, and a run with
 fibers is as repeatable as one without.
+
+## LIBAPI's clashing names: renamed in the game's units (2026-10-08)
+The second game reaches its memory cards through the BIOS's file calls (`open("bu00:...")`, `read`, `write`, `lseek`,
+`close`), names the host libc has too; Win32's kernel32 has `EnterCriticalSection`. A definition of `open` in the
+executable would replace libc's for the runtime's own files and every shared library (a hidden one would still take
+the runtime's calls), and `EnterCriticalSection` clashes at the Windows link. So `cmake/psxstack.cmake` forces
+`include/psxstack/psyq_names.h` into every game unit: object-like macros renaming those names to the shim's
+`psyq_api_*` (object-like, so a struct member of the same name, the first game's `cdload_reader.read`, is renamed
+consistently instead of breaking). The shim's source keeps Sony's names (its files include the same header); only
+the link symbol differs, as `main` becomes `game_main`. Not a symbol rename in the objects: objcopy cannot touch the
+Windows build's COFF objects (port_gen.py's `rename`).

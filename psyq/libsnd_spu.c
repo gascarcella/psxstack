@@ -179,6 +179,15 @@ void snd_spu_clear_reverb_area(void) {
     snd_spu_clear_area(7); /* the largest area (types 7 and 8: 0x18040 bytes) */
 }
 
+/* LIBSPU's SpuClearReverbWorkArea (libspu.c): the work area of reverb type `type` (0..9) zeroed; -1 for another. */
+int snd_spu_clear_reverb_type(int type) {
+    if (type < 0 || type >= 10) {
+        return -1;
+    }
+    snd_spu_clear_area(type);
+    return 0;
+}
+
 void snd_spu_set_key(int on, u32 voices) {
     u32 reg = on ? SND_REG_KON : SND_REG_KOFF;
 

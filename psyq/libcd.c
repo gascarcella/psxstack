@@ -68,6 +68,29 @@
  * their milliseconds. A --fps other than the nominal rate changes neither: the SPU's queue then fills (and drops) or
  * runs dry.
  *
+ * LIBCD's high-level calls (the second game's cd_file.c and its opening movie):
+ *  - CdSearchFile(fp, "\\DIR\\FILE.EXT;1") looks the path up in the disc's ISO 9660 file system, read through the sector
+ *    source (the primary volume descriptor at sector 16, the root directory, then each directory's records, every
+ *    sector of them): fp->pos the file's first sector, fp->size its size, fp->name its identifier ("P.DRV;1"); it
+ *    returns fp, 0 when the path is not there, -1 when the disc has no ISO 9660 volume (or no sector source). The
+ *    names are compared as they are (the games pass them in upper case, with the version). It is instant and leaves
+ *    the drive as it was (LIBCD's own reads of the directories, and its cache, are not modelled).
+ *  - CdRead(sectors, buf, mode): the Setmode byte `mode`, then a read from the Setloc position (or the head) at the
+ *    drive's rate, like a ReadN, whose sectors go straight into `buf` (the window of the mode byte: 2048 bytes, or
+ *    2328/2340) with no CdlDataReady handler call; after the last one the drive stops. CdReadSync(1, result) returns
+ *    the sectors still to come, 0 when all are in, -1 when the source ended first (the game reads again);
+ *    CdReadSync(0, ...) waits for it (vsync ticks). CdSync(1, result) is CdlNoIntr (0) while a CdControlF command is
+ *    pending and CdlComplete (2) otherwise; CdSync(0, ...) waits for the command (a tick).
+ *  - CdMix(atv): the drive's volume matrix (CD left to SPU left, left to right, right to right, right to left; 80h =
+ *    unity, FFh about double: psx-spx "CDROM Audio Volume") applied to the XA audio on its way to the SPU, clamped to
+ *    16 bits; at unity (the power-on matrix, which the first game never changes) the samples go through untouched.
+ *  - The stream's status: StClearRing empties the ring (the frames in it are dropped); StRingStatus gives the ring's
+ *    free sectors (its size in sectors less the frames' sectors) and the sectors dropped because it was full since
+ *    StSetRing/StClearRing; StGetBackloc(loc) gives the number of the frame after the newest complete one and, in loc,
+ *    the sector after that frame's last one (where the stream would resume), or 0 and the stream's start before any
+ *    frame. LIBCD's own bookkeeping for these is not documented publicly: the game only stores the status, and uses
+ *    StGetBackloc to restart a stalled stream.
+ *
  * Assumptions to verify (against the emulator where it matters):
  *  - a blocking CdControl never calls the sync handler (the game registers it only around CdControlF reads);
  *  - CdlReadN acknowledges with CdlComplete before its first sector (cdload's state machine needs that order);
@@ -116,7 +139,7 @@ typedef void (*PsyqCdHandler)(int status, u8 *result);
 
 u8 StCdIntrFlag; /* LIBCD's StCdIntrFlag: set by the CD interrupt while MDEC runs on the PS1 (never here) */
 
-enum { CD_IDLE, CD_READ, CD_STREAM };
+enum { CD_IDLE, CD_READ, CD_STREAM, CD_DMA };
 
 static int psyq_cd_timing = PSYQ_CD_REALISTIC;
 static int psyq_cd_vsync_hz = 50; /* the vsyncs per second (psyq_cd_set_vsync_hz): 50 (PAL) or 60 */
@@ -144,6 +167,13 @@ static u32 psyq_cd_view_ofs;   /* the window of psyq_cd_raw the mode byte select
 static u32 psyq_cd_view_len;
 static u32 psyq_cd_cursor;     /* ... and how far CdGetSector has read it */
 
+/* CdRead: the destination and the sectors still to come; its result for CdReadSync. */
+enum { CD_DMA_DONE = 0, CD_DMA_RUNNING = 1, CD_DMA_ERROR = -1 };
+static u8 *psyq_cd_dma_buf;
+static int psyq_cd_dma_left;
+static int psyq_cd_dma_state;
+static u8 psyq_cd_atv[4] = { 0x80, 0x00, 0x80, 0x00 }; /* CdMix: L->L, L->R, R->R, R->L */
+
 /* The stream's ring: frames in FIFO order (st_first, st_count over st_slots), each a contiguous slot of st_ring. */
 enum { ST_ASSEMBLING, ST_READY, ST_TAKEN, ST_FREED };
 typedef struct PsyqStSlot {
@@ -160,6 +190,10 @@ static int st_first, st_count;
 static u32 st_start_frame, st_end_frame = 0xFFFFFFFFu;
 static u32 st_skip_frame;      /* realistic: the frame being dropped (no room), 0 none */
 static int st_polls;           /* consecutive empty StGetNext polls */
+static u32 st_over;            /* sectors dropped because the ring was full (StRingStatus) */
+static u32 st_back_frame;      /* the newest complete frame's number + 1 (StGetBackloc); 0: none yet */
+static u32 st_back_lba;        /* the sector after its last one */
+static u32 st_start_lba;       /* where the stream started */
 
 /* The XA decoder and its FIFO of 44,100 Hz stereo frames (the header comment). */
 enum { XA_IDLE, XA_LEAD, XA_PLAYING };
@@ -267,6 +301,24 @@ static int psyq_xa_take(u32 lba) {
     return 1;
 }
 
+static int16_t psyq_xa_clamp(s32 v) {
+    return (int16_t)(v > 0x7FFF ? 0x7FFF : v < -0x8000 ? -0x8000 : v);
+}
+
+/* CdMix's matrix over `n` frames about to go to the SPU (nothing at unity). */
+static void psyq_xa_mix(int16_t *f, u32 n) {
+    u32 i;
+
+    if (psyq_cd_atv[0] == 0x80 && psyq_cd_atv[1] == 0 && psyq_cd_atv[2] == 0x80 && psyq_cd_atv[3] == 0) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        s32 l = f[2 * i], r = f[2 * i + 1];
+        f[2 * i] = psyq_xa_clamp((l * psyq_cd_atv[0] + r * psyq_cd_atv[3]) >> 7);
+        f[2 * i + 1] = psyq_xa_clamp((r * psyq_cd_atv[2] + l * psyq_cd_atv[1]) >> 7);
+    }
+}
+
 /* The end of a CD tick: the next vsync's frames into the SPU's CD input (a run's first tick waits). */
 static void psyq_xa_feed(void) {
     u32 n, chunk;
@@ -281,6 +333,7 @@ static void psyq_xa_feed(void) {
     n = psyq_xa_count < PSYQ_XA_PER_TICK ? psyq_xa_count : PSYQ_XA_PER_TICK;
     while (n > 0) {
         chunk = PSYQ_XA_FIFO - psyq_xa_head < n ? PSYQ_XA_FIFO - psyq_xa_head : n;
+        psyq_xa_mix(psyq_xa_fifo + 2 * psyq_xa_head, chunk);
         spu_cd_input(psyq_xa_fifo + 2 * psyq_xa_head, (int)chunk);
         psyq_xa_head = (psyq_xa_head + chunk) % PSYQ_XA_FIFO;
         psyq_xa_count -= chunk;
@@ -317,6 +370,9 @@ static void psyq_cd_start_read(int kind) {
         }
         psyq_cd_seek_ticks = psyq_cd_seek_ticks * psyq_cd_vsync_hz / 50; /* the same time at 60 Hz */
     }
+    if (psyq_cd_reading == CD_DMA && psyq_cd_dma_state == CD_DMA_RUNNING) {
+        psyq_cd_dma_state = CD_DMA_ERROR; /* another read ends CdRead's */
+    }
     PSYQ_TRACE("cd: %s from sector %u (head %u, seek %d tick(s)), %s speed", kind == CD_STREAM ? "stream" : "read",
                target, psyq_cd_head, psyq_cd_seek_ticks, (psyq_cd_mode & 0x80) ? "double" : "single");
     psyq_cd_reading = kind;
@@ -325,6 +381,11 @@ static void psyq_cd_start_read(int kind) {
     psyq_cd_loc_new = 0;
     psyq_cd_rate_acc = 0;
     psyq_cd_have_sector = 0;
+    if (kind == CD_STREAM) {
+        st_start_lba = target;
+        st_back_frame = 0;
+        st_back_lba = target;
+    }
     psyq_xa_flush("a new read");
 }
 
@@ -349,6 +410,9 @@ static void psyq_cd_apply(int com, const u8 *param) {
     case CdlPause:
         if (psyq_cd_reading != CD_IDLE) {
             PSYQ_TRACE("cd: paused at sector %u", psyq_cd_next_lba);
+        }
+        if (psyq_cd_reading == CD_DMA) {
+            psyq_cd_dma_state = CD_DMA_ERROR; /* CdRead's sectors cut short */
         }
         psyq_cd_reading = CD_IDLE;
         psyq_xa_flush("Pause");
@@ -412,6 +476,28 @@ int CdControlF(u8 com, u8 *param) {
     return 1;
 }
 
+/* The last CdControlF command: mode 1 = CdlNoIntr (0) while it is pending, else CdlComplete; mode 0 waits for it (a
+ * tick). `result` gets the status byte. */
+int CdSync(int mode, u8 *result) {
+    if (mode == 0) {
+        while (psyq_cd_pending != 0) {
+            psyq_vsync_tick();
+        }
+    }
+    psyq_cd_set_result(result);
+    return psyq_cd_pending != 0 ? 0 : CdlComplete;
+}
+
+/* The drive's volume matrix (the header comment). 1. */
+int CdMix(CdlATV *vol) {
+    PSYQ_TRACE("CdMix %02x %02x %02x %02x", vol->val0, vol->val1, vol->val2, vol->val3);
+    psyq_cd_atv[0] = vol->val0;
+    psyq_cd_atv[1] = vol->val1;
+    psyq_cd_atv[2] = vol->val2;
+    psyq_cd_atv[3] = vol->val3;
+    return 1;
+}
+
 /* Loads sector `lba` into the sector buffer and sets the window the mode byte selects. */
 static int psyq_cd_fetch(u32 lba) {
     if (psyq_cd_reader == NULL || !psyq_cd_reader(lba, psyq_cd_raw)) {
@@ -443,6 +529,7 @@ static void st_reset(void) {
     st_count = 0;
     st_skip_frame = 0;
     st_polls = 0;
+    st_over = 0;
 }
 
 /* Releases the freed frames at the head of the FIFO. */
@@ -504,6 +591,9 @@ static int st_sector(u32 lba) {
     fc = psyq_le32(d + 8);
     if (ns == 0 || ns > ST_MAX_SECTORS || sc >= ns || fc < st_start_frame || fc > st_end_frame || st_ring == NULL ||
         fc == st_skip_frame) {
+        if (fc == st_skip_frame && st_skip_frame != 0) {
+            st_over++;
+        }
         return 1;
     }
     if (s != NULL && s->state == ST_ASSEMBLING && (s->frame != fc || s->nsec != ns)) {
@@ -520,6 +610,7 @@ static int st_sector(u32 lba) {
             }
             PSYQ_TRACE("stream: frame %u dropped at sector %u: the ring is full", fc, lba);
             st_skip_frame = fc;
+            st_over++;
             return 1;
         }
         s->frame = fc;
@@ -534,6 +625,8 @@ static int st_sector(u32 lba) {
     s->got |= (u64)1 << sc;
     if (__builtin_popcountll(s->got) == (int)ns) {
         s->state = ST_READY;
+        st_back_frame = fc + 1;
+        st_back_lba = lba + 1;
         PSYQ_TRACE("stream: frame %u in (%u sectors to sector %u, ring offset %u)", fc, ns, lba, s->ofs);
     }
     return 1;
@@ -555,6 +648,9 @@ static int psyq_cd_deliver(int n, u8 *result) {
             PSYQ_TRACE("cd tick: no sector %u: data end%s", lba,
                        was == CD_READ && psyq_cd_ready_handler ? ", ready handler" : "");
             psyq_cd_reading = CD_IDLE; /* before the handler, which may start another read */
+            if (was == CD_DMA) {
+                psyq_cd_dma_state = CD_DMA_ERROR;
+            }
             if (was == CD_READ && psyq_cd_ready_handler != NULL) {
                 psyq_cd_ready_handler(CdlDataEnd, result);
                 ran = 1;
@@ -572,6 +668,15 @@ static int psyq_cd_deliver(int n, u8 *result) {
             }
             psyq_cd_next_lba++;
             psyq_cd_head = psyq_cd_next_lba;
+        } else if (psyq_cd_reading == CD_DMA) {
+            memcpy(psyq_cd_dma_buf, psyq_cd_raw + psyq_cd_view_ofs, psyq_cd_view_len);
+            psyq_cd_dma_buf += psyq_cd_view_len;
+            psyq_cd_next_lba++;
+            psyq_cd_head = psyq_cd_next_lba;
+            if (--psyq_cd_dma_left == 0) {
+                psyq_cd_reading = CD_IDLE; /* LIBCD stops the drive after the last sector */
+                psyq_cd_dma_state = CD_DMA_DONE;
+            }
         } else {
             psyq_cd_next_lba++;
             psyq_cd_head = psyq_cd_next_lba;
@@ -685,6 +790,7 @@ int CdInit(void) {
     spu_write16(0x1AA, 0xC001);
     psyq_cd_pending = 0;
     psyq_cd_reading = CD_IDLE;
+    psyq_cd_dma_state = CD_DMA_DONE;
     psyq_cd_sync_handler = NULL;
     psyq_cd_ready_handler = NULL;
     psyq_xa_flush("CdInit");
@@ -724,12 +830,144 @@ void psyq_cd_reset(void) {
     memset(psyq_cd_filter, 0, sizeof(psyq_cd_filter));
     memset(psyq_xa_fifo, 0, sizeof(psyq_xa_fifo));
     psyq_xa_flush("reset");
+    psyq_cd_dma_buf = NULL;
+    psyq_cd_dma_left = 0;
+    psyq_cd_dma_state = CD_DMA_DONE;
+    psyq_cd_atv[0] = psyq_cd_atv[2] = 0x80;
+    psyq_cd_atv[1] = psyq_cd_atv[3] = 0;
+    st_back_frame = 0;
+    st_back_lba = 0;
+    st_start_lba = 0;
 }
 
 /* Returns the previous level (0). */
 int CdSetDebug(int level) {
     PSYQ_TRACE("CdSetDebug %d", level);
     return 0;
+}
+
+/* ---- the file system and whole reads ---- */
+
+/* The user data of sector `lba` (Mode 1: from byte 16, Mode 2: from 24), into `out` (2048 bytes): 1, or 0. */
+static int psyq_cd_data(u32 lba, u8 *out) {
+    static u8 raw[CD_RAW_SECTOR];
+
+    if (psyq_cd_reader == NULL || !psyq_cd_reader(lba, raw)) {
+        return 0;
+    }
+    memcpy(out, raw + (raw[15] == 1 ? 16 : 24), 2048);
+    return 1;
+}
+
+/* The record named `name` (`len` bytes; a directory when `dir`) in the directory at `extent`, `size` bytes: its
+ * extent and size, 1; 0 when there is none, -1 when a sector cannot be read. */
+static int psyq_cd_iso_find(u32 extent, u32 size, const char *name, size_t len, int dir, u32 *out_extent,
+                            u32 *out_size, char *out_name) {
+    u8 sec[2048];
+    u32 s, sectors = (size + 2047) / 2048;
+
+    for (s = 0; s < sectors; s++) {
+        u32 ofs = 0;
+
+        if (!psyq_cd_data(extent + s, sec)) {
+            return -1;
+        }
+        while (ofs + 33 < 2048 && sec[ofs] != 0) {
+            const u8 *r = sec + ofs;
+            u32 nlen = r[32];
+
+            if (r[0] < 33 + nlen || ofs + r[0] > 2048) {
+                break; /* a damaged record: the rest of the sector */
+            }
+            if (nlen == len && memcmp(r + 33, name, len) == 0 && ((r[25] & 2) != 0) == dir) {
+                *out_extent = psyq_le32(r + 2);
+                *out_size = psyq_le32(r + 10);
+                if (out_name != NULL) {
+                    memcpy(out_name, r + 33, nlen < 15 ? nlen : 15);
+                    out_name[nlen < 15 ? nlen : 15] = '\0';
+                }
+                return 1;
+            }
+            ofs += r[0];
+        }
+    }
+    return 0;
+}
+
+CdlFILE *CdSearchFile(CdlFILE *fp, char *name) {
+    u8 pvd[2048];
+    u32 extent, size;
+    const char *p = name;
+    char found[16];
+
+    if (!psyq_cd_data(16, pvd) || pvd[0] != 1 || memcmp(pvd + 1, "CD001", 5) != 0) {
+        PSYQ_TRACE("CdSearchFile %s: no ISO 9660 volume", name);
+        return (CdlFILE *)-1;
+    }
+    extent = psyq_le32(pvd + 156 + 2);
+    size = psyq_le32(pvd + 156 + 10);
+    while (*p == '\\') {
+        p++;
+    }
+    for (;;) {
+        const char *end = strchr(p, '\\');
+        size_t len = end != NULL ? (size_t)(end - p) : strlen(p);
+        int r;
+
+        if (len == 0) {
+            PSYQ_TRACE("CdSearchFile %s: an empty name", name);
+            return NULL;
+        }
+        r = psyq_cd_iso_find(extent, size, p, len, end != NULL, &extent, &size, end != NULL ? NULL : found);
+        if (r < 0) {
+            PSYQ_TRACE("CdSearchFile %s: a directory sector cannot be read", name);
+            return (CdlFILE *)-1;
+        }
+        if (r == 0) {
+            PSYQ_TRACE("CdSearchFile %s: not found", name);
+            return NULL;
+        }
+        if (end == NULL) {
+            break;
+        }
+        p = end + 1;
+    }
+    CdIntToPos((int)extent, &fp->pos);
+    fp->size = size;
+    memset(fp->name, 0, sizeof(fp->name));
+    memcpy(fp->name, found, strlen(found));
+    PSYQ_TRACE("CdSearchFile %s: sector %u, %u bytes", name, extent, size);
+    return fp;
+}
+
+/* `sectors` sectors from the Setloc position into `buf`, in the window of the Setmode byte `mode` (the header
+ * comment). 1 = started, 0 = nothing to read. */
+int CdRead(int sectors, u32 *buf, int mode) {
+    PSYQ_TRACE("CdRead %d sector(s) to %u mode %02x", sectors, PSYQ_PTR(buf), (unsigned)mode);
+    if (sectors <= 0) {
+        return 0;
+    }
+    psyq_cd_mode = (u8)mode;
+    psyq_cd_start_read(CD_DMA);
+    psyq_cd_dma_buf = (u8 *)buf;
+    psyq_cd_dma_left = sectors;
+    psyq_cd_dma_state = CD_DMA_RUNNING;
+    /* the window of the mode byte, as psyq_cd_fetch sets it per sector */
+    return 1;
+}
+
+/* mode 1: the sectors still to come (> 0), 0 = done, -1 = the read failed; mode 0 waits for the end. */
+int CdReadSync(int mode, u8 *result) {
+    if (mode == 0) {
+        while (psyq_cd_dma_state == CD_DMA_RUNNING) {
+            psyq_vsync_tick();
+        }
+    }
+    psyq_cd_set_result(result);
+    if (psyq_cd_dma_state == CD_DMA_RUNNING) {
+        return psyq_cd_dma_left;
+    }
+    return psyq_cd_dma_state;
 }
 
 /* ---- streaming ---- */
@@ -816,6 +1054,31 @@ void StUnSetRing(void) {
     st_reset();
 }
 
+/* Empties the ring: its frames are dropped (the stream goes on). */
+void StClearRing(void) {
+    PSYQ_TRACE("StClearRing");
+    st_reset();
+}
+
+/* The ring's free sectors and the sectors dropped because it was full (the header comment). */
+void StRingStatus(s16 *free_sectors, s16 *over_sectors) {
+    u32 used = 0, total = st_ring_bytes / 2048;
+    int i;
+
+    for (i = 0; i < st_count; i++) {
+        used += st_slot(i)->nsec;
+    }
+    *free_sectors = (s16)(used < total ? total - used : 0);
+    *over_sectors = (s16)st_over;
+}
+
+/* Where the stream would resume (the header comment): the frame after the newest complete one, its sector in loc. */
+int StGetBackloc(CdlLOC *loc) {
+    PSYQ_TRACE("StGetBackloc: frame %u, sector %u", st_back_frame, st_back_frame != 0 ? st_back_lba : st_start_lba);
+    CdIntToPos((int)(st_back_frame != 0 ? st_back_lba : st_start_lba), loc);
+    return (int)st_back_frame;
+}
+
 /* The CD interrupt LIBCD deferred while MDEC ran (StCdIntrFlag): nothing is deferred here. */
 void StCdInterrupt(void) {
     PSYQ_TRACE("StCdInterrupt");
@@ -861,4 +1124,12 @@ void psyq_cd_state(PortState *s) {
     PORT_STATE_VAR(s, psyq_xa_state);
     PORT_STATE_VAR(s, psyq_xa_sectors);
     PORT_STATE_VAR(s, psyq_xa_dropped);
+    PORT_STATE_VAR(s, psyq_cd_dma_buf);
+    PORT_STATE_VAR(s, psyq_cd_dma_left);
+    PORT_STATE_VAR(s, psyq_cd_dma_state);
+    PORT_STATE_VAR(s, psyq_cd_atv);
+    PORT_STATE_VAR(s, st_over);
+    PORT_STATE_VAR(s, st_back_frame);
+    PORT_STATE_VAR(s, st_back_lba);
+    PORT_STATE_VAR(s, st_start_lba);
 }

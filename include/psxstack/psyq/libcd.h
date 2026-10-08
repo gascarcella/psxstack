@@ -15,6 +15,21 @@ typedef struct CdlLOC {
     u8 track;
 } CdlLOC;
 
+/* A file found on the disc (CdSearchFile): its first sector, its size in bytes, its name ("P.DRV;1"). */
+typedef struct CdlFILE {
+    CdlLOC pos;
+    u32 size;
+    char name[16];
+} CdlFILE;
+
+/* The drive's audio attenuation (CdMix): CD left to SPU left, left to right, right to right, right to left. */
+typedef struct CdlATV {
+    u8 val0;
+    u8 val1;
+    u8 val2;
+    u8 val3;
+} CdlATV;
+
 /* Converts a sector number to a CdlLOC and returns `p`. (Its byte-identical LIBDS twin
  * DsIntToPos isn't linked: docs/TOOLCHAIN.md, "Ambiguous objects".) */
 CdlLOC *CdIntToPos(int i, CdlLOC *p);
@@ -28,6 +43,13 @@ int CdSetDebug(int level);
 int CdControl(u8 com, u8 *param, u8 *result);
 int CdControlB(u8 com, u8 *param, u8 *result);
 int CdControlF(u8 com, u8 *param);
+int CdSync(int mode, u8 *result);
+int CdMix(CdlATV *vol);
+
+/* The file system and whole reads (LIBCD's high-level calls). */
+CdlFILE *CdSearchFile(CdlFILE *fp, char *name);
+int CdRead(int sectors, u32 *buf, int mode);
+int CdReadSync(int mode, u8 *result);
 
 /* Streaming (LIBCD's st_*.c objects). */
 int CdRead2(long mode);
@@ -36,6 +58,9 @@ void StSetStream(u32 mode, u32 start_frame, u32 end_frame, void (*func1)(), void
 u32 StGetNext(u32 **addr, u32 **header);
 u32 StFreeRing(u32 *base);
 void StUnSetRing(void);
+void StClearRing(void);
+void StRingStatus(s16 *free_sectors, s16 *over_sectors);
+int StGetBackloc(CdlLOC *loc);
 void StCdInterrupt(void);
 extern u8 StCdIntrFlag; /* in LIBCD's .bss (one block): a movie player polls and clears it */
 
