@@ -272,6 +272,11 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             s.renderer = "software";
         }
         read_int(video, "video", "internal_scale", 1, 8, &s.internal_scale, w);
+        read_string(video, "video", "subpixel", &s.subpixel, w);
+        if (s.subpixel != "off" && s.subpixel != "on") {
+            warn(w, "video.subpixel: expected \"off\" or \"on\"; using \"on\"");
+            s.subpixel = "on";
+        }
     }
     if (const Json *audio = section(doc, "audio", w)) {
         read_bool(audio, "audio", "mute", &s.mute, w);
@@ -311,6 +316,7 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("refresh", Json::number(s.refresh));
     video.set("renderer", Json::string(s.renderer));
     video.set("internal_scale", Json::number(s.internal_scale));
+    video.set("subpixel", Json::string(s.subpixel));
     doc->member("audio").set("mute", Json::boolean(s.mute));
     for (int i = 0; i < 2; i++) {
         const MemoryCard &c = s.memcard[i];
