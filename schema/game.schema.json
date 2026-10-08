@@ -52,7 +52,7 @@
       }
     },
     "memory": {
-      "type": "object", "additionalProperties": false, "required": ["ram", "slots", "heap"],
+      "type": "object", "additionalProperties": false, "required": ["ram", "slots"],
       "properties": {
         "ram": {
           "type": "object", "additionalProperties": false, "required": ["base", "size"],
@@ -73,6 +73,7 @@
         },
         "heap": {
           "type": "object", "additionalProperties": false, "required": ["start", "end"],
+          "description": "The heap the stack manages in the arena, right after the last slot (the HEAP_* hook macros). Optional: a game whose heap is its own data (an array in its .bss, as the second game's) leaves it out; the arena then holds the slots alone, and a use of a HEAP_* macro fails to compile.",
           "properties": {
             "start": { "$ref": "#/$defs/address", "description": "The PS1 heap's first address (right after the last slot)." },
             "end": { "$ref": "#/$defs/address", "description": "The PS1 heap's end (exclusive)." },

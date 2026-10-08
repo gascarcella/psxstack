@@ -50,7 +50,8 @@ the port and the launcher stay single binaries. Contents:
 - **Timing:** `video.rate` (the nominal vsyncs per second: 50 PAL, 60 NTSC), the rates the launcher offers and the
   text that explains the alternative.
 - **Memory:** `memory.ram` (base, size), `memory.slots` (name, base, size, in address order, contiguous), `memory.heap`
-  (PS1 start and end, the host heap size), `memory.bios_standin` (addresses the game reads from the BIOS ROM and what
+  (PS1 start and end, the host heap size; optional: a game whose heap is its own data, an array in its `.bss`, has
+  none, and the arena is then the slots alone), `memory.bios_standin` (addresses the game reads from the BIOS ROM and what
   the stand-in holds).
 - **Sections:** nothing. The section prefix is `id` (`dw2003_data_<ovl>`); the overlay names come from the unit list.
 
@@ -66,7 +67,7 @@ launcher and the game's adapter use by these exact names:
 | `PSXSTACK_GAME_RATE`, `PSXSTACK_GAME_RATE_COUNT`, `PSXSTACK_GAME_RATES`, `PSXSTACK_GAME_RATE_NOTE` | The nominal rate (50 or 60), the rates offered (an `int` array initializer, the nominal one among them), the note shown for a rate other than the nominal (`""` when none) |
 | `PSXSTACK_GAME_RAM_BASE`, `PSXSTACK_GAME_RAM_SIZE` | `memory.ram`, as `u` constants |
 | `PORT_SLOT_COUNT`; `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `PORT_SLOT<n>_NAME` for n = 1.. | `memory.slots`, in order: slot n is `tier` n in the hook macros |
-| `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`, `PORT_HEAP_SIZE` | `memory.heap`: the PS1 bounds and the host region's size (`host_size`, default 4 MB) |
+| `PORT_HEAP_PRESENT`; `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`, `PORT_HEAP_SIZE` | 1 with a `memory.heap`, then the PS1 bounds and the host region's size (`host_size`, default 4 MB); 0 without one: no bounds, `PORT_HEAP_SIZE` 0, and the `HEAP_*` hooks refuse to compile |
 | `PsxstackGameDisc` (a struct: `label, serial, sha1, cue, region` strings and `size`), `PSXSTACK_GAME_DISC_COUNT`, `PSXSTACK_GAME_DISCS` | `discs`, as an array initializer; `cue` is `""` when absent |
 | `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
 | `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
@@ -151,8 +152,10 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
   and checks them against every table of their tier.
 - `EXE_SYMBOLS` (optional): the EXE's symbol file (`type:func` and `size:` lines): the state tables for the probes.
 - `VOLATILE` (optional): `<lo> <hi>` lines, the game-state image ranges the stable hash zeroes.
-- `GTEMAC` (optional): the game's `gtemac.h`, translated onto the software GTE; `INCLUDE_ASM_GUARD`: its
-  `include_asm.h`'s guard.
+- `GTEMAC` (optional): the game's `gtemac.h`, translated onto the software GTE and written, first on the include
+  path, at the header's path relative to the game's include directory (`psyq/gtemac.h`, `gte.h`); a game whose macros
+  the translator cannot take passes none and puts a host GTE header of its own first in `INCLUDE_DIRS`
+  (docs/PORT.md "Compiling the game C for the host"). `INCLUDE_ASM_GUARD`: its `include_asm.h`'s guard.
 - `INCLUDE_DIRS`: the game's `include/` and root (its `common.h`, its own Psy-Q declarations). The units get them
   first on their include path, the adapter as quote-only directories (`-iquote`); the runtime and the shim never see
   them. The game's Psy-Q declarations must agree with the stack's in ABI: `tools/psyq_decls.py`, the inventory's

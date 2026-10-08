@@ -166,3 +166,13 @@ Texture packs are installed as data mods in the settings directory's `mods/` (do
 still never looks for a directory: the launcher passes `--mods-dir`, as it passes `--config` and `--crash-dir`. A data
 mod is switched on like a built-in one (`mods.<id>.enabled`), and one new top-level key, `mod_order`, holds their
 priority, because data mods compete where built-in mods do not (two packs replacing the same texture).
+
+## A game may have no stack heap (2026-10-08)
+`memory.heap` is optional (GAME_CONTRACT.md "1. game.json"). The second game's heap is a static array in its own
+`.bss`, managed by its own allocator: it is game data already (snapshotted, reset and saved with the sections), and
+moving it into the arena would only serve `PTR_TO_S32`, which that game needs for a handful of fields. So the arena
+can be the slots alone (`PORT_HEAP_PRESENT` 0), and the `HEAP_*` hooks then fail to compile with a message rather
+than pointing at nothing. The alternative, a heap region placed before the slots in the arena, was rejected: a host
+heap larger than the PS1's cannot grow in place there, and the first game's layout (heap after the slots) stays the
+only arena shape to reason about. The description's other conventions (the override header's name, the Psy-Q
+library map, `check.sh`'s paths) became configurable at the same time (issue #28).

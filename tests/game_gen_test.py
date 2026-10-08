@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""tools/game_gen.py on examples/dw2003.game.json: the header compiles as C and as C++, a few values are right, and the
-descriptions that must fail do. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
+"""tools/game_gen.py on examples/dw2003.game.json: the header compiles as C and as C++, a few values are right, the
+descriptions that must fail do, and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
 import copy
 import json
 import os
@@ -155,6 +155,35 @@ def main():
             r2 = subprocess.run(["cc", "-x", "c", "-std=c99", "-Wall", "-Werror", "-fsyntax-only", "-include",
                                  str(tmp / "one.h"), "-"], input="int x;\n", capture_output=True, text=True)
             check(r2.returncode == 0, f"the one-slot header compiles: {r2.stderr}")
+
+        # A game with no stack heap (the second game's shape: its heap is its own data) generates; the arena is the
+        # slots alone; the header compiles as C and C++ through hooks.h; a HEAP_* hook then refuses to compile.
+        noheap = copy.deepcopy(one)
+        del noheap["memory"]["heap"]
+        (tmp / "noheap.json").write_text(json.dumps(noheap))
+        r = run(str(tmp / "noheap.json"), "--check")
+        check(r.returncode == 0 and "no heap" in r.stdout, f"a game without a heap validates: {r.stderr}{r.stdout}")
+        hdr = tmp / "noheap" / "psxstack_game_gen.h"
+        r = run(str(tmp / "noheap.json"), "--out", str(hdr))
+        t = hdr.read_text() if r.returncode == 0 else ""
+        check(r.returncode == 0 and "#define PORT_HEAP_PRESENT 0" in t and "PORT_HEAP_START_ADDR" not in t and
+              "#define PORT_HEAP_OFS 0x11ca0u" in t and "#define PORT_HEAP_SIZE 0u" in t,
+              f"the no-heap header: the arena is the slots alone: {r.stderr}")
+        hooks = ROOT / "include/psxstack"
+        for lang, cc in (("c", "cc"), ("c++", "c++")):
+            if shutil.which(cc) is None:
+                continue
+            std = ["-std=c99"] if lang == "c" else ["-std=c++17"]
+            r2 = subprocess.run([cc, "-x", lang, *std, "-Wall", "-Werror", "-fsyntax-only", "-I", str(hdr.parent),
+                                 "-I", str(hooks), "-"],
+                                input='#include "hooks.h"\nunsigned char *p = port_slot1;\n',
+                                capture_output=True, text=True)
+            check(r2.returncode == 0, f"hooks.h compiles as {lang} without a heap: {r2.stderr}")
+            r2 = subprocess.run([cc, "-x", lang, *std, "-fsyntax-only", "-I", str(hdr.parent), "-I", str(hooks), "-"],
+                                input='#include "hooks.h"\nvoid *q = HEAP_START(void *);\n',
+                                capture_output=True, text=True)
+            check(r2.returncode != 0 and "has_no_memory_heap" in r2.stderr,
+                  f"HEAP_START without a heap fails to compile as {lang} with the reason: {r2.stderr[:300]}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("game_gen_test: " + ("passed" if not failures else f"{len(failures)} failure(s)"))

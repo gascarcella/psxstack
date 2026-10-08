@@ -48,7 +48,13 @@ GAME_CONTRACT.md "5. The build inputs"); the command-line options, the per-frame
   absent from the port, and a call to it is an unresolved symbol at link time, unless the game provides a stand-in.
 - **`gte_*` macros** (the game's `gtemac.h`, MIPS `cop2` sequences; `GTEMAC` in `psxstack_add_game()`) are replaced at build time by a generated header
   that turns each sequence into the same register accesses on the software GTE (`tools/port_gen.py overrides`;
-  see "GTE").
+  see "GTE"). The override is written at the path the game's C includes the header by (the `GTEMAC` file relative
+  to the game's include directory: `psyq/gtemac.h`, `gte.h`), so it shadows the real one wherever it is included
+  from. A game whose macros the translator cannot take (output operands, assembler mnemonics in place of `.word`,
+  temporaries shared between macros) passes no `GTEMAC` and writes a host header of its own, first in
+  `INCLUDE_DIRS`, over the GTE's entry points (`psyq_gte_mtc2`, `psyq_gte_mfc2`, `psyq_gte_cmd`, `psyq_gte_swc2_`,
+  the generated header's prelude in `port_gen.py`). The inventory's probe stubs the macros the same way, under the
+  same name (`gtemac_include`).
 - **The host-compile gate:** `tools/port_inventory.py probe` (configured by the game's own wrapper) compiles every
   unit at `-m64` with `-Werror` on pointer/integer casts, `int-conversion`, implicit declarations and incompatible
   pointer types; `link` checks the objects for duplicate globals. A game's remaining host warnings (missing returns,
@@ -73,7 +79,7 @@ PS1 build never needs that path). `tier` is a slot's 1-based index in the game d
 | `OVERLAY_FN(tier, fn)` | A call through a pointer that may hold a tag | `port_overlay_resolve()`: a tag becomes the current overlay's host function; a real pointer passes unchanged |
 | `LATE_FUNC` / `LATE_CALL` | A call by name into whatever overlay is loaded | Resolved by address through the current overlay's table |
 | `SLOT_PTR(tier, type, addr)` | Data in a slot | The same offset into the arena's slot buffer |
-| `HEAP_START/END/SIZE_FROM/ADDR` | The heap's bounds and constants inside it | The arena's heap region |
+| `HEAP_START/END/SIZE_FROM/ADDR` | The heap's bounds and constants inside it | The arena's heap region; a compile error in a game whose description has no `memory.heap` |
 | `PTR_ADD(type, ofs, base)` | An offset-table resolve, written on the PS1 as `ofs + (s32)base` | Pointer arithmetic |
 | `PTR_TO_S32` / `S32_TO_PTR` | A pointer kept in an `s32` field or argument | The pointer's PS1-style address in the arena, and back (fatal outside the arena) |
 | `PTR_TO_U32(p)` | The 24-bit ordering-table tags (`setaddr`) | The pointer's word offset in the tag window (the game's data and the arena; fatal outside it) |
@@ -97,7 +103,9 @@ the crash report's header, the cache directory `<id>-port`, the disc error) and 
 ## Memory arena
 One static block, `port_arena`, stands for the PS1 RAM from the first slot up (`runtime/arena.c`; the sizes are the
 description's, generated into `psxstack_game_gen.h`: the slots in address order, contiguous, then the heap,
-`memory.heap.host_size` large). The first game's layout, as an example:
+`memory.heap.host_size` large). A game whose heap is its own data (the second game's `HEAP_ARENA`, an array in its
+`.bss`) has no `memory.heap`: the arena is the slots alone (`PORT_HEAP_PRESENT` 0), its heap lives with its other
+sections, and the `HEAP_*` hooks are unusable. The first game's layout, as an example:
 
 | Region | PS1 address | Size | Macro (on `port_arena`) |
 |---|---|---|---|

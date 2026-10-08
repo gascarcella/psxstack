@@ -252,8 +252,9 @@ ASan's `asan_globals`). The link map (`build/port/<target>.map`, `-Wl,-Map`) is 
 
 ## The runtime
 **Arena** (docs/PORT.md "Memory arena"): one static block, `port_arena`, mirroring the PS1 from the first slot
-up: the description's slots at their distances, then the heap (`host_size`, larger than the PS1's because 64-bit
-structs are bigger); `port_slot<n>`, `port_heap_start` and `port_heap_end` are macros on it (the generated header). A
+up: the description's slots at their distances, then the heap when the description has one (`host_size`, larger than
+the PS1's because 64-bit structs are bigger); `port_slot<n>`, `port_heap_start` and `port_heap_end` are macros on it
+(the generated header). A
 pointer's PS1-style address (`PTR_TO_S32`) is `PORT_SLOT1_BASE + offset`. An
 ordering-table tag (`PTR_TO_U32`) is a pointer's word offset in the **tag window**, the units' `.data`/`.bss` regions
 plus the arena (a few MB, more under ASan; measured by `port_overlay_init`, under 64 MB by a startup check), since
@@ -339,7 +340,7 @@ it. The blocks, in order:
 | `header` | `PSXSTATE`, the format (1), the pointer size, the binary's SHA-1, the game's id, the addresses of the image, the arena and the game stack, the rate, the frame, the stack protector's canary (fixed widths: any build reads any state's header) |
 | `port_frames`, `audio_vsync` | The frame count; the vsyncs the audio rendered (each vsync's sample count) |
 | one per game section, `port_current`, `port_word0` | The EXE's and every overlay's `.data` and `.bss` (named by the overlay), the current overlay and the first word per tier |
-| `arena` | The PS1's RAM: the slots and the heap |
+| `arena` | The PS1's RAM: the slots and the heap (when the description has one) |
 | `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command |
 | `spu` | The SPU: registers, voices, its RAM |
 | `count`, `overlay_seq`, `map_seq`, `checkpoints`, `inputs`, ... | The record so far and what the next frame's log compares with |
