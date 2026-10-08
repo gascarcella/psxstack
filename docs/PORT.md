@@ -331,6 +331,19 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     keep 1x texels. The display is presented at that resolution, nearest when the window is at least as large, averaged
     over N x N blocks when it is smaller (supersampling). The target and its background copy take 8 MB times N squared
     (256 MB at 8); a device that cannot allocate them gets a lower scale (logged). The game's own cost is unchanged.
+  - **Present filters** (`--filter NAME`, `video.filter`, the launcher's Filter combo; `runtime/render_gpu_present.c`):
+    the picture goes into the window through one pixel shader per filter (`shaders/present_<filter>.frag.hlsl` on
+    `present_source.hlsli`), in one pass at video.c's rectangle, in place of the present's nearest shaders. No
+    intermediate target, so no memory at any internal scale; the time depends on the output only (under 0.5 ms at
+    3840x2160 on an RTX 4070 Ti SUPER, a few ms at 1080 lines on lavapipe). A filter reads both sources (the 32-bit
+    image of a 24-bit display, a 15-bit display cut from the target), and its view (the destination rectangle, the
+    source's size and corner, the display's lines) assumes no shape, so a wider cut or another aspect needs no shader
+    change. Every filter is continuous in its sampling position: a pixel centre on a tie (exact at many window sizes)
+    then gives the same result on every device. Where the rectangle is smaller than the picture every filter averages,
+    as the nearest present does. `none` (the default) keeps the present's own shaders, so the default picture does not
+    change; `sharp` is sharp bilinear (nearest by the largest integer that fits per axis, then bilinear). The window
+    and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
+    The software renderer shows the picture unfiltered and logs it.
   - The software GPU stays the reference and the default; every existing test uses it.
 
 ## GTE

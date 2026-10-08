@@ -234,6 +234,24 @@ static void test_settings_file(const std::string &root) {
         g.load(sp);
         check(g.messages().size() == 1 && g.values.subpixel == "on", "a bad video.subpixel: one warning, \"on\"");
     }
+    // video.filter (the hardware renderer's present filter): read; written back once the file has it, not added to a
+    // file that never chose one; a bad name warned about and "none" used.
+    check(Json::parse(read(g.path()), nullptr).find("video")->find("filter") == nullptr,
+          "a file that never chose a filter gets no video.filter");
+    const std::string filtered = path_join(root, "filter");
+    path_make_dir(filtered, nullptr);
+    write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"renderer":"gpu","filter":"sharp"}})");
+    SettingsFile fl;
+    fl.load(filtered);
+    check(fl.messages().empty() && fl.values.filter == "sharp", "video.filter is read");
+    fl.values.filter = "none";
+    check(fl.save(&err), "saving the filter: " + err);
+    const Json written = Json::parse(read(fl.path()), nullptr);
+    const Json *saved = written.find("video") != nullptr ? written.find("video")->find("filter") : nullptr;
+    check(saved != nullptr && saved->as_string() == "none", "a filter the file had is written back, \"none\" too");
+    write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"filter":"blur"}})");
+    fl.load(filtered);
+    check(fl.messages().size() == 1 && fl.values.filter == "none", "a bad filter: a warning, \"none\"");
 
     // Not JSON: the defaults; the first save keeps the old file aside.
     const std::string broken = path_join(root, "broken");

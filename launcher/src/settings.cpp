@@ -1,5 +1,8 @@
 #include "settings.h"
 
+#include <algorithm>
+#include <iterator>
+
 #include <SDL3/SDL.h>
 
 #include "paths.h"
@@ -277,6 +280,11 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             warn(w, "video.subpixel: expected \"off\", \"on\" or \"perspective\"; using \"on\"");
             s.subpixel = "on";
         }
+        read_string(video, "video", "filter", &s.filter, w);
+        if (std::find(std::begin(FILTER_NAMES), std::end(FILTER_NAMES), s.filter) == std::end(FILTER_NAMES)) {
+            warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
+            s.filter = "none";
+        }
     }
     if (const Json *audio = section(doc, "audio", w)) {
         read_bool(audio, "audio", "mute", &s.mute, w);
@@ -317,6 +325,9 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("renderer", Json::string(s.renderer));
     video.set("internal_scale", Json::number(s.internal_scale));
     video.set("subpixel", Json::string(s.subpixel));
+    if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
+        video.set("filter", Json::string(s.filter));
+    }
     doc->member("audio").set("mute", Json::boolean(s.mute));
     for (int i = 0; i < 2; i++) {
         const MemoryCard &c = s.memcard[i];
