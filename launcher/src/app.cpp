@@ -821,13 +821,17 @@ static void section_title(const char *title) {
 }
 
 // The hardware renderer's present filter (video.filter; under the GPU renderer only: the Software one shows the
-// picture unfiltered): a combo in FILTER_NAMES' order, a line of help for the choice.
+// picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (video.crt), a line of help for the choice.
 void App::draw_filter(float label_w) {
-    static const char *const labels[] = { "None (the PS1's pixels)", "Sharp" };
+    static const char *const labels[] = { "None (the PS1's pixels)", "Sharp", "Scanlines", "CRT" };
     static const char *const help[] = {
         "Each pixel of the picture as a block of whole window pixels, as it is.",
         "Sharp bilinear: every pixel the same size where the window is not a whole multiple of the picture (a "
         "Resolution that does not divide the window), with a one-pixel blend at the edges between them.",
+        "Sharp, with each of the PS1's lines darker towards its edges, as on a TV. Needs a window at least twice as "
+        "tall as the picture's lines.",
+        "A TV: the lines as glowing beams, the screen's red, green and blue stripes, and a curved screen if you want "
+        "one. Softer than the others.",
     };
     static_assert(SDL_arraysize(labels) == SDL_arraysize(FILTER_NAMES) && SDL_arraysize(help) == SDL_arraysize(labels),
                   "a label and a help line per filter");
@@ -849,6 +853,23 @@ void App::draw_filter(float label_w) {
             }
         }
         ImGui::EndCombo();
+    }
+    // video.crt's sliders, for the filters that read them
+    const bool lines = s.filter == "scanlines" || s.filter == "crt", crt = s.filter == "crt";
+    struct {
+        bool shown;
+        const char *label, *id;
+        int *value;
+    } sliders[] = { { lines, "Scanlines", "##crt_scanlines", &s.crt_scanlines },
+                    { crt, "Mask", "##crt_mask", &s.crt_mask },
+                    { crt, "Curvature", "##crt_curvature", &s.crt_curvature } };
+    for (auto &sl : sliders) {
+        if (sl.shown) {
+            ImGui::TextDisabled("%s", sl.label);
+            ImGui::SameLine(label_w);
+            ImGui::SetNextItemWidth(260 * ImGui::GetStyle().FontScaleDpi);
+            dirty_ |= ImGui::SliderInt(sl.id, sl.value, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+        }
     }
     ImGui::Indent(label_w);
     ImGui::PushTextWrapPos(0);
@@ -928,10 +949,22 @@ void App::draw_settings() {
             dirty_ = true;
         }
         ImGui::SameLine();
-        if (ImGui::RadioButton("Whole pixels (as the PS1)", s.subpixel == "off")) {
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Perspective", s.subpixel == "perspective")) {
+            s.subpixel = "perspective";
+            dirty_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("PS1 pixels", s.subpixel == "off")) {
             s.subpixel = "off";
             dirty_ = true;
         }
+        ImGui::Indent(label_w);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Sub-pixel: the 3D moves smoothly. Perspective: also textured perspective-correct (not the "
+                            "PS1's look). PS1 pixels: the 3D steps a whole PS1 pixel at a time.");
+        ImGui::PopTextWrapPos();
+        ImGui::Unindent(label_w);
     }
     if (s.renderer == "gpu") {
         draw_filter(label_w);

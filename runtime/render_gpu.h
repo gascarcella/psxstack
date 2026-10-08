@@ -29,9 +29,9 @@ const char *render_gpu_describe(void);
 int render_gpu_raster_start(int scale, char *why, size_t why_size);
 int render_gpu_rasterising(void);
 /* Sub-pixel precision (render_gpu_subpixel.c; docs/PORT.md "Sub-pixel precision"): 1 (the default) draws the 3D's
- * vertices at the GTE's sub-pixel positions above internal scale 1, 0 at the PS1's whole pixels. Before
- * render_gpu_raster_start. */
-void render_gpu_set_subpixel(int on);
+ * vertices at the GTE's sub-pixel positions above internal scale 1, 2 also textures them perspective-correct, 0 at
+ * the PS1's whole pixels. Before render_gpu_raster_start. */
+void render_gpu_set_subpixel(int mode);
 /* The internal scale in use (1 when not rasterising). */
 int render_gpu_scale(void);
 /* Runs the units recorded since the last call (once per vsync: the target is state, so every vsync's units run, also

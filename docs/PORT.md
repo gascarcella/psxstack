@@ -331,7 +331,8 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     keep 1x texels. The display is presented at that resolution, nearest when the window is at least as large, averaged
     over N x N blocks when it is smaller (supersampling). The target and its background copy take 8 MB times N squared
     (256 MB at 8); a device that cannot allocate them gets a lower scale (logged). The game's own cost is unchanged.
-  - **Present filters** (`--filter NAME`, `video.filter`, the launcher's Filter combo; `runtime/render_gpu_present.c`):
+  - **Present filters** (`--filter NAME[:KEY=V,...]`, `video.filter`, `video.crt`, the launcher's Filter combo and its
+    sliders; `runtime/render_gpu_present.c`):
     the picture goes into the window through one pixel shader per filter (`shaders/present_<filter>.frag.hlsl` on
     `present_source.hlsli`), in one pass at video.c's rectangle, in place of the present's nearest shaders. No
     intermediate target, so no memory at any internal scale; the time depends on the output only (under 0.5 ms at
@@ -341,7 +342,12 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     change. Every filter is continuous in its sampling position: a pixel centre on a tie (exact at many window sizes)
     then gives the same result on every device. Where the rectangle is smaller than the picture every filter averages,
     as the nearest present does. `none` (the default) keeps the present's own shaders, so the default picture does not
-    change; `sharp` is sharp bilinear (nearest by the largest integer that fits per axis, then bilinear). The window
+    change; `sharp` is sharp bilinear (nearest by the largest integer that fits per axis, then bilinear); `scanlines`
+    is sharp times a raised cosine per display line (periodic, so continuous; the average kept near the picture's);
+    `crt` sums the four nearest lines as Gaussian beams in linear light (2.2) that widen with brightness, their area
+    normalised, then an aperture grille (compensated) and an optional barrel curvature whose edge fades over one pixel.
+    Both follow the display's lines, half of them for an interlaced picture (over 288 lines: a TV showed the two
+    fields without a gap), and fade their lines out below two output rows per line (a moire otherwise). The window
     and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
     The software renderer shows the picture unfiltered and logs it.
   - **Widescreen** (`runtime/render_gpu_wide.c`, its header comment; DECISIONS "Widescreen: a wide canvas beside the
@@ -417,6 +423,11 @@ same with it on or off.
   come from float planes through the precise vertices (`raster.frag.hlsl` `F_PRECISE`), sampled where the integer
   path samples them and rounded as it rounds. At scale 1 nothing changes: the shadow is not even on. The renderer
   turns the shadow on and off with the rasteriser.
+- **Perspective-correct texturing** (`--subpixel perspective`, `video.subpixel` `"perspective"`; off by default): the
+  PS1 interpolates texture coordinates and colours linearly in screen space (affine), so the textures of large
+  polygons bend and swim; measured on the first game's battle, 85 % of the fully precise textured triangles' area is
+  off by a texel or more. With the shadow's SZ on all three vertices a triangle's planes interpolate value / z and
+  1 / z (the plane `q`) and divide per pixel; a triangle with a vertex of unknown depth stays affine.
 - **Measuring:** `<PREFIX>_PORT_SUBPIXEL_LOG=path` turns it on from boot and logs every RTPS vertex, the batches and
   each frame's drawn-vertex counts (`_FROM`, `_TO`: a frame range); the format is in `gte_shadow.c`'s header. The first
   game's `tests/port/subpixel_jitter.py` turns it into the jitter metric.

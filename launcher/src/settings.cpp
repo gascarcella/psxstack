@@ -276,14 +276,23 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
         }
         read_int(video, "video", "internal_scale", 1, 8, &s.internal_scale, w);
         read_string(video, "video", "subpixel", &s.subpixel, w);
-        if (s.subpixel != "off" && s.subpixel != "on") {
-            warn(w, "video.subpixel: expected \"off\" or \"on\"; using \"on\"");
+        if (s.subpixel != "off" && s.subpixel != "on" && s.subpixel != "perspective") {
+            warn(w, "video.subpixel: expected \"off\", \"on\" or \"perspective\"; using \"on\"");
             s.subpixel = "on";
         }
         read_string(video, "video", "filter", &s.filter, w);
         if (std::find(std::begin(FILTER_NAMES), std::end(FILTER_NAMES), s.filter) == std::end(FILTER_NAMES)) {
             warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
             s.filter = "none";
+        }
+        if (const Json *crt = video->find("crt")) {
+            if (!crt->is_object()) {
+                warn(w, "video.crt: expected an object; using the defaults");
+            } else {
+                read_int(crt, "video.crt", "scanlines", 0, 100, &s.crt_scanlines, w);
+                read_int(crt, "video.crt", "mask", 0, 100, &s.crt_mask, w);
+                read_int(crt, "video.crt", "curvature", 0, 100, &s.crt_curvature, w);
+            }
         }
     }
     if (const Json *audio = section(doc, "audio", w)) {
@@ -327,6 +336,17 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("subpixel", Json::string(s.subpixel));
     if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
         video.set("filter", Json::string(s.filter));
+    }
+    const Settings defaults;
+    if (s.crt_scanlines != defaults.crt_scanlines || s.crt_mask != defaults.crt_mask ||
+        s.crt_curvature != defaults.crt_curvature || video.find("crt") != nullptr) { // as video.filter
+        if (const Json *crt = video.find("crt"); crt != nullptr && !crt->is_object()) {
+            video.erase("crt");
+        }
+        Json &crt = video.member("crt");
+        crt.set("scanlines", Json::number(s.crt_scanlines));
+        crt.set("mask", Json::number(s.crt_mask));
+        crt.set("curvature", Json::number(s.crt_curvature));
     }
     doc->member("audio").set("mute", Json::boolean(s.mute));
     for (int i = 0; i < 2; i++) {
