@@ -50,6 +50,7 @@ static void usage(const char *argv0) {
             "          [--window] [--scale N] [--fullscreen] [--fps N] [--input-test] [--screenshot FRAME:PATH]\n"
             "          [--renderer software|gpu] [--internal-scale N] [--gpu-screenshot FRAME[@WxH]:PATH]\n"
             "          [--subpixel off|on]\n"
+            "          [--filter NAME[:KEY=V,...]]\n"
             "          [--spu-trace FILE] [--wav FILE] [--mute] [--debug SOCKET] [--debug-hold] [--crash-dir DIR]\n"
             "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--version]\n"
             "  --config JSON    the settings file (docs/LAUNCHER.md; what the launcher starts the game\n"
@@ -94,6 +95,9 @@ static void usage(const char *argv0) {
             "  --gpu-screenshot F[@WxH]:P  the hardware renderer's picture of vsync F to P (binary PPM): the image, or\n"
             "                   with @WxH its present into a W x H output; repeatable; a build with -DPSXSTACK_SDL=ON;\n"
             "                   skipped (logged) when no GPU device opens\n"
+            "  --filter NAME    the hardware renderer's present filter: none (default: the picture pixel for pixel)\n"
+            "                   or sharp (sharp bilinear); the window and --gpu-screenshot's @WxH pictures; the\n"
+            "                   software renderer shows the picture unfiltered (overrides video.filter)\n"
             "  --dump-textures DIR  every texture the game samples, the first time, as a PNG named by its key, and\n"
             "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
             "  --texture-pack DIR  a texture pack (DIR/mod.json, PNGs named by key) for the hardware renderer;\n"
@@ -142,6 +146,7 @@ int main(int argc, char **argv) {
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
     int subpixel = 1;
     const char *config = NULL;
+    PortFilter filter = { PORT_FILTER_NONE };
     int print_settings = 0, print_mods = 0, script_mods = 0;
     long fps = -1;
     int refresh = 0; /* --refresh, else the settings' video.refresh; 0: neither (PAL) */
@@ -161,6 +166,7 @@ int main(int argc, char **argv) {
         gpu = port_settings.gpu;
         internal_scale = port_settings.internal_scale;
         subpixel = port_settings.subpixel;
+        filter.kind = port_settings.filter;
         mute = port_settings.mute;
         port_watchdog_sec = port_settings.watchdog;
         for (i = 0; i < 2; i++) {
@@ -277,6 +283,12 @@ int main(int argc, char **argv) {
                 return 64;
             }
             subpixel = strcmp(argv[++i], "on") == 0;
+        } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
+            char err[160];
+            if (!port_filter_parse(argv[++i], &filter, err, sizeof(err))) {
+                fprintf(stderr, "port: --filter: %s\n", err);
+                return 64;
+            }
         } else if (strcmp(argv[i], "--gpu-screenshot") == 0 && i + 1 < argc) {
             if (!port_video_gpu_screenshot_add(argv[++i])) {
                 fprintf(stderr, "port: --gpu-screenshot: FRAME[@WxH]:PATH (FRAME >= 1; at most 64): %s\n", argv[i]);
@@ -335,6 +347,7 @@ int main(int argc, char **argv) {
         eff.gpu = gpu;
         eff.internal_scale = internal_scale;
         eff.subpixel = subpixel;
+        eff.filter = filter.kind;
         for (i = 0; i < 2; i++) {
             eff.memcard[i] = memcard_given[i] > 0 && memcard[i] != NULL ? port_settings_abspath(memcard[i]) : NULL;
         }
@@ -356,6 +369,7 @@ int main(int argc, char **argv) {
     port_video_set_renderer(gpu ? "gpu" : "software");
     port_video_set_internal_scale(internal_scale);
     port_video_set_subpixel(subpixel);
+    port_video_set_filter(&filter);
     if (window && !port_video_available()) {
         fprintf(stderr, "port: --window: this build has no window: configure with -DPSXSTACK_SDL=ON "
                         "(port/README.md \"The window\")\n");

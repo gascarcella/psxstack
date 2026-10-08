@@ -19,11 +19,8 @@
 #include "present_vram_frag_dxil.h"
 #include "raster_frag_dxil.h"
 #include "raster_vert_dxil.h"
-#define RENDER_SHADER(name) name##_spv, sizeof(name##_spv), name##_dxil, sizeof(name##_dxil)
-#define RENDER_SHADER_FORMATS (SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL)
-#else
-#define RENDER_SHADER(name) name##_spv, sizeof(name##_spv), NULL, 0
-#define RENDER_SHADER_FORMATS SDL_GPU_SHADERFORMAT_SPIRV
 #endif
+/* RENDER_SHADER and RENDER_SHADER_FORMATS: render_gpu_internal.h (the present filters' shaders, render_gpu_present.c,
+ * include their own blobs: each blob is a static array, unused in the other file). */
 
 #endif
