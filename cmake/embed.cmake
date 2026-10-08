@@ -1,7 +1,18 @@
-# A file's bytes as a C array (cmake -DIN=file -DOUT=header -DNAME=identifier -P embed.cmake): the hardware renderer's
-# compiled shaders (port/CMakeLists.txt, port/runtime/render_gpu.c) go into the binary, which stays one file. Aligned to
-# 16 bytes: SPIR-V is read as 32-bit words.
+# A file's bytes as a C array (cmake -DIN=file -DOUT=header -DNAME=identifier [-DDXIL=ON] -P embed.cmake): the hardware
+# renderer's compiled shaders (cmake/psxstack.cmake, runtime/render_gpu.c) go into the binary, which stays one file.
+# Aligned to 16 bytes: SPIR-V is read as 32-bit words. DXIL=ON: the file must be a signed DXBC container (its digest,
+# bytes 4-19, not zero: DXC without libdxil.so leaves it zero, and D3D12 rejects such a shader).
 file(READ "${IN}" hex HEX)
+if(DXIL)
+    string(SUBSTRING "${hex}" 0 8 magic)
+    string(SUBSTRING "${hex}" 8 32 digest)
+    if(NOT magic STREQUAL "44584243")
+        message(FATAL_ERROR "${IN}: not a DXBC container")
+    endif()
+    if(digest MATCHES "^0+$")
+        message(FATAL_ERROR "${IN}: unsigned DXIL (DXC found no libdxil.so beside it): D3D12 would reject it")
+    endif()
+endif()
 string(LENGTH "${hex}" len)
 math(EXPR size "${len} / 2")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")

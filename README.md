@@ -28,7 +28,7 @@ python3 tests/game_gen_test.py           # the description generator's test
 | `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset |
 | `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the runtime's headers |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
-| `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V at build time) |
+| `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/` | The one mod every game has |
 | `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |

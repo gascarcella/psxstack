@@ -866,7 +866,7 @@ void App::draw_settings() {
         dirty_ |= ImGui::SliderInt("##internal_scale", &s.internal_scale, 1, 8, res, ImGuiSliderFlags_AlwaysClamp);
         ImGui::Indent(label_w);
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("SDL_GPU (Vulkan). x1 is the Software picture, pixel for pixel; above it the game is drawn "
+        ImGui::TextDisabled("SDL_GPU (Vulkan; Direct3D 12 on Windows). x1 is the Software picture, pixel for pixel; above it the game is drawn "
                             "at that resolution, without dithering, in 8-bit colour. Without a usable GPU the game "
                             "falls back to Software.");
         ImGui::PopTextWrapPos();

@@ -28,7 +28,7 @@ GAME_CONTRACT.md "5. The build inputs"); the command-line options, the per-frame
 | `include/psxstack/port_runtime.h`, `port_harness.h`, `settings.h`, `spu.h`, `platform.h`, `json.h`, `sha1.h` | The runtime's internal interfaces |
 | `runtime/` | The runtime: `main.c` (options, setup), `arena.c`, `overlay.c`, `pump.c`, `reset.c`, `disc.c`, `memcard.c`, `video.c`, `render_gpu.c`, `input.c`, `audio.c` and `spu*.c`, `script.c`, `framelog.c`, `settings.c`, `mods.c` (the engine and the fast_forward mod), `crash.c`, `debug.c`, `platform.c`, `json.c`, `sha1.c` |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` compiles it alone and checks its coverage of a game |
-| `shaders/` | The hardware renderer's HLSL, compiled to SPIR-V by DXC at build time and embedded (`cmake/embed.cmake`) |
+| `shaders/` | The hardware renderer's HLSL, compiled to SPIR-V (and for Windows to DXIL) by DXC at build time and embedded (`cmake/embed.cmake`) |
 | `mods/fast_forward/` | The one mod every game has (its manifest; the code is in `runtime/mods.c`) |
 | `cmake/psxstack.cmake` | `psxstack_add_game()`: the whole build (below, "What the build generates") |
 | `tools/game_gen.py` | The game description (`game.json`) to `psxstack_game_gen.h` and CMake variables |
@@ -262,9 +262,13 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
 - **Window** (SDL3, static, pinned in `scripts/setup.sh`): the image at 4:3, nearest-neighbour, integer-scaled;
   fullscreen toggle. SDL selects X11/Wayland and the audio backend at run time.
 - **Hardware renderer** (`runtime/render_gpu.c`; the first game's DECISIONS "The hardware renderer"): SDL_GPU on Vulkan,
-  only in the SDL build, chosen by `--renderer gpu` or `video.renderer` (default `software`). Its shaders
-  (`shaders/*.hlsl`) are compiled to SPIR-V at build time by the pinned DXC (`scripts/setup.sh dxc`) and embedded
-  in the binary. It presents into the window's swapchain with an integer nearest mapping into video.c's 4:3 rectangle
+  on Windows on Direct3D 12 first (SDL's order; `SDL_GPU_DRIVER=vulkan` picks Vulkan there), only in the SDL build,
+  chosen by `--renderer gpu` or `video.renderer` (default `software`). Its shaders (`shaders/*.hlsl`) are compiled to
+  SPIR-V at build time by the pinned DXC (`scripts/setup.sh dxc`), for Windows also to DXIL, signed by DXC's
+  `libdxil.so` on the Linux host (`cmake/embed.cmake` refuses an unsigned one), and embedded in the binary; the device
+  says which it takes (`SDL_GetGPUShaderFormats`, `runtime/render_gpu_shaders.h`). Under Wine the D3D12 pictures are
+  the Vulkan build's byte for byte (Wine's vkd3d and vkd3d-proton; the first game's issue #67); Wine's own vkd3d
+  refuses SDL's swapchain parameters, so the window there presents with vsync. It presents into the window's swapchain with an integer nearest mapping into video.c's 4:3 rectangle
   (the software image through it is SDL_Renderer's output, pixel for pixel); when no device can present (no Vulkan
   driver; NVIDIA on SDL's offscreen driver) the run logs why and uses SDL_Renderer.
   `--gpu-screenshot FRAME[@WxH]:PATH` writes its picture (headless too). Its rasteriser draws the software GPU's

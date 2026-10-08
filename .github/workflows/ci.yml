@@ -111,10 +111,11 @@ jobs:
             tools/llvm-mingw
             tools/sdl3-windows
             tools/imgui
+            tools/dxc
           key: tools-windows-${{ runner.os }}-${{ steps.pins.outputs.hash }}
-      - name: scripts/setup.sh cmake llvm-mingw sdl3-windows imgui
+      - name: scripts/setup.sh cmake llvm-mingw sdl3-windows imgui dxc
         run: |
-          scripts/setup.sh cmake llvm-mingw sdl3-windows imgui
+          scripts/setup.sh cmake llvm-mingw sdl3-windows imgui dxc
           echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
       # wine64 alone has no `wine` command on Ubuntu 24.04: that launcher script is in the `wine` package. The prefix
       # once, headless (no display on the runner; the self-test needs none).
@@ -135,3 +136,12 @@ jobs:
           mkdir -p build/selftest-win
           WINEPREFIX="$PWD/build/wine-prefix" WINEDEBUG=-all DW3_SELFTEST_VIDEO_DRIVER=offscreen \
             timeout 600 wine build/launcher-win/dw2003-launcher.exe --self-test "Z:$PWD/build/selftest-win"
+      # examples/hello cross-built with the window (-DPSXSTACK_SDL=ON): the SDL runtime for Windows and the hardware
+      # renderer's shaders as SPIR-V and signed DXIL (cmake/embed.cmake refuses unsigned DXIL), then run under Wine. The
+      # runner's Wine gives SDL_GPU no device, so --gpu reports its picture as skipped; locally it runs on D3D12.
+      - name: hello for Windows with the window, under Wine (tests/hello_test.py --exe --wine --gpu)
+        run: |
+          cmake -S examples/hello -B build/hello-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" \
+                -DCMAKE_BUILD_TYPE=Release -DPSXSTACK_SDL=ON
+          cmake --build build/hello-win
+          python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine --gpu

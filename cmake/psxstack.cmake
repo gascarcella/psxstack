@@ -335,7 +335,9 @@ function(psxstack_add_game target)
         target_compile_definitions(${target} PRIVATE PSXSTACK_SDL)
         # The hardware renderer's shaders (runtime/render_gpu.c): shaders/<name>.<vert|frag>.hlsl compiled by DXC to
         # SPIR-V for SDL_GPU's Vulkan backend at build time, then embedded as C arrays (cmake/embed.cmake) under
-        # gen/shaders/<name>_<stage>_spv.h. DXC writes the same SPIR-V on every machine, so nothing compiled is committed.
+        # gen/shaders/<name>_<stage>_spv.h; for Windows also to DXIL for its D3D12 backend (<name>_<stage>_dxil.h),
+        # signed by DXC's libdxil.so on this host (embed.cmake refuses an unsigned one: D3D12 rejects it). DXC writes
+        # the same bytes on every machine, so nothing compiled is committed.
         set(_dxc "${PSXSTACK_DXC}")
         if(NOT _dxc)
             foreach(d IN LISTS PSXSTACK_TOOL_DIRS)
@@ -374,6 +376,19 @@ function(psxstack_add_game target)
                                        -P "${PSXSTACK_ROOT}/cmake/embed.cmake"
                                DEPENDS "${spv}" "${PSXSTACK_ROOT}/cmake/embed.cmake" VERBATIM)
             list(APPEND SHADER_HEADERS "${header}")
+            if(WIN32)
+                set(dxil "${GEN}/shaders/${name}.dxil")
+                set(header "${GEN}/shaders/${sid}_dxil.h")
+                add_custom_command(OUTPUT "${dxil}"
+                                   COMMAND "${CMAKE_COMMAND}" -E make_directory "${GEN}/shaders"
+                                   COMMAND "${_dxc}" -T ${profile} -E main -WX -Fo "${dxil}" "${src}"
+                                   DEPENDS "${src}" COMMENT "dxc ${name}.hlsl -> DXIL" VERBATIM)
+                add_custom_command(OUTPUT "${header}"
+                                   COMMAND "${CMAKE_COMMAND}" -DIN=${dxil} -DOUT=${header} -DNAME=${sid}_dxil -DDXIL=ON
+                                           -P "${PSXSTACK_ROOT}/cmake/embed.cmake"
+                                   DEPENDS "${dxil}" "${PSXSTACK_ROOT}/cmake/embed.cmake" VERBATIM)
+                list(APPEND SHADER_HEADERS "${header}")
+            endif()
         endforeach()
         add_custom_target(${target}_shaders DEPENDS ${SHADER_HEADERS})
         add_dependencies(${target} ${target}_shaders)

@@ -43,7 +43,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, `game_defaults.c` (the adapter's weak defaults) |
 | `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, the runtime's headers |
 | `psyq/` | The Psy-Q shim, one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
-| `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V at build time) |
+| `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/` | The one mod every game has; a game's own mods live in the game |
 | `launcher/` | The launcher (C++, SDL3 + Dear ImGui): its own CMake project; every string from the game description (`launcher/src/brand.h`) |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`, documented inline), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (llvm-mingw) |
@@ -62,6 +62,7 @@ scripts/setup.sh [sdl3 imgui llvm-mingw sdl3-windows dxc sdl3-desktop cmake link
 scripts/dev_link_tools.sh ../dw2003recomp/tools   # reuse another checkout's built tools
 python3 tests/game_gen_test.py                    # the description generator; python3 tools/game_gen.py FILE --check validates one
 python3 tests/hello_test.py [--record]            # the smoke test: examples/hello built through psxstack_add_game(), run headless, its picture hashed
+python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine --gpu   # its Windows build (-DPSXSTACK_SDL=ON, cross-built) under Wine; --gpu: the hardware renderer's picture too (D3D12)
 cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.json] && cmake --build build/launcher
 SDL_VIDEO_DRIVER=offscreen build/launcher/<id>-launcher --self-test build/selftest   # <id> from game.json (dw2003 by default)
 cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" -DCMAKE_BUILD_TYPE=Release   # the toolchain path must be absolute
