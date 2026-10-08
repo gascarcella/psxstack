@@ -261,8 +261,9 @@ another process:
   sector, stream ring and XA decoder, the VRAM and the drawing state, the GTE, LIBSND, ...), the SPU, the audio's vsync
   count, the run's record and the script's progress, and the adapter's (`game_savestate`: its mods). The same function
   saves and loads, in one order. Host state stays the loading run's: the window, the audio device, files, options,
-  the debug channel, and the caches that are rebuilt: gpu.c's decoded textures are stamped stale, the hardware
-  renderer gets the power-on event and reloads its VRAM from the software VRAM (a state loaded at an internal scale
+  the debug channel, and the caches that are rebuilt: gpu.c's decoded textures are stamped stale, the GTE's sub-pixel
+  shadow starts empty (as at the reset), the hardware renderer gets the power-on event and reloads its VRAM from the
+  software VRAM (a state loaded at an internal scale
   above 1 starts from the 1x VRAM: what was drawn before the save is upscaled until redrawn).
 - **What is proved** (the first game's `tests/port/savestate.py`): a run resumed from its first battle's state ends
   with the straight run's record, the straight log's lines after the saved frame and the same audio, in the `-m64`,

@@ -673,8 +673,12 @@ void psyq_gte_cmd(u32 op) {
     gte_c[GTE_FLAG] = gte_flag;
 }
 
-/* A save state (psyq_internal.h): the registers (FLAG lives in control 31 between commands). */
+/* A save state (psyq_internal.h): the registers (FLAG lives in control 31 between commands). The sub-pixel shadow is
+ * the hardware renderer's, invisible to the game: a load starts it empty, as the console's reset does. */
 void gte_state(PortState *s) {
     PORT_STATE_VAR(s, gte_d);
     PORT_STATE_VAR(s, gte_c);
+    if (port_state_loading(s)) {
+        psyq_gte_shadow_reset();
+    }
 }
