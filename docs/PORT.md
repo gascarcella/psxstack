@@ -352,7 +352,8 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     our own xBR level 2 (Hyllian's published algorithm) on the 1x software image at every internal scale (the target's
     N x N blocks of 1x texels would defeat a pixel-art filter): integer edge decisions per source pixel and corner
     (a weighted YUV distance, so the same on every device), evaluated at cells k times smaller (k as `sharp`'s) with
-    the lines' blends ramping over a cell, then bilinear between cells. The window
+    the lines' blends ramping over a cell, then bilinear between cells. A wide picture (widescreen: the software image is
+    4:3) is smoothed from its canvas in the target read at 1x (every N-th pixel, exact for the 2D layers). The window
     and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
     The software renderer shows the picture unfiltered and logs it.
   - **Widescreen** (`runtime/render_gpu_wide.c`, its header comment; DECISIONS "Widescreen: a wide canvas beside the
