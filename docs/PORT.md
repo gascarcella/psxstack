@@ -382,6 +382,12 @@ same with it on or off.
 - **Off by default:** `psyq_gte_shadow_enable` turns it on; off it costs a branch per RTPS vertex, per drawn polygon
   vertex and per linked primitive. On, in the first game's battle, 98 % of the drawn polygon vertices find their value
   (the rest are clamped ones and 2D), and the cost is within the run-to-run noise of a headless run.
+- **Drawing** (`runtime/render_gpu_subpixel.c`; `--subpixel on|off`, `video.subpixel`, default on): above internal
+  scale 1 the hardware renderer places a vertex with a value at `x + fx / 65536 - 1/2` (the half pixel centres it on
+  the integer, whose floor it is, so vertices without one, 2D among them, stay where they were) and its attributes
+  come from float planes through the precise vertices (`raster.frag.hlsl` `F_PRECISE`), sampled where the integer
+  path samples them and rounded as it rounds. At scale 1 nothing changes: the shadow is not even on. The renderer
+  turns the shadow on and off with the rasteriser.
 - **Measuring:** `<PREFIX>_PORT_SUBPIXEL_LOG=path` turns it on from boot and logs every RTPS vertex, the batches and
   each frame's drawn-vertex counts (`_FROM`, `_TO`: a frame range); the format is in `gte_shadow.c`'s header. The first
   game's `tests/port/subpixel_jitter.py` turns it into the jitter metric.

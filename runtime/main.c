@@ -49,6 +49,7 @@ static void usage(const char *argv0) {
             "          [--log FILE] [--record FILE] [--max-frames N] [--watchdog SEC] [--trace]\n"
             "          [--window] [--scale N] [--fullscreen] [--fps N] [--input-test] [--screenshot FRAME:PATH]\n"
             "          [--renderer software|gpu] [--internal-scale N] [--gpu-screenshot FRAME[@WxH]:PATH]\n"
+            "          [--subpixel off|on]\n"
             "          [--filter NAME[:KEY=V,...]]\n"
             "          [--spu-trace FILE] [--wav FILE] [--mute] [--debug SOCKET] [--debug-hold] [--crash-dir DIR]\n"
             "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--version]\n"
@@ -89,6 +90,8 @@ static void usage(const char *argv0) {
             "  --internal-scale N  the hardware renderer's resolution: 1 to 8 times the PS1's (default 1: the same\n"
             "                   picture as software; above 1 without dithering, in 8-bit colour; overrides\n"
             "                   video.internal_scale)\n"
+            "  --subpixel S     above internal scale 1, the 3D's vertices at the GTE's sub-pixel positions: on\n"
+            "                   (default) or off (the PS1's whole pixels; overrides video.subpixel)\n"
             "  --gpu-screenshot F[@WxH]:P  the hardware renderer's picture of vsync F to P (binary PPM): the image, or\n"
             "                   with @WxH its present into a W x H output; repeatable; a build with -DPSXSTACK_SDL=ON;\n"
             "                   skipped (logged) when no GPU device opens\n"
@@ -136,6 +139,7 @@ int main(int argc, char **argv) {
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
+    int subpixel = 1;
     const char *config = NULL;
     PortFilter filter = PORT_FILTER_DEFAULTS;
     int print_settings = 0, print_mods = 0, script_mods = 0;
@@ -156,6 +160,7 @@ int main(int argc, char **argv) {
         fullscreen = port_settings.fullscreen;
         gpu = port_settings.gpu;
         internal_scale = port_settings.internal_scale;
+        subpixel = port_settings.subpixel;
         filter.kind = port_settings.filter;
         filter.scanlines = port_settings.crt_scanlines;
         filter.mask = port_settings.crt_mask;
@@ -270,6 +275,12 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "port: --internal-scale: 1 to 8\n");
                 return 64;
             }
+        } else if (strcmp(argv[i], "--subpixel") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i + 1], "off") != 0 && strcmp(argv[i + 1], "on") != 0) {
+                fprintf(stderr, "port: --subpixel: off or on\n");
+                return 64;
+            }
+            subpixel = strcmp(argv[++i], "on") == 0;
         } else if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
             char err[160];
             if (!port_filter_parse(argv[++i], &filter, err, sizeof(err))) {
@@ -325,6 +336,7 @@ int main(int argc, char **argv) {
         eff.refresh = refresh;
         eff.gpu = gpu;
         eff.internal_scale = internal_scale;
+        eff.subpixel = subpixel;
         eff.filter = filter.kind;
         eff.crt_scanlines = filter.scanlines;
         eff.crt_mask = filter.mask;
@@ -341,6 +353,7 @@ int main(int argc, char **argv) {
     }
     port_video_set_renderer(gpu ? "gpu" : "software");
     port_video_set_internal_scale(internal_scale);
+    port_video_set_subpixel(subpixel);
     port_video_set_filter(&filter);
     if (window && !port_video_available()) {
         fprintf(stderr, "port: --window: this build has no window: configure with -DPSXSTACK_SDL=ON "

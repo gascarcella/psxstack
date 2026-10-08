@@ -929,6 +929,22 @@ void App::draw_settings() {
                             "falls back to Software.");
         ImGui::PopTextWrapPos();
         ImGui::Unindent(label_w);
+    }
+    if (s.renderer == "gpu" && s.internal_scale > 1) {
+        // video.subpixel (docs/LAUNCHER.md): the 3D at the GTE's sub-pixel positions, above x1 only.
+        ImGui::TextDisabled("3D vertices");
+        ImGui::SameLine(label_w);
+        if (ImGui::RadioButton("Sub-pixel", s.subpixel == "on")) {
+            s.subpixel = "on";
+            dirty_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Whole pixels (as the PS1)", s.subpixel == "off")) {
+            s.subpixel = "off";
+            dirty_ = true;
+        }
+    }
+    if (s.renderer == "gpu") {
         draw_filter(label_w);
     }
     if (s.refresh != GAME_RATE && GAME_RATE_NOTE[0] != '\0') {
