@@ -17,7 +17,10 @@
  *  - a line segment, a transfer and a VRAM copy into the buffer are copied from the VRAM part once drawn (their
  *    pixels inside the buffer; gpu.c's line walk clips to its own drawing area).
  * The VRAM part is drawn as before, so the target's VRAM equals the software VRAM at the internal scale of 1 and the
- * canvas's middle equals the 4:3 picture. A display buffer gets its canvas when widescreen is on and the display or a
+ * canvas's middle equals the 4:3 picture. A triangle at sub-pixel positions (render_gpu_subpixel.c) keeps its
+ * fractions in the copy (the event's vertices move by whole pixels); its float positions near x 1100 are coarser than
+ * near x 0, so a few edge pixels may land on the other side (measured: 35 of 1,228,800 in a battle frame at scale 4;
+ * 0 with sub-pixel vertices off). A display buffer gets its canvas when widescreen is on and the display or a
  * drawing area of the display's size is there: the canvas is cleared to black and the buffer's picture copied into
  * it, so a picture drawn before is shown pillarboxed until it is drawn again.
  *
