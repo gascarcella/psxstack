@@ -58,6 +58,9 @@ struct MemoryCard {
     std::string path;    // a .mcd image, relative to the settings directory (created formatted by the game)
 };
 
+// video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
+inline const char *const FILTER_NAMES[] = { "none", "sharp" };
+
 struct Settings {
     std::string disc_path; // "" = unset
     std::string disc_sha1; // the SHA-1 the launcher verified for disc_path ("" = not verified)
@@ -67,6 +70,7 @@ struct Settings {
     std::string renderer = "software"; // "software" or "gpu" (the hardware renderer; docs/LAUNCHER.md "Members")
     int internal_scale = 1;            // the hardware renderer's resolution, 1..8 times the PS1's
     std::string subpixel = "on";       // "on" or "off": the 3D at the GTE's sub-pixel positions above resolution x1
+    std::string filter = "none";       // the hardware renderer's present filter (video.filter): one of FILTER_NAMES
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };
     std::string last_dir; // launcher.last_dir: where the file dialog opens (the launcher's own state)

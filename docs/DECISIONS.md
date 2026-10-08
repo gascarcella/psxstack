@@ -116,3 +116,11 @@ run's.
 `video.subpixel` (`--subpixel`) defaults to `"on"`: a player who chooses a higher internal resolution expects the 3D
 not to wobble by whole 1x pixels, scale 1 and the software renderer cannot change, and the scale itself is already an
 opt-in (the first game's owner's decision, dw2003recomp #68). `"off"` keeps the PS1's whole pixels.
+
+## Present filters: one pass, the default untouched (2026-10-08)
+The hardware renderer's filters (`--filter`, `video.filter`; docs/PORT.md "Rendering") are each one pixel shader in
+place of the present's own, with no intermediate target: their cost is the output's size times a few texel reads, and
+no memory at any internal scale. `none` keeps the present's nearest shaders, so the default picture cannot change. A
+filter must be continuous in its sampling position: many window sizes put pixel centres exactly on a boundary between
+source pixels or lines, where devices round differently (a two-line CRT kernel differed by 154 between NVIDIA and
+lavapipe; a continuous one by 2). The software renderer is never filtered: it stays the reference picture.

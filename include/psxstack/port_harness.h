@@ -90,6 +90,20 @@ int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malform
 int port_video_set_renderer(const char *name);
 void port_video_set_internal_scale(int scale); /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
 void port_video_set_subpixel(int on);          /* --subpixel / video.subpixel: sub-pixel vertices above scale 1 */
+/* The present's filter (`--filter NAME[:KEY=V,...]`, video.filter; video_filter.c): the hardware renderer draws the
+ * picture into the window through it (render_gpu_present.c); the software renderer shows the picture unfiltered and
+ * says so once. PORT_FILTER_NONE (the default) is the integer nearest mapping, the picture pixel for pixel. */
+enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_COUNT };
+typedef struct PortFilter {
+    int kind; /* PORT_FILTER_* */
+} PortFilter;
+extern const char *const port_filter_names[PORT_FILTER_COUNT];
+int port_filter_from_name(const char *name); /* PORT_FILTER_*; -1 for another name */
+/* The names for a message: "\"none\" or \"sharp\"" (quoted) or "none or sharp". */
+const char *port_filter_choices(int quoted);
+/* `--filter`'s argument into *f (the defaults first); 0 with the reason in `err` when it is malformed. */
+int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
+void port_video_set_filter(const PortFilter *f);
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */
