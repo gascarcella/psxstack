@@ -85,7 +85,8 @@ Vulkan); when it cannot present (no Vulkan driver, NVIDIA on the offscreen drive
 logs `renderer: gpu unavailable (<why>); software` and uses SDL_Renderer. Its rasteriser draws the game itself into a
 VRAM target of its own (`runtime/render_gpu.c`'s header comment) and a 15-bit display is presented from that target; 24-bit
 displays (the movies, the title) stay the software image. At the internal scale of 1 the picture is the software
-path's, pixel for pixel. Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
+path's, pixel for pixel; `--internal-scale N` (`video.internal_scale`, 2 to 8) draws at N times the resolution (no
+dithering, 8-bit colour; a device that cannot allocate the targets gets a lower scale, logged). Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
 configuring the SDL build without it fails with that hint. `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture
 of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
 would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DRIVER=offscreen`), and logs the shot as
