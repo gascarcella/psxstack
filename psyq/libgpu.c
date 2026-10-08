@@ -403,6 +403,38 @@ void SetTile(TILE *p) {
     setTile(p);
 }
 
+void SetLineF3(LINE_F3 *p) {
+    setLineF3(p);
+}
+
+void SetLineF4(LINE_F4 *p) {
+    setLineF4(p);
+}
+
+void SetLineG4(LINE_G4 *p) {
+    setLineG4(p);
+}
+
+void SetSprt8(SPRT_8 *p) {
+    setSprt8(p);
+}
+
+void SetSprt16(SPRT_16 *p) {
+    setSprt16(p);
+}
+
+void SetTile1(TILE_1 *p) {
+    setTile1(p);
+}
+
+void SetTile8(TILE_8 *p) {
+    setTile8(p);
+}
+
+void SetTile16(TILE_16 *p) {
+    setTile16(p);
+}
+
 /* Bit 0 of the command byte: raw texture (no shading) when tge is non-zero. */
 void SetShadeTex(void *p, s32 tge) {
     setShadeTex(p, tge);
