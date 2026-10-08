@@ -69,6 +69,7 @@ struct Settings {
     int refresh = GAME_RATE; // 50 or 60: the nominal rate, or the game's other one (docs/LAUNCHER.md "The rate")
     std::string renderer = "software"; // "software" or "gpu" (the hardware renderer; docs/LAUNCHER.md "Members")
     int internal_scale = 1;            // the hardware renderer's resolution, 1..8 times the PS1's
+    std::string subpixel = "on";       // "on" or "off": the 3D at the GTE's sub-pixel positions above resolution x1
     std::string filter = "none";       // the hardware renderer's present filter (video.filter): one of FILTER_NAMES
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };

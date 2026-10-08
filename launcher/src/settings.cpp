@@ -275,6 +275,11 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             s.renderer = "software";
         }
         read_int(video, "video", "internal_scale", 1, 8, &s.internal_scale, w);
+        read_string(video, "video", "subpixel", &s.subpixel, w);
+        if (s.subpixel != "off" && s.subpixel != "on") {
+            warn(w, "video.subpixel: expected \"off\" or \"on\"; using \"on\"");
+            s.subpixel = "on";
+        }
         read_string(video, "video", "filter", &s.filter, w);
         if (std::find(std::begin(FILTER_NAMES), std::end(FILTER_NAMES), s.filter) == std::end(FILTER_NAMES)) {
             warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
@@ -319,6 +324,7 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("refresh", Json::number(s.refresh));
     video.set("renderer", Json::string(s.renderer));
     video.set("internal_scale", Json::number(s.internal_scale));
+    video.set("subpixel", Json::string(s.subpixel));
     if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
         video.set("filter", Json::string(s.filter));
     }
