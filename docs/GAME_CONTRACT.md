@@ -31,8 +31,9 @@ Rules:
    position) is a function in that interface, implemented in the adapter, never a direct reference from `runtime/`.
 4. **No fact about a game lives in the stack**: no address, file ID, overlay name, disc hash, serial, title or
    directory name. They come from `game.json` (generated into a header at configure time) or from the adapter.
-5. **The PS1 matching build sees none of this.** Every macro in `hooks.h` expands to the original code without
-   `PC_PORT`; the game's byte-identical build does not depend on the stack at all (the submodule may be absent).
+5. **The PS1 matching build sees none of this.** The game's own `port.h` holds the PS1 side of every macro (each
+   expands to the original code) and includes `<psxstack/hooks.h>` only under `#ifdef PC_PORT`, so the byte-identical
+   build does not depend on the stack at all: the submodule may be absent.
 
 ## What the game provides
 
@@ -51,22 +52,50 @@ the port and the launcher stay single binaries. Contents:
   the stand-in holds).
 - **Sections:** nothing. The section prefix is `id` (`dw2003_data_<ovl>`); the overlay names come from the unit list.
 
+#### The generated header
+`tools/game_gen.py GAME.json --out psxstack_game_gen.h` (and `--cmake` for the id and title as CMake variables, `--check`
+to validate). Valid as C and as C++; `tests/game_gen_test.py` compiles it both ways. Its macros, which the runtime, the
+launcher and the game's adapter use by these exact names:
+
+| Macro | Value |
+|---|---|
+| `PSXSTACK_GAME_ID`, `PSXSTACK_GAME_ID_UPPER`, `PSXSTACK_GAME_TITLE` | `id` (and upper-cased), `title`, as string literals |
+| `PSXSTACK_GAME_ENV_PREFIX` | `env_prefix`, default `id` upper-cased; the launcher's variables are `<PREFIX>_GAME`, `<PREFIX>_CONFIG_DIR`, `<PREFIX>_LAUNCHER_FAKE_GAME`, `<PREFIX>_SELFTEST_DISC`, `<PREFIX>_SELFTEST_GAME`, `<PREFIX>_SELFTEST_VIDEO_DRIVER` |
+| `PSXSTACK_GAME_RATE`, `PSXSTACK_GAME_RATE_COUNT`, `PSXSTACK_GAME_RATES`, `PSXSTACK_GAME_RATE_NOTE` | The nominal rate (50 or 60), the rates offered (an `int` array initializer, the nominal one among them), the note shown for a rate other than the nominal (`""` when none) |
+| `PSXSTACK_GAME_RAM_BASE`, `PSXSTACK_GAME_RAM_SIZE` | `memory.ram`, as `u` constants |
+| `PORT_SLOT_COUNT`; `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `PORT_SLOT<n>_NAME` for n = 1.. | `memory.slots`, in order: slot n is `tier` n in the hook macros |
+| `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`, `PORT_HEAP_SIZE` | `memory.heap`: the PS1 bounds and the host region's size (`host_size`, default 4 MB) |
+| `PsxstackGameDisc` (a struct: `label, serial, sha1, cue, region` strings and `size`), `PSXSTACK_GAME_DISC_COUNT`, `PSXSTACK_GAME_DISCS` | `discs`, as an array initializer; `cue` is `""` when absent |
+| `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
+| `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
+
+A disc's `label` is a noun phrase, since the launcher writes "This is <label>." and "<file> is not <label>". The
+generator checks what the schema cannot: the slots are in address order and contiguous with each other and with the
+heap, the host heap is at least the PS1's, the rates include the nominal one.
+
 ### 2. The hook header
-The game's `include/port.h` (included by its `common.h`, as today) becomes:
+The game's `include/port.h` (included by its `common.h`, as today) keeps the **PS1 side** of every macro itself: each
+expands to exactly the code the unit had, with the game's own constants, and nothing of the stack is needed to build
+the executable. Only the host side comes from the stack:
 ```c
-#include <psxstack/hooks.h>   /* PLATFORM_WAIT, OVERLAY_COPY, SLOT_FUNC, OVERLAY_FN, LATE_FUNC/LATE_CALL, SLOT_PTR,
-                                 HEAP_*, PTR_*, BIOS_PTR, PORT_SCRATCHPAD_STACK_*; the port_* they call */
-#define WSTAG_ENTRY(addr) SLOT_FUNC(void *(*)(), addr)          /* the game's own typed slot-function macros */
-#define OVERLAY_ENTRY(addr) SLOT_FUNC(s32 (*)(void), addr)
-#ifdef PC_PORT
+#ifndef PC_PORT
+#define PLATFORM_WAIT()                                 /* the PS1 side, as today: the original code, verbatim */
+#define SLOT_FUNC(type, addr) ((type)(addr))
+...
+#else
+#include <psxstack/hooks.h>   /* the host side: PLATFORM_WAIT, OVERLAY_COPY, SLOT_FUNC, OVERLAY_FN, LATE_FUNC/LATE_CALL,
+                                 SLOT_PTR, HEAP_*, PTR_*, BIOS_PTR, PORT_SCRATCHPAD_STACK_*; the port_* they call */
 extern int port_mod_skip_dialogues;  /* the game's mod hooks, read only inside #ifdef PC_PORT blocks */
 ...
 #endif
+#define WSTAG_ENTRY(addr) SLOT_FUNC(void *(*)(), addr)   /* the game's own typed slot-function macros, both sides */
+#define OVERLAY_ENTRY(addr) SLOT_FUNC(s32 (*)(void), addr)
 ```
 The macro names and meanings of `hooks.h` are stable API (table in `docs/PORT.md "Hook macros"` once it moves here).
-`hooks.h` gets the slot constants from `psxstack_game_gen.h`: `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `port_slot<n>`
-for every slot in `memory.slots`, `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`. The `tier` argument of `OVERLAY_COPY`,
-`OVERLAY_FN`, `LATE_FUNC` and `SLOT_PTR` is the slot's 1-based index.
+`hooks.h` gets the slot constants from `psxstack_game_gen.h` ("The generated header"): `PORT_SLOT<n>_BASE`,
+`PORT_SLOT<n>_SIZE`, `port_slot<n>` for every slot in `memory.slots`, `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`. The
+`tier` argument of `OVERLAY_COPY`, `OVERLAY_FN`, `LATE_FUNC` and `SLOT_PTR` is the slot's 1-based index. The PS1 side's
+constants in the game's header must equal the description's; the adapter's build checks it with `_Static_assert`s.
 
 ### 3. The hooks in the game's C
 The game's units carry the `PLATFORM_WAIT()` at every busy-wait an interrupt ends, the pointer macros where a pointer
@@ -81,18 +110,22 @@ C the game compiles into the port alongside the runtime. It implements:
 - `void game_apply_rate(long rate);` called after the settings are read and before `game_main`: the game's own
   response to a non-default rate (dw2003: `records_60hz = 1` for 60). May be empty.
 - **State probes** (the replay scripts, the debug channel, the checkpoint hash): `game_state_stage()`,
-  `game_state_file()`, `game_state_map()`, `game_state_random_index()`, `game_state_player_pos(s32 *x, s32 *y)`,
-  `game_state_image(u8 *out)` with `GAME_STATE_IMAGE_SIZE` (the PS1 bytes a checkpoint hashes, pointers as PS1
-  addresses), `game_state_volatile[]` (the ranges the stable hash zeroes), `game_state_host(addr, size)` for the
-  game's own fixed-address objects outside the arena (memcard state, an overlay's bss object). The stack maps the
-  arena, the EXE's symbols and the overlays' sections itself from the generated tables.
-- **The mods:** `const PortMod *const game_mods[]` and `game_mod_count`: each mod's id, version, options and
-  `start`/`frame` callbacks, in the stack's `PortMod` shape. Their logic and hooks are the game's; the option types,
-  the manifest reader, the hotkeys, `--print-mods` and the settings section are the stack's. The manifests
-  (`mods/<id>/mod.json`) sit in the game repo and the build copies them next to the binary.
+  `game_state_file()`, `game_state_map()`, `game_state_random_index()`, `game_state_player_pos(double *x, double *y)`,
+  `game_state_image_size()` and `game_state_image(uint8_t *out)` (the PS1 bytes a checkpoint hashes, pointers as PS1
+  addresses), `game_state_volatile_count()` and `game_state_volatile()` (the ranges the stable hash zeroes),
+  `game_state_read(addr, size, is_signed, out)` and `game_state_host(addr, size)`: a PS1 address outside the arena
+  (the EXE's globals, an overlay's objects, memcard state) mapped to the host object by the adapter, from the tables
+  the build generates for it. The stack maps the arena itself and asks the adapter for everything else.
+- **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,
+  version, options, `start`/`frame` callbacks and an optional `status` (text for the window title). Their logic and
+  hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
+  fast-forward (the one mod every game has) are the stack's. The manifests (`mods/<id>/mod.json`) sit in the game
+  repo and the build copies them next to the binary; `port_fast_forward_request()` lets a game mod ask for
+  fast-forward.
 - **Weak stand-ins** for data the game's residual asm owned (`asmdata.c`), placed in the right overlay section.
-Every function has a weak default in the stack that returns 0 or does nothing, so a new game starts with an empty
-adapter and adds probes as its tests need them.
+Every function has a weak default in the stack (`runtime/game_defaults.c`) that returns 0 or does nothing, so a new game
+starts with an empty adapter and adds probes as its tests need them. They are functions rather than arrays so that
+the weak defaults also work on COFF (Windows).
 
 ### 5. The build inputs
 Passed to `psxstack_add_game()` (`cmake/psxstack.cmake`, phase 2):

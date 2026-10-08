@@ -1,0 +1,4 @@
+// The launcher's resources (the Windows build; launcher/CMakeLists.txt configures this file for the game's id): the
+// application manifest as resource 1 of type RT_MANIFEST (24), which the loader reads at process creation
+// (launcher.manifest.in says what it sets).
+1 24 "@PSXSTACK_LAUNCHER@.manifest"

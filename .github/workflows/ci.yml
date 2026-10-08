@@ -1,0 +1,105 @@
+# psxstack's CI: disc-free, no game. The game-description generator's test, the launcher's build and headless
+# self-test on Ubuntu 24.04 (SDL3 and Dear ImGui at their pins through scripts/setup.sh; the built tools cached on
+# the pins, scripts/setup.sh --pins, not on the script's text), and the Windows cross-build with its self-test under
+# Wine. On pull requests, pushes to main and by hand; a newer push to a pull request cancels the older run.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  game-gen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: tests/game_gen_test.py (the hand checks)
+        run: python3 tests/game_gen_test.py
+      - name: tests/game_gen_test.py (with jsonschema)
+        run: |
+          python3 -m venv .venv && .venv/bin/pip install -q jsonschema
+          .venv/bin/python tests/game_gen_test.py
+      - name: Every example validates
+        run: for f in examples/*.game.json; do python3 tools/game_gen.py "$f" --check; done
+
+  launcher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: The pins (the tool cache's key)
+        id: pins
+        run: echo "hash=$(scripts/setup.sh --pins | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Cached tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/venv
+            tools/sdl3
+            tools/imgui
+          key: tools-launcher-${{ runner.os }}-${{ steps.pins.outputs.hash }}
+      - name: scripts/setup.sh cmake sdl3 imgui
+        run: |
+          scripts/setup.sh cmake sdl3 imgui   # cmake: pip-installs cmake and ninja into tools/venv when PATH lacks one
+          echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: cmake -S launcher -B build/launcher -G Ninja && cmake --build build/launcher
+      - name: Self-test (offscreen)
+        run: SDL_VIDEO_DRIVER=offscreen build/launcher/dw2003-launcher --self-test build/selftest
+      - name: Self-test pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-self-test-screens
+          path: build/selftest/launcher-self-test/screens/
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: The pins (the tool cache's key)
+        id: pins
+        run: echo "hash=$(scripts/setup.sh --pins | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Cached tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/venv
+            tools/llvm-mingw
+            tools/sdl3-windows
+            tools/imgui
+          key: tools-windows-${{ runner.os }}-${{ steps.pins.outputs.hash }}
+      - name: scripts/setup.sh cmake llvm-mingw sdl3-windows imgui
+        run: |
+          scripts/setup.sh cmake llvm-mingw sdl3-windows imgui
+          echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
+      # wine64 alone has no `wine` command on Ubuntu 24.04: that launcher script is in the `wine` package. The prefix
+      # once, headless (no display on the runner; the self-test needs none).
+      - name: Wine
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends wine wine64
+          mkdir -p build/wine-prefix
+          WINEPREFIX="$PWD/build/wine-prefix" wineboot --init
+          wine --version
+      - name: Cross-build
+        run: |
+          cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" \
+                -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/launcher-win
+      - name: Self-test under Wine
+        run: |
+          mkdir -p build/selftest-win
+          WINEPREFIX="$PWD/build/wine-prefix" WINEDEBUG=-all DW3_SELFTEST_VIDEO_DRIVER=offscreen \
+            timeout 600 wine build/launcher-win/dw2003-launcher.exe --self-test "Z:$PWD/build/selftest-win"
