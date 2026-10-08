@@ -8,8 +8,9 @@ game repo (a matching decompilation) adds a small adapter and gets a Linux and W
 It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
 `launcher/`, which consume it as a git submodule since `v0.1.0`.
 
-**Status: `v0.2.0`** (the hardware renderer on D3D12, sub-pixel precision, filters, texture packs, a wide canvas and
-save states). Everything a game needs is here: the contract (`docs/GAME_CONTRACT.md`), the game description
+**Status: `v0.3.0`** (the second game's stack work: an optional heap, the stack's own Psy-Q declarations, fibers for
+a game's tasks, the replay runners; v0.2.0 brought the hardware renderer on D3D12, sub-pixel precision, filters,
+texture packs, a wide canvas and save states). Everything a game needs is here: the contract (`docs/GAME_CONTRACT.md`), the game description
 and its generator (`schema/game.schema.json`, `tools/game_gen.py`), the runtime and the Psy-Q shim (`runtime/`,
 `psyq/`), the build (`cmake/psxstack.cmake`), the launcher (`launcher/`), the tools and the docs. One game builds on
 it so far; the second will widen the shim and the contract (releases follow semver, `PSXSTACK_API` counts
