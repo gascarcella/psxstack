@@ -31,7 +31,7 @@
         "type": "object", "additionalProperties": false,
         "required": ["label", "serial", "sha1", "size", "region"],
         "properties": {
-          "label": { "type": "string", "description": "For messages: \"Europe (SLES-03936), unpatched\"." },
+          "label": { "type": "string", "description": "A noun phrase for the messages, completing \"This is <label>.\" and \"<file> is not <label>\": \"the unpatched European disc (SLES-03936)\"." },
           "serial": { "type": "string", "pattern": "^[A-Z]{4}-[0-9]{5}$" },
           "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "Of the whole BIN (every sector, 2352 bytes each)." },
           "size": { "type": "integer", "minimum": 1, "description": "The BIN's size in bytes." },
@@ -93,7 +93,7 @@
       "type": "object", "additionalProperties": false,
       "properties": {
         "about": { "type": "string", "description": "One line under the title: \"Digimon World 2003 (Europe, SLES-03936) on the PC port.\"" },
-        "disc_hint": { "type": "string", "description": "Where the disc comes from: the launcher's disc screen." },
+        "disc_hint": { "type": "string", "description": "The launcher's disc screen: what the game needs, one or two sentences (\"Nothing is unpacked or copied.\" is added)." },
         "website": { "type": "string", "format": "uri" }
       }
     }

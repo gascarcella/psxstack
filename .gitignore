@@ -1,0 +1,17 @@
+# Build outputs
+build/
+__pycache__/
+*.o
+# Built tools (scripts/setup.sh installs them here; scripts/dev_link_tools.sh links another checkout's). No trailing
+# slashes: in worktrees these are symlinks, and "dir/" patterns don't match symlinks.
+tools/src
+tools/venv
+tools/sdl3
+tools/sdl3-desktop
+tools/sdl3-windows
+tools/imgui
+tools/llvm-mingw
+tools/appimage
+tools/dxc
+tools/ccache
+tools/local.env

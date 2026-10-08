@@ -1,0 +1,10 @@
+{
+  "schema": 1, "id": "skip_dialogues", "name": "Skip dialogues", "version": "1.0", "kind": "builtin",
+  "description": "Text appears at once and advances by itself. Choices still wait for you.",
+  "options": [
+    { "id": "toggle", "name": "Toggle", "type": "binding", "default": "F2" },
+    { "id": "hold",   "name": "Hold",   "type": "binding", "default": "" },
+    { "id": "fast_forward_waits", "name": "Also fast-forward cutscene waits", "type": "bool", "default": false,
+      "applies": "live" }
+  ]
+}
