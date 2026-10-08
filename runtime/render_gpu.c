@@ -20,6 +20,8 @@
  *  - the background (a copy of the target): before a unit that reads the background (semi-transparent, mask-checked;
  *    a VRAM copy), the 16x16 tiles of its rectangle that something drew into since their last copy are copied. A unit
  *    is one triangle or one line segment (a quad's two triangles may overlap, a polyline's segments share a pixel).
+ * Above scale 1 a triangle whose vertices the GTE shadow knows is drawn at their sub-pixel positions, with float
+ * attribute planes (render_gpu_subpixel.c, F_PRECISE; docs/PORT.md "Sub-pixel precision").
  * At internal scale 1 the target is the software VRAM, pixel for pixel, but for what tests/host/gpu_hw_mismatches.json
  * lists (tests/host/gpu_hw_replay.py checks it against the gpu golden family).
  *
@@ -45,6 +47,7 @@
 #include "psyq_internal.h"
 #include "render_gpu.h"
 #include "render_gpu_internal.h"
+#include "render_gpu_subpixel.h"
 
 #include "render_gpu_shaders.h"
 
@@ -71,7 +74,8 @@ enum {
     F_SET_MASK = 16,
     F_CHECK_MASK = 32,
     F_PAIRS = 64,
-    F_BACKGROUND = 128
+    F_BACKGROUND = 128,
+    F_PRECISE = 256 /* a triangle at sub-pixel positions, attributes from the float planes `sp` */
 };
 
 typedef struct {
@@ -82,6 +86,7 @@ typedef struct {
 typedef struct {
     Sint32 kind[4], a[4], col[4], nrg[4], nbu[4], nva[4], tex[4], win[4], s01[4], s2[4], res[4], uvr[4], cmin[4],
         cmax[4];
+    float sp[SUBPIXEL_PLANES][4]; /* F_PRECISE: the planes (render_gpu_subpixel.h) */
 } RasterUnit;
 
 /* An entry of the frame's list, in stream order. */
@@ -367,15 +372,20 @@ static void raster_triangle(const GpuEvent *ev) {
     int den = dx1 * dy2 - dx2 * dy1, sign = den < 0 ? -1 : 1;
     int sx, sy, sw, sh, x0, y0, x1, y1;
     int vmin = a->v, vmax = a->v;
+    float pos[3][2], sp[SUBPIXEL_PLANES][4];
+    int precise;
 
     if (!area(ev, &sx, &sy, &sw, &sh)) {
         return;
     }
+    /* Above scale 1, the vertices at their sub-pixel positions when the GTE shadow has them (within half a pixel of
+     * the integers: the box grows by one). */
+    precise = r.scale > 1 && render_subpixel_triangle(ev, pos, sp);
     /* The bounding box within the scissor. */
-    x0 = SDL_min(a->x, SDL_min(b->x, c->x));
-    y0 = SDL_min(a->y, SDL_min(b->y, c->y));
-    x1 = SDL_max(a->x, SDL_max(b->x, c->x));
-    y1 = SDL_max(a->y, SDL_max(b->y, c->y));
+    x0 = SDL_min(a->x, SDL_min(b->x, c->x)) - precise;
+    y0 = SDL_min(a->y, SDL_min(b->y, c->y)) - precise;
+    x1 = SDL_max(a->x, SDL_max(b->x, c->x)) + precise;
+    y1 = SDL_max(a->y, SDL_max(b->y, c->y)) + precise;
     x0 = SDL_max(x0, sx);
     y0 = SDL_max(y0, sy);
     x1 = SDL_min(x1, sx + sw - 1);
@@ -440,13 +450,17 @@ static void raster_triangle(const GpuEvent *ev) {
     if (u.kind[1] & F_BACKGROUND) {
         sync_background(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
     }
+    if (precise) {
+        u.kind[1] |= F_PRECISE;
+        memcpy(u.sp, sp, sizeof(u.sp));
+    }
     e = draw_add(&u, 3, sx, sy, sw, sh);
-    e->geometry.v01[0] = (float)a->x;
-    e->geometry.v01[1] = (float)a->y;
-    e->geometry.v01[2] = (float)b->x;
-    e->geometry.v01[3] = (float)b->y;
-    e->geometry.v2[0] = (float)c->x;
-    e->geometry.v2[1] = (float)c->y;
+    e->geometry.v01[0] = precise ? pos[0][0] : (float)a->x;
+    e->geometry.v01[1] = precise ? pos[0][1] : (float)a->y;
+    e->geometry.v01[2] = precise ? pos[1][0] : (float)b->x;
+    e->geometry.v01[3] = precise ? pos[1][1] : (float)b->y;
+    e->geometry.v2[0] = precise ? pos[2][0] : (float)c->x;
+    e->geometry.v2[1] = precise ? pos[2][1] : (float)c->y;
     mark_dirty(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 }
 
@@ -701,6 +715,7 @@ static void raster_event(const GpuEvent *ev) {
 static void render_release(void) {
     if (r.raster) {
         gpu_set_listener(NULL);
+        render_subpixel_stop();
     }
     if (r.device != NULL) {
         size_t f;
@@ -949,6 +964,7 @@ int render_gpu_raster_start(int scale, char *why, size_t why_size) {
     raster_load(0, 0, VRAM_W, VRAM_H, 0); /* the target starts as the VRAM is now */
     r.raster = 1;
     gpu_set_listener(raster_event);
+    render_subpixel_start(r.scale);
     return 1;
 }
 

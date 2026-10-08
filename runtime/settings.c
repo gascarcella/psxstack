@@ -5,6 +5,7 @@
  *     "disc":     { "path": "dw2003.cue", "sha1": "457cb233..." },          none / none
  *     "video":    { "window": true, "scale": 2, "fullscreen": false, "refresh": 50, "renderer": "software",
  *                   "internal_scale": 1,
+ *                   "subpixel": "on",
  *                   "filter": "none",
  *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 } },
  *     "audio":    { "mute": false },
@@ -144,6 +145,7 @@ void port_settings_load(const char *path) {
                                             "input", "mods", "launcher", NULL };
     static const char *const disc_keys[] = { "path", "sha1", NULL };
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
+                                              "subpixel",
                                               "filter",
                                               "crt",
                                               NULL };
@@ -167,6 +169,7 @@ void port_settings_load(const char *path) {
     s->scale = 2;
     s->refresh = 50;
     s->internal_scale = 1;
+    s->subpixel = 1;
     s->crt_scanlines = 50;
     s->crt_mask = 30;
     s->memcard[0] = settings_join(s->dir, "card1.mcd");
@@ -226,6 +229,12 @@ void port_settings_load(const char *path) {
             s->gpu = v->string[0] == 'g';
         }
         settings_int(obj, "video", "internal_scale", 1, 8, &s->internal_scale);
+        if ((v = settings_member(obj, "video", "subpixel", PORT_JSON_STRING)) != NULL) {
+            if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0) {
+                port_settings_fail("video.subpixel", "\"off\" or \"on\", not \"%s\"", v->string);
+            }
+            s->subpixel = strcmp(v->string, "on") == 0;
+        }
         if ((v = settings_member(obj, "video", "filter", PORT_JSON_STRING)) != NULL &&
             (s->filter = port_filter_from_name(v->string)) < 0) {
             port_settings_fail("video.filter", "%s, not \"%s\"", port_filter_choices(1), v->string);
@@ -265,17 +274,14 @@ void port_settings_print(FILE *f, const PortSettings *s) {
     fputs(",\n    \"sha1\": ", f);
     port_json_write_string(f, s->disc_sha1 != NULL ? s->disc_sha1 : "");
     fprintf(f, "\n  },\n  \"video\": {\n    \"window\": %s,\n    \"scale\": %d,\n    \"fullscreen\": %s,\n"
-               "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d,\n"
-               "    \"filter\": \"%s\",\n"
-               "    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }\n"
-               "  },\n"
-               "  \"audio\": {\n    \"mute\": %s\n  },\n"
-               "  \"memcard1\": ",
+               "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d",
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
-            s->gpu ? "gpu" : "software", s->internal_scale,
-            port_filter_names[s->filter],
-            s->crt_scanlines, s->crt_mask, s->crt_curvature,
-            s->mute ? "true" : "false");
+            s->gpu ? "gpu" : "software", s->internal_scale);
+    fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel ? "on" : "off");
+    fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
+    fprintf(f, ",\n    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }", s->crt_scanlines, s->crt_mask,
+            s->crt_curvature);
+    fprintf(f, "\n  },\n  \"audio\": {\n    \"mute\": %s\n  },\n  \"memcard1\": ", s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);
     settings_print_path(f, s->memcard[1]);

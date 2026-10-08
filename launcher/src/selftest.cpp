@@ -193,6 +193,7 @@ static void test_settings_file(const std::string &root) {
     check(after.find("video") != nullptr && after.find("video")->find("scale")->as_int(0, 0, 99) == 2,
           "the change is written");
     after.member("video").set("scale", Json::number(4));
+    after.member("video").erase("subpixel"); // a member the sample predates: written with its default
     check(after == before, "everything else is kept as it was (input, mods, an unknown member, the order)");
 
     // Invalid values: a warning each, the defaults used.
@@ -210,6 +211,25 @@ static void test_settings_file(const std::string &root) {
               b.values.memcard[0].path == "card1.mcd" && b.values.memcard[1].path == "card2.mcd",
           "bad values fall back to the defaults");
 
+    // video.subpixel: "off" read and written back; a bad value warned about, "on" used.
+    {
+        const std::string sp = path_join(root, "subpixel");
+        path_make_dir(sp, nullptr);
+        write(path_join(sp, SETTINGS_FILE), R"({"schema":1,"video":{"subpixel":"off"}})");
+        SettingsFile f;
+        f.load(sp);
+        check(f.messages().empty() && f.values.subpixel == "off", "video.subpixel \"off\" is read");
+        f.values.subpixel = "on";
+        check(f.save(&err), "saving video.subpixel: " + err);
+        Json saved = Json::parse(read(f.path()), nullptr);
+        check(saved.find("video") != nullptr && saved.find("video")->find("subpixel") != nullptr &&
+                  saved.find("video")->find("subpixel")->as_string() == "on",
+              "video.subpixel is written");
+        write(path_join(sp, SETTINGS_FILE), R"({"schema":1,"video":{"subpixel":"smooth"}})");
+        SettingsFile g;
+        g.load(sp);
+        check(g.messages().size() == 1 && g.values.subpixel == "on", "a bad video.subpixel: one warning, \"on\"");
+    }
     // video.filter (the hardware renderer's present filter): read; written back once the file has it, not added to a
     // file that never chose one; a bad name warned about and "none" used.
     check(Json::parse(read(g.path()), nullptr).find("video")->find("filter") == nullptr,
