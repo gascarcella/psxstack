@@ -1193,6 +1193,9 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
     RenderPresentView u; /* dst, src, disp (cut) as present*.frag.hlsl read them; param for a filter */
     SDL_GPUGraphicsPipeline *filter = filtered ? render_present_pipeline(target != r.target) : NULL;
 
+    if (filter != NULL && rect[2] > 0 && rect[3] > 0) { /* the filter's first pass, if any */
+        render_present_prepare(cb, vram_xy != NULL ? r.vram_target : r.image, r.sampler, w, h);
+    }
     memset(&ct, 0, sizeof(ct));
     ct.texture = target;
     ct.load_op = SDL_GPU_LOADOP_CLEAR;
@@ -1209,6 +1212,9 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
         bind.texture = vram_xy != NULL ? r.vram_target : r.image;
         bind.sampler = r.sampler;
         SDL_BindGPUFragmentSamplers(pass, 0, &bind, 1);
+        if (filter != NULL) {
+            render_present_bind(pass, r.sampler);
+        }
         memset(&u, 0, sizeof(u));
         u.dst[0] = rect[0];
         u.dst[1] = rect[1];
@@ -1276,6 +1282,9 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
     if (r.device == NULL || r.window == NULL) {
         return 0;
     }
+    if (render_present_image()) {
+        vram_xy = NULL; /* the filter takes the 1x image (the target's units still run every vsync) */
+    }
     cb = SDL_AcquireGPUCommandBuffer(r.device);
     if (cb == NULL) {
         goto failed;
@@ -1334,6 +1343,9 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
             port_log("renderer: gpu: no %dx%d readback target: %s", ow, oh, SDL_GetError());
             return 0;
         }
+    }
+    if (dest != NULL && render_present_image()) {
+        vram_xy = NULL; /* a filtered picture from the 1x image, as the window's */
     }
     cb = SDL_AcquireGPUCommandBuffer(r.device);
     if (cb == NULL) {

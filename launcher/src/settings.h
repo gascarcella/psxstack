@@ -59,7 +59,7 @@ struct MemoryCard {
 };
 
 // video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
-inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt" };
+inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt", "smooth" };
 
 struct Settings {
     std::string disc_path; // "" = unset

@@ -813,7 +813,7 @@ static void section_title(const char *title) {
 // The hardware renderer's present filter (video.filter; under the GPU renderer only: the Software one shows the
 // picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (video.crt), a line of help for the choice.
 void App::draw_filter(float label_w) {
-    static const char *const labels[] = { "None (the PS1's pixels)", "Sharp", "Scanlines", "CRT" };
+    static const char *const labels[] = { "None (the PS1's pixels)", "Sharp", "Scanlines", "CRT", "Smooth (2D)" };
     static const char *const help[] = {
         "Each pixel of the picture as a block of whole window pixels, as it is.",
         "Sharp bilinear: every pixel the same size where the window is not a whole multiple of the picture (a "
@@ -822,6 +822,8 @@ void App::draw_filter(float label_w) {
         "tall as the picture's lines.",
         "A TV: the lines as glowing beams, the screen's red, green and blue stripes, and a curved screen if you want "
         "one. Softer than the others.",
+        "Rounds the stair steps of the pixel art (xBR). It always smooths the x1 picture, so the Resolution does not "
+        "apply to it.",
     };
     static_assert(SDL_arraysize(labels) == SDL_arraysize(FILTER_NAMES) && SDL_arraysize(help) == SDL_arraysize(labels),
                   "a label and a help line per filter");

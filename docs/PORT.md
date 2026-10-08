@@ -335,8 +335,9 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     sliders; `runtime/render_gpu_present.c`):
     the picture goes into the window through one pixel shader per filter (`shaders/present_<filter>.frag.hlsl` on
     `present_source.hlsli`), in one pass at video.c's rectangle, in place of the present's nearest shaders. No
-    intermediate target, so no memory at any internal scale; the time depends on the output only (under 0.5 ms at
-    3840x2160 on an RTX 4070 Ti SUPER, a few ms at 1080 lines on lavapipe). A filter reads both sources (the 32-bit
+    intermediate target at the output's or the internal scale's size, so no memory that grows with either (`smooth`
+    alone has a first pass, into a 640x576 16-bit texture); the time depends on the output only (at 3840x2160 on an
+    RTX 4070 Ti SUPER: sharp 0.24 ms, crt 1.0, smooth 0.29; at 1080 lines on lavapipe 5 to 17 ms). A filter reads both sources (the 32-bit
     image of a 24-bit display, a 15-bit display cut from the target), and its view (the destination rectangle, the
     source's size and corner, the display's lines) assumes no shape, so a wider cut or another aspect needs no shader
     change. Every filter is continuous in its sampling position: a pixel centre on a tie (exact at many window sizes)
@@ -347,7 +348,11 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     `crt` sums the four nearest lines as Gaussian beams in linear light (2.2) that widen with brightness, their area
     normalised, then an aperture grille (compensated) and an optional barrel curvature whose edge fades over one pixel.
     Both follow the display's lines, half of them for an interlaced picture (over 288 lines: a TV showed the two
-    fields without a gap), and fade their lines out below two output rows per line (a moire otherwise). The window
+    fields without a gap), and fade their lines out below two output rows per line (a moire otherwise). `smooth` is
+    our own xBR level 2 (Hyllian's published algorithm) on the 1x software image at every internal scale (the target's
+    N x N blocks of 1x texels would defeat a pixel-art filter): integer edge decisions per source pixel and corner
+    (a weighted YUV distance, so the same on every device), evaluated at cells k times smaller (k as `sharp`'s) with
+    the lines' blends ramping over a cell, then bilinear between cells. The window
     and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
     The software renderer shows the picture unfiltered and logs it.
   - The software GPU stays the reference and the default; every existing test uses it.

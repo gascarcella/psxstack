@@ -114,8 +114,10 @@ run's.
 
 ## Present filters: one pass, the default untouched (2026-10-08)
 The hardware renderer's filters (`--filter`, `video.filter`; docs/PORT.md "Rendering") are each one pixel shader in
-place of the present's own, with no intermediate target: their cost is the output's size times a few texel reads, and
-no memory at any internal scale. `none` keeps the present's nearest shaders, so the default picture cannot change. A
+place of the present's own, with no intermediate target at the output's size: their cost is the output's size times a
+few texel reads, and no memory that grows with the internal scale. (`smooth` adds one first pass at the 1x image's
+size, 640x576 at most: its edge decisions per source pixel, read four times per output pixel, made it 12 times
+faster.) `none` keeps the present's nearest shaders, so the default picture cannot change. A
 filter must be continuous in its sampling position: many window sizes put pixel centres exactly on a boundary between
 source pixels or lines, where devices round differently (a two-line CRT kernel differed by 154 between NVIDIA and
 lavapipe; a continuous one by 2). The software renderer is never filtered: it stays the reference picture.
