@@ -13,13 +13,18 @@
 
 #include "render_gpu_internal.h"
 
+#include "present_crt_frag_spv.h"
+#include "present_scanlines_frag_spv.h"
 #include "present_sharp_frag_spv.h"
 #ifdef _WIN32
+#include "present_crt_frag_dxil.h"
+#include "present_scanlines_frag_dxil.h"
 #include "present_sharp_frag_dxil.h"
 #endif
 
 static struct {
     int kind;
+    float param[4]; /* the shader's: scanlines, mask, curvature (0..1) */
     SDL_GPUShader *frag;
     SDL_GPUGraphicsPipeline *off, *swap;
 } f;
@@ -44,6 +49,12 @@ int render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextur
     case PORT_FILTER_SHARP:
         f.frag = render_shader(RENDER_SHADER(present_sharp_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
         break;
+    case PORT_FILTER_SCANLINES:
+        f.frag = render_shader(RENDER_SHADER(present_scanlines_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+        break;
+    case PORT_FILTER_CRT:
+        f.frag = render_shader(RENDER_SHADER(present_crt_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+        break;
     default:
         return 1;
     }
@@ -59,6 +70,9 @@ int render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextur
         return 0;
     }
     f.kind = pf->kind;
+    f.param[0] = (float)pf->scanlines / 100.0f;
+    f.param[1] = (float)pf->mask / 100.0f;
+    f.param[2] = (float)pf->curvature / 100.0f;
     return 1;
 }
 
@@ -67,6 +81,6 @@ SDL_GPUGraphicsPipeline *render_present_pipeline(int swap) {
 }
 
 void render_present_params(RenderPresentView *v) {
-    memset(v->param, 0, sizeof(v->param));
+    memcpy(v->param, f.param, sizeof(v->param));
 }
 #endif

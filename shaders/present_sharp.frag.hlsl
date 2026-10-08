@@ -9,13 +9,5 @@ float4 main(float4 pos : SV_Position) : SV_Target0 {
     if (shrinking()) {
         return float4(box(p) / 255.0, 1.0);
     }
-    float2 s = (float2(p) + 0.5) * float2(src.xy) / float2(dst.zw);
-    int2 k = max(dst.zw / src.xy, int2(1, 1));
-    int ax, bx, ay, by;
-    float fx, fy;
-    sharp_axis(s.x, k.x, ax, bx, fx);
-    sharp_axis(s.y, k.y, ay, by, fy);
-    float3 top = lerp(fetch(int2(ax, ay)), fetch(int2(bx, ay)), fx);
-    float3 bottom = lerp(fetch(int2(ax, by)), fetch(int2(bx, by)), fx);
-    return float4(floor(lerp(top, bottom, fy) + 0.5) / 255.0, 1.0);
+    return float4(floor(sharp_at(float2(p) + 0.5) + 0.5) / 255.0, 1.0);
 }

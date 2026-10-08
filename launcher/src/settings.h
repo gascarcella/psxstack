@@ -59,7 +59,7 @@ struct MemoryCard {
 };
 
 // video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
-inline const char *const FILTER_NAMES[] = { "none", "sharp" };
+inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt" };
 
 struct Settings {
     std::string disc_path; // "" = unset
@@ -69,8 +69,9 @@ struct Settings {
     int refresh = GAME_RATE; // 50 or 60: the nominal rate, or the game's other one (docs/LAUNCHER.md "The rate")
     std::string renderer = "software"; // "software" or "gpu" (the hardware renderer; docs/LAUNCHER.md "Members")
     int internal_scale = 1;            // the hardware renderer's resolution, 1..8 times the PS1's
-    std::string subpixel = "on";       // "on" or "off": the 3D at the GTE's sub-pixel positions above resolution x1
+    std::string subpixel = "on";       // "on", "perspective" or "off": the 3D at the GTE's sub-pixel positions above x1
     std::string filter = "none";       // the hardware renderer's present filter (video.filter): one of FILTER_NAMES
+    int crt_scanlines = 50, crt_mask = 30, crt_curvature = 0; // video.crt: the scanlines and crt filters', 0..100
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };
     std::string last_dir; // launcher.last_dir: where the file dialog opens (the launcher's own state)

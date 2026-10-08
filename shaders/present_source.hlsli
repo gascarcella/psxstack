@@ -61,3 +61,48 @@ void sharp_axis(float s, int k, out int a, out int b, out float f) {
     a = floor_div(j, k);
     b = floor_div(j + 1, k);
 }
+
+// Sharp bilinear at output position q (continuous, relative to the rectangle; a pixel's centre is p + 0.5).
+float3 sharp_at(float2 q) {
+    float2 s = q * float2(src.xy) / float2(dst.zw);
+    int2 k = max(dst.zw / src.xy, int2(1, 1));
+    int ax, bx, ay, by;
+    float fx, fy;
+    sharp_axis(s.x, k.x, ax, bx, fx);
+    sharp_axis(s.y, k.y, ay, by, fy);
+    float3 top = lerp(fetch(int2(ax, ay)), fetch(int2(bx, ay)), fx);
+    float3 bottom = lerp(fetch(int2(ax, by)), fetch(int2(bx, by)), fx);
+    return lerp(top, bottom, fy);
+}
+
+// The scanlines' lines: the display's, or half of them for an interlaced picture (more than 288 lines: a TV showed the
+// two fields' lines without a gap, so the beams follow one field's).
+int beam_lines() {
+    return cut.w > 288 ? cut.w / 2 : cut.w;
+}
+
+// The scanlines' strength s faded out below two output rows per line (fewer would alias into a moire).
+float beam_strength(float s) {
+    return s * saturate(float(dst.w) / float(beam_lines()) - 1.0);
+}
+
+// Source row y sampled along x at output position qx: sharp bilinear, or the average of the columns whose centres fall
+// in the output pixel where the rectangle is narrower than the picture.
+float3 row_at(int y, float qx) {
+    if (dst.z < src.x) {
+        int p = int(floor(qx));
+        int lo = (2 * p * src.x + dst.z - 1) / (2 * dst.z);
+        int hi = max(((2 * p + 2) * src.x + dst.z - 1) / (2 * dst.z), lo + 1);
+        float3 sum = float3(0.0, 0.0, 0.0);
+        int n = 0;
+        for (int x = lo; x < hi && x < lo + 8; x++) {
+            sum += fetch(int2(x, y));
+            n++;
+        }
+        return sum / n;
+    }
+    int a, b;
+    float f;
+    sharp_axis(qx * float(src.x) / float(dst.z), max(dst.z / src.x, 1), a, b, f);
+    return lerp(fetch(int2(a, y)), fetch(int2(b, y)), f);
+}
