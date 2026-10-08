@@ -140,6 +140,24 @@ fast-forward that ends never makes the game wait for the vsyncs it ran ahead).
 toggle binding) runs the game at the nominal rate times its speed (default `4x`), presents at most 60 images a second
 and mutes the audio device; the game, its log and its record are unchanged.
 
+## Texture dump
+`--dump-textures DIR` (the SDL build, either renderer, headless too; docs/PORT.md "Texture replacement") writes every
+texture a primitive samples, the first time it samples it, under DIR:
+- `<overlay>/<image>-<clut>-<4|8>bpp-<w>x<h>.png`: an indexed PNG whose palette is the CLUT, or
+  `<overlay>/<image>-15bpp-<w>x<h>.png` (RGBA). `<image>` and `<clut>` are the key's two 16-digit hashes; w x h is the
+  whole transfer in texels at that depth (an atlas: the image of a whole page, recoloured by one CLUT). `<overlay>` is
+  the tier-1 overlay that first sampled it (`main` without one); directories are only for people.
+- Colours are 5-bit channels widened as `(c << 3) | (c >> 2)`; alpha is 0 for the texel `0x0000` (transparent), 128 for
+  a texel with bit 15 set (semi-transparent where the primitive is) and 255 otherwise.
+- `index.json`: `{"schema": 1, "textures": [...]}`, one entry per key: `file`, `image`, `clut` (not for 15-bit),
+  `depth`, `size` [w, h], `first_vsync`, `overlays` (where it was sampled, at most 8), `vram` [x, y, w, h] (the
+  transfer's place when first sampled, in VRAM words), `clut_xy`, `uv` [u0, v0, u1, v1] (the texels primitives
+  sampled, inclusive, in the image's own texels: the part of an atlas that is this key's), `draws` (primitives),
+  `semi` (a semi-transparent primitive sampled it). It is rewritten at the end of every vsync that added a key and at
+  exit.
+- **A dump continues:** an existing `index.json` is read back at the start, existing files are never rewritten, and
+  the counts and ranges add up over the runs.
+
 ## What the build generates (`build/port/gen/`, by `tools/port_gen.py`)
 At configure time (the inputs are the files the game's tooling writes: `units.txt`, `overlays.txt`, `tag_sites.txt`,
 `volatile.txt`; GAME_CONTRACT.md "5"):

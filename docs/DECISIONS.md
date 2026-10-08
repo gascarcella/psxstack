@@ -116,3 +116,10 @@ run's.
 `video.subpixel` (`--subpixel`) defaults to `"on"`: a player who chooses a higher internal resolution expects the 3D
 not to wobble by whole 1x pixels, scale 1 and the software renderer cannot change, and the scale itself is already an
 opt-in (the first game's owner's decision, dw2003recomp #68). `"off"` keeps the PS1's whole pixels.
+
+## Texture keys by content, SHA-1, per VRAM word (2026-10-08)
+Texture replacement (docs/PORT.md "Texture replacement") names a texture by the transfer that loaded it and by its
+CLUT's content, never by VRAM position: the first game loads one image at up to 11 places and reuses places for
+others. The hash is SHA-1 truncated to 64 bits (`runtime/sha1.c`, no new third-party code; hashing all the first
+game's transfers costs nothing measurable). Ownership is tracked per VRAM word, not per transfer, because 30% of the
+first game's textured draws sample the intact rest of a transfer that a later one partly covered.

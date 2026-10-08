@@ -47,6 +47,7 @@
 #include "psyq_internal.h"
 #include "render_gpu.h"
 #include "render_gpu_subpixel.h"
+#include "render_gpu_textures.h"
 
 #include "render_gpu_shaders.h"
 
@@ -683,6 +684,7 @@ static void raster_copy(const GpuEvent *ev) {
 }
 
 static void raster_event(const GpuEvent *ev) {
+    render_gpu_tex_event(ev); /* the texture keys (render_gpu_textures.c), when switched on */
     switch (ev->kind) {
     case GPU_EV_TRIANGLE:
         raster_triangle(ev);
@@ -713,7 +715,7 @@ static void raster_event(const GpuEvent *ev) {
 
 static void render_release(void) {
     if (r.raster) {
-        gpu_set_listener(NULL);
+        gpu_set_listener(render_gpu_tex_active() ? render_gpu_tex_event : NULL);
         render_subpixel_stop();
     }
     if (r.device != NULL) {
