@@ -12,8 +12,8 @@
  * record the rest (the game draws with its own environments). */
 #include <string.h>
 #include "psyq_internal.h"
-#include "psyq/libgs.h"
-#include "psyq/libgpu.h"
+#include "psxstack/psyq/libgs.h"
+#include "psxstack/psyq/libgpu.h"
 
 MATRIX GsWSMATRIX; /* GsSetRefView2's world-screen matrix */
 MATRIX GsLIGHTWSMATRIX; /* GsSetFlatLight's light matrix */

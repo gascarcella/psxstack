@@ -1,7 +1,9 @@
 # port/psyq: the Psy-Q shim
 
 Our own implementation of the Psy-Q library functions the game calls (docs/PORT.md "The Psy-Q shim";
-DECISIONS "PC port architecture"): one C file per library, against the prototypes in `include/psyq/*.h`.
+DECISIONS "PC port architecture"): one C file per library, against the stack's own prototypes in
+`include/psxstack/psyq/*.h` (DECISIONS "Psy-Q declarations: the stack's"; a game's declarations must agree in ABI:
+`tools/psyq_decls.py`).
 MIT, like the repo. Written from the game's own use of the API and public hardware documentation; no SDK file, no
 emulator code (PsyCross, MIT, was consulted for signatures only).
 
@@ -39,7 +41,7 @@ Nothing calls `port_unimplemented` yet: every function the game uses has a fake 
 the shim: they resolve to the host libc. A definition in the executable would replace libc's for every shared
 library in the process (SDL included), and the libc ones already do what the game wants: `open("sim:C:\\...")`
 fails with -1 (SHOCKTST checks for it), the string functions are the same functions. The prototype differences in
-`include/psyq/libc2.h`/`libapi.h` (`s32` returns and lengths where libc has `size_t`) are harmless on the LP64 ABIs
+`include/psxstack/psyq/libc2.h`/`libapi.h` (`s32` returns and lengths where libc has `size_t`) are harmless on the LP64 ABIs
 (x86-64, AArch64): the low 32 bits of the return register and a 32-bit length register are what both sides use.
 
 ## Tracing

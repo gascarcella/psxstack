@@ -29,7 +29,7 @@
 #include <string.h>
 
 #include "psyq_internal.h"
-#include "psyq/libmcrd.h"
+#include "psxstack/psyq/libmcrd.h"
 
 
 #define MCRD_CARD_SIZE 0x20000

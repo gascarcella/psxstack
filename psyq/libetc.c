@@ -1,7 +1,7 @@
 /* psyq/libetc.c: LIBETC (vsync, the vsync callback, the video mode). The vsync "interrupt" is psyq_vsync_tick,
  * called by the port's interrupt pump (port_wait). */
 #include "psyq_internal.h"
-#include "psyq/libetc.h"
+#include "psxstack/psyq/libetc.h"
 
 static void (*psyq_vsync_handler)(void);
 static void (*psyq_vsync_hook)(void);

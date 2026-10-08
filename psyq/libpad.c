@@ -7,7 +7,7 @@
  * 4 for a digital pad, 7 for a DualShock in analog mode; term 3 = the id table, 0 here), PadGetState 6 = stable,
  * and that a digital pad reports no actuators (PadInfoAct -1 -> 0). */
 #include "psyq_internal.h"
-#include "psyq/libpad.h"
+#include "psxstack/psyq/libpad.h"
 
 #define PAD_STATE_STABLE 6
 #define PAD_ID_DIGITAL 0x41

@@ -79,7 +79,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "psyq_internal.h"
-#include "psyq/libcd.h"
+#include "psxstack/psyq/libcd.h"
 #include "spu.h"
 #include "xa.h"
 

@@ -7,7 +7,7 @@
  * no recursion). The behaviours below were checked against the PS1 (tests/golden/families/mdec.py), and the opening
  * movie's VRAM against the emulator's at the same movie frames (psyq/README.md "LIBPRESS"). */
 #include "psyq_internal.h"
-#include "psyq/libpress.h"
+#include "psxstack/psyq/libpress.h"
 
 static void (*psyq_press_out_handler)(void);
 static int psyq_press_out_in_handler; /* the handler is running */

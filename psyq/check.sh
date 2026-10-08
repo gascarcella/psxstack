@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# psyq/check.sh: compiles the Psy-Q shim on its own with the port's flags (-Wall -Wextra -Werror) and, given a
-# game's probe objects, checks that it covers every Psy-Q symbol the game's host objects need. Needs no CMake or SDL.
+# psyq/check.sh: compiles the Psy-Q shim on its own with the port's flags (-Wall -Wextra -Werror), against the stack's
+# own Psy-Q declarations (include/psxstack/psyq/), and, given a game's probe objects, checks that it covers every
+# Psy-Q symbol the game's host objects need. Needs no CMake or SDL.
 #
-#   psyq/check.sh --game-root DIR [--probe-dir DIR] [--compile] [-I DIR]...
-#     --game-root DIR   the game checkout: its include/ and root are on the include path (its recovered psyq/*.h,
-#                       its common.h), its port/game/game.json is the description
-#     --probe-dir DIR   the game's probe output (tools/port_inventory.py probe: DIR/include holds the override
-#                       headers, DIR/m64/obj the game's objects); default <game-root>/build/port_inventory
-#     --compile         compile only (no game objects needed)
+#   psyq/check.sh [--game-root DIR] [--probe-dir DIR] [--compile] [-I DIR]...
+#     --game-root DIR   the game checkout, for the coverage: its probe objects say what it needs
+#     --probe-dir DIR   the game's probe output (tools/port_inventory.py probe: DIR/include holds the generated
+#                       psxstack_game_gen.h, DIR/m64/obj the game's objects); default <game-root>/build/port_inventory
+#     --compile         compile only: no game needed (the shim compiles against the stack's own declarations,
+#                       include/psxstack/psyq/, with examples/hello's game.json standing in for the description)
 #     -I DIR            more include directories
-#   EXTRA="-O2 -fsanitize=address,undefined" psyq/check.sh ... --compile   # with more flags
+#   EXTRA="-O2 -fsanitize=address,undefined" psyq/check.sh --compile   # with more flags
 # Exit 0: compiled (and, with the coverage, nothing missing and no duplicate global).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,17 +27,27 @@ while [[ $# -gt 0 ]]; do
         *) echo "check: unknown argument $1" >&2; exit 2 ;;
     esac
 done
-[[ -n "$game" ]] || { echo "check: --game-root DIR is required (the shim compiles against a game's psyq headers)" >&2; exit 2; }
-probe="${probe:-$game/build/port_inventory}"
-OUT="$probe/psyq"
-if [[ ! -d "$probe/include" ]]; then
-    echo "check: $probe/include is missing: run the game's tools/port_inventory.py probe first" >&2
-    exit 2
+if [[ -z "$game" && $compile_only -eq 0 ]]; then
+    echo "check: --game-root DIR is required for the coverage (--compile needs no game)" >&2; exit 2
 fi
-CFLAGS=(-m64 -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -DPC_PORT -DNON_MATCHING -Wall -Wextra -Werror
-        -I"$probe/include" -I"$game/include" -I"$game" -I"$HERE/psyq" -I"$HERE/include" -I"$HERE/include/psxstack"
-        -I"$HERE/runtime" "${extra_inc[@]}")
+if [[ -n "$game" ]]; then
+    probe="${probe:-$game/build/port_inventory}"
+else
+    probe="${probe:-$HERE/build/psyq_check}"
+fi
+OUT="$probe/psyq"
 mkdir -p "$OUT"
+# The generated description header (hooks.h includes it): the game's probe wrote one; without a game, hello's.
+if [[ -f "$probe/include/psxstack_game_gen.h" ]]; then
+    gen_inc="$probe/include"
+else
+    [[ -z "$game" ]] || { echo "check: $probe/include is missing: run the game's tools/port_inventory.py probe first" >&2; exit 2; }
+    gen_inc="$OUT/include"
+    mkdir -p "$gen_inc"
+    python3 "$HERE/tools/game_gen.py" "$HERE/examples/hello/game.json" --out "$gen_inc/psxstack_game_gen.h"
+fi
+CFLAGS=(-m64 -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -DPC_PORT -Wall -Wextra -Werror
+        -I"$gen_inc" -I"$HERE/psyq" -I"$HERE/include" -I"$HERE/include/psxstack" -I"$HERE/runtime" "${extra_inc[@]}")
 rm -f "$OUT"/*.o
 for src in "$HERE"/psyq/*.c; do
     "$CC" ${EXTRA} "${CFLAGS[@]}" -c "$src" -o "$OUT/$(basename "${src%.c}").o"

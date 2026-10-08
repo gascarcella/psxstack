@@ -27,14 +27,14 @@ python3 tests/game_gen_test.py           # the description generator's test
 | Path | Contents |
 |---|---|
 | `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states |
-| `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the runtime's headers |
-| `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
+| `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the Psy-Q declarations the shim implements (`psyq/`), the runtime's headers |
+| `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh`. Its declarations are `include/psxstack/psyq/*.h` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/` | The one mod every game has |
 | `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
 | `windows/` | The game's Windows resource and manifest templates |
-| `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `mcp/` (the debug channel's MCP server, client and symbols) |
+| `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `psyq_decls.py` (a game's Psy-Q declarations against the stack's), `mcp/` (the debug channel's MCP server, client and symbols) |
 | `scripts/` | `setup.sh` (SDL3, ImGui, DXC, llvm-mingw, SDL3 for Windows, cmake), `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`: the game description |
 | `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test |

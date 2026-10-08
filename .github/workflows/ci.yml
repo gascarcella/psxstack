@@ -46,12 +46,13 @@ jobs:
           echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
       - name: examples/hello built through psxstack_add_game() and run headless (tests/hello_test.py)
         run: python3 tests/hello_test.py
-      - name: The shim compiles on its own against hello's headers (psyq/check.sh --compile)
+      - name: The shim compiles on its own, against the stack's declarations (psyq/check.sh --compile, no game)
+        run: psyq/check.sh --compile
+      - name: "The declarations check runs (tools/psyq_decls.py, the stack's headers on both sides, all the same)"
         run: |
-          mkdir -p build/probe/include
-          python3 tools/game_gen.py examples/hello/game.json --out build/probe/include/psxstack_game_gen.h
-          printf '#ifndef INCLUDE_ASM_H\n#define INCLUDE_ASM_H\n#define INCLUDE_ASM(F, N)\n#define INCLUDE_RODATA(F, N)\n#endif\n' > build/probe/include/include_asm.h
-          psyq/check.sh --game-root examples/hello --probe-dir build/probe --compile
+          mkdir -p build/decls
+          python3 tools/game_gen.py examples/hello/game.json --out build/decls/psxstack_game_gen.h
+          python3 tools/psyq_decls.py --gen-include build/decls --out build/decls $(for h in include/psxstack/psyq/*.h; do echo --game-header $h; done) -I include -I include/psxstack -D PC_PORT
 
   mcp:
     runs-on: ubuntu-24.04

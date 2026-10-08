@@ -17,8 +17,8 @@
 #include <string.h>
 
 #include "libsnd_internal.h"
-#include "psyq/libetc.h"
-#include "psyq/libsnd.h"
+#include "psxstack/psyq/libetc.h"
+#include "psxstack/psyq/libsnd.h"
 
 SndState snd;
 static int snd_max_progs = 0x80; /* program records of the VAB opened last (LIBSND keeps one value for all) */

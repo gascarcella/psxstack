@@ -21,8 +21,10 @@ fixed address range (**a slot**); **a tier** names a slot (tier 1 = slot 1, ...)
 ```
 
 Rules:
-1. **The stack never includes a game header** except through the two include paths the game passes it (below). It
-   uses `<stdint.h>` types in its own headers. The macros in `hooks.h` expand inside game code and may use the game's
+1. **The stack never includes a game header.** The runtime and the shim compile against the stack's own headers
+   alone (`include/psxstack/`, the Psy-Q declarations among them: `include/psxstack/psyq/`, DECISIONS "Psy-Q
+   declarations: the stack's") and the generated description; only the game's units and its adapter get the game's
+   include directories (below). The stack's public headers use `<stdint.h>` types. The macros in `hooks.h` expand inside game code and may use the game's
    `s32`/`u32`/`u8` names there.
 2. **The game's C never includes a stack header directly.** Its `include/port.h` (whatever it is called) includes
    `<psxstack/hooks.h>` and adds the game-specific hooks (its own slot-function typedef macros, its mod hooks).
@@ -151,7 +153,10 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
 - `VOLATILE` (optional): `<lo> <hi>` lines, the game-state image ranges the stable hash zeroes.
 - `GTEMAC` (optional): the game's `gtemac.h`, translated onto the software GTE; `INCLUDE_ASM_GUARD`: its
   `include_asm.h`'s guard.
-- `INCLUDE_DIRS`: the game's `include/` and root (its `common.h`, its recovered `psyq/*.h`: DECISIONS "Psy-Q headers").
+- `INCLUDE_DIRS`: the game's `include/` and root (its `common.h`, its own Psy-Q declarations). The units get them
+  first on their include path, the adapter as quote-only directories (`-iquote`); the runtime and the shim never see
+  them. The game's Psy-Q declarations must agree with the stack's in ABI: `tools/psyq_decls.py`, the inventory's
+  `decls` command (DECISIONS "Psy-Q declarations: the stack's").
 - `ADAPTER`: the adapter units; `MODS_DIRS`: directories of `<id>/mod.json` manifests (the stack's `mods/` is added).
 - `DEFINES`, `UNIT_COMPILE_OPTIONS`, `CONFIGURE_DEPENDS` (the inputs' sources, so a change reruns the configure), `RC`.
 Everything comes from tracked files: a port configures from a fresh clone with no disc. Options are cache variables

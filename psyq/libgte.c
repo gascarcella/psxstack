@@ -16,7 +16,7 @@
 #include <string.h>
 
 #include "psyq_internal.h"
-#include "psyq/libgte.h"
+#include "psxstack/psyq/libgte.h"
 
 s32 rcos(s32 a); /* the game declares it in src/wstag/wstag460.c; not in our libgte.h */
 /* Not called by the game (LIBGS calls them on the PS1); our libgte.h does not declare them. */
