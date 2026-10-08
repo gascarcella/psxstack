@@ -35,29 +35,42 @@ per frame") plugs into; the runtime may ignore them.
 | LIBAPI `libapi.c` | Events: `OpenEvent`/`CloseEvent`/`EnableEvent`/`DisableEvent`/`TestEvent`/`WaitEvent` over 32 event blocks (handles `0xF1000000 + n`); a delivery runs an `EvMdINTR` handler at once or marks an `EvMdNOINTR` event for `TestEvent`. Root counter 3 (the vblank): `SetRCnt`/`StartRCnt`/`StopRCnt`/`GetRCnt`/`ResetRCnt`; started with `RCntMdINTR`, it delivers `(RCntCNT3, EvSpINT)` once per vsync tick, after the `VSyncCallback` handler (a handler's `port_fiber_preempt` is honoured at the tick's end, docs/PORT.md "Fibers"). `EnterCriticalSection` (1 when interrupts were on) / `ExitCriticalSection` count the nesting for the trace | root counters 0-2 (`port_unimplemented`); `ChangeClearPad` (recorded) |
 | LIBCARD `libcard.c` | The memory card through the BIOS, on LIBMCRD's card store: `InitCARD`, `StartCARD`/`StopCARD`, `_bu_init`; `_card_info`/`_card_load` (SwCARD events) and `_card_clear` (HwCARD) complete at the next vsync tick with `EvSpIOE`, `EvSpTIMOUT` (no card), `EvSpNEW` (`_card_info`: the new-card flag, which `_card_clear` or a write clears; `_card_load`: not formatted) or `EvSpERROR`; `_card_format` (1/0), `_card_status`, `_card_wait`, `_card_chan`. The BIOS's file calls on `bu00:`/`bu10:`: `open` (`FREAD`, `FWRITE`, `FCREAT` with the block count in bits 16-31, `FASYNC`; descriptors 2..15), `read`/`write` (whole 128-byte frames inside the file; with `FASYNC` they complete at the next tick with a SwCARD event), `lseek` (SEEK_SET, SEEK_CUR), `close`, `firstfile`/`nextfile` (the BIOS's global search, `?`/`*`), `erase`, `format`. Another device fails (-1: the first game's `sim:`), `cdrom:` stops the run (`port_unimplemented`) | the timing (one tick per command) |
 | LIBPRESS `libpress.c`, MDEC `mdec.c` | The movie decoder (session 16, M5; our own, from psx-spx: no FFmpeg): `DecDCTvlc2` expands a .STR version 2 frame (the disc's movies are all v2, 320x416) into the MDEC's run-level words with MPEG-1's AC code table, word for word as LIBPRESS does; `DecDCTin` writes the mode into the command word (bit 0: 24-bit, clears bit 27; bit 1: sets bit 25) and starts the MDEC; `DecDCTout` writes `size` words of pixels: per 16x16 macroblock (Cr, Cb, Y1..Y4) the run-level decode (quantiser 1..63 with LIBPRESS's table, quantiser 0, 11-bit saturation, zig-zag), the IDCT on the scale table, YCbCr to 24-bit or 15-bit RGB; then the `DecDCToutCallback` handler runs, and a `DecDCTout` it makes runs after it returns (a loop, so the handler's `LoadImage` of the column just decoded happens before the next column overwrites its buffer); `DecDCTReset(0)` loads the default tables | `DecDCTvlcBuild` (the decoder has its own table; the game's 0x11000 bytes are left as they are); no DMA timing: a frame decodes inside `DecDCTout` |
-| LIBC2 | the host libc (see below) | — |
+| LIBC2 `libc2.c` | `rand`/`srand`: the PS1's generator (state × 0x41C64E6D + 12345, bits 16-30 returned: 0..0x7FFF), its state 0 at power-on (the PS1's `.bss`), cleared by the reset, in a save state; `port_rand_seed()` reads it for a game's adapter. The rest is the host libc (see below) | — |
 
 `port_unimplemented` stops the run where a game reaches what the shim does not model: root counters 0-2, the BIOS's
 `cdrom:` device, a volume sweep or a pitch from a note in LIBSPU, a LIBSND tick faster than the vsync, LIBGS's
 `GsTMDdiv*` handlers (subdivision) and a `GsFCALL4` entry the program left empty.
 
 ### LIBC2, and LIBAPI's names the host has too
-`strlen`, `strcpy`, `strncpy`, `memcpy`, `strcspn`, `atoi`, `sprintf`, `memset`, `bzero`, `bcopy`, `toupper`, `rand`
-and the other LIBC2 functions are **not** defined by the shim: they resolve to the host libc, whose string functions
-are the same functions. The prototype differences in `include/psxstack/psyq/libc2.h` (`s32` returns and lengths where
-libc has `size_t`) are harmless on the LP64 ABIs (x86-64, AArch64): the low 32 bits of the return register and a
-32-bit length register are what both sides use. **`rand` is the host's**: glibc's (or the Windows CRT's) sequence, not
-the PS1's LIBC2 `rand` (a linear congruential generator); a game whose replays depend on `rand` (the second game: 87
-calls) needs the PS1's.
+`strlen`, `strcpy`, `strncpy`, `memcpy`, `strcspn`, `atoi`, `sprintf`, `printf`, `memset`, `bzero`, `bcopy`,
+`strcat`, `strcmp`, `abs`, `toupper` and the other LIBC2 functions are **not** defined by the shim: they resolve to the
+host libc, whose string functions are the same functions. The prototype differences in
+`include/psxstack/psyq/libc2.h` (`s32` returns and lengths where libc has `size_t`) are harmless on the LP64 ABIs
+(x86-64, AArch64): the low 32 bits of the return register and a 32-bit length register are what both sides use (the
+games' lengths are constants or small positive values). The games' declarations differ in places (the second game's
+`void *bzero(void *, s32)`, where libc's returns nothing: no call uses the value; its `bcopy` lengths are constants);
+libc's `bcopy` also copies overlapping ranges correctly, which the PS1's need not, and nothing relies on either. The
+games' `sprintf` formats are all ones the host's reads the same way (`%d`, `%s`, `%x`, `%X`, `%c` with flags, widths
+and precisions; no `l`, `h` or floating-point conversion, which would read a host-sized argument); `printf` writes to
+the host's stdout, where the PS1's goes to the debug TTY.
 
-LIBAPI's `open`, `read`, `write`, `lseek` and `close` (the BIOS's file calls) and `EnterCriticalSection`/
-`ExitCriticalSection` are also names of the host (libc; Win32's kernel32). A definition named `open` in the executable
-would replace libc's for every shared library in the process (SDL included) and for the runtime's own files; one named
-`EnterCriticalSection` clashes with kernel32's at the Windows link. So the game's units are compiled with
-`include/psxstack/psyq_names.h` forced in (`cmake/psxstack.cmake`), whose object-like macros rename those names to
-the shim's `psyq_api_*` throughout the unit (calls, prototypes, and also a struct member or variable of the same name,
-consistently: the first game's `cdload_reader.read`); `libapi.c` and `libcard.c` include it too, so the stack's
-prototypes and their definitions carry Sony's names in the source and the shim's at link time. The first game's
+**`rand` and `srand` are the shim's** (`libc2.c`): the PS1's LIBC2 generator, a linear congruential one, whose
+sequence and range (0..0x7FFF) are not glibc's or the Windows CRT's, and on which a game's replays depend (the second
+game calls it 87 times; its main loop spins on it). Its state starts at 0, not at C's 1: on the PS1 it is a variable in
+the executable's `.bss`, and the second game's states recorded in the emulator are 2.55 million draws from 0 by its
+vsync 827 (1.2 billion from 1). The state is in the console's reset (cleared) and in save states (`psyq_state`), and a
+game's adapter reads it with `port_rand_seed()` (`hooks.h`) for its `game_state_random_index`, when the game's random
+index is `rand`'s state.
+
+LIBAPI's `open`, `read`, `write`, `lseek` and `close` (the BIOS's file calls), `EnterCriticalSection`/
+`ExitCriticalSection` and LIBC2's `rand`/`srand` are also names of the host (libc; Win32's kernel32). A definition
+named `open` or `rand` in the executable would replace libc's for every shared library in the process (SDL included)
+and for the runtime's own calls; one named `EnterCriticalSection` clashes with kernel32's at the Windows link. So the
+game's units are compiled with `include/psxstack/psyq_names.h` forced in (`cmake/psxstack.cmake`), whose object-like
+macros rename those names to the shim's `psyq_api_*` (LIBAPI) and `psyq_c2_*` (LIBC2) throughout the unit (calls,
+prototypes, and also a struct member or variable of the same name, consistently: the first game's
+`cdload_reader.read`); `libapi.c`, `libcard.c` and `libc2.c` include it too, so the stack's prototypes and their
+definitions carry Sony's names in the source and the shim's at link time. The first game's
 `open("sim:C:\...")` fails (-1) as before: the BIOS has no `sim:` device.
 
 ## Tracing

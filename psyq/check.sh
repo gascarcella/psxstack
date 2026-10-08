@@ -75,8 +75,9 @@ echo "compile: $(ls "$OUT"/*.o | wc -l) objects -> $OUT/libpsyq.a"
 
 # Coverage: the Psy-Q functions the game's objects need (undefined in the probe's objects and named in the game's
 # symbol files as library code: the game's tools/port_inventory.py link -v lists them) against what the shim
-# defines (open, read, write, lseek and close as its psyq_api_*: include/psxstack/psyq_names.h); what it does not
-# define (LIBC2's string functions, ...) is checked against the host libc's exports instead.
+# defines (open, read, write, lseek and close as its psyq_api_*, rand and srand as its psyq_c2_*:
+# include/psxstack/psyq_names.h); what it does not define (LIBC2's string functions, ...) is checked against the host
+# libc's exports instead.
 if [[ ! -d "$probe/m64/obj" ]]; then
     echo "check: $probe/m64/obj is missing: run the game's tools/port_inventory.py probe" >&2
     exit 2
@@ -91,8 +92,9 @@ have=$(nm -g --defined-only "$OUT"/*.o | awk '$2 ~ /^[TDBR]$/ {print $3}' | sort
 libc=$(nm -D --defined-only "$(gcc -print-file-name=libc.so.6)" | awk '{print $3}' | sed 's/@.*//' | sort -u)
 missing=0; via_libc=0; via_shim=0
 for s in $need $need_data; do
-    # the BIOS file calls the host libc also has: the game's units call the shim's psyq_api_* (psyq_names.h)
-    if grep -qx "psyq_api_$s" <<<"$have"; then via_shim=$((via_shim+1))
+    # the BIOS file calls and rand, which the host libc also has: the game's units call the shim's psyq_api_* and
+    # psyq_c2_* (psyq_names.h)
+    if grep -qx -e "psyq_api_$s" -e "psyq_c2_$s" <<<"$have"; then via_shim=$((via_shim+1))
     elif grep -qx "$s" <<<"$have"; then via_shim=$((via_shim+1))
     elif grep -qx "$s" <<<"$libc"; then via_libc=$((via_libc+1)); echo "  host libc: $s"
     else missing=$((missing+1)); echo "  MISSING: $s"; fi

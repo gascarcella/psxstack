@@ -60,8 +60,9 @@ static void usage(const char *argv0) {
             "                   settings file with every key and absolute paths, and exit 0 (64: a bad file)\n"
             "  --print-mods     print the built-in mods' registry (ids, options, defaults) as JSON and exit\n"
             "  --script-mods    with --script: keep the settings' mods on (default: every mod off under a script)\n"
-            "  --refresh HZ     50 (PAL, the default) or 60: the game's own 60 Hz mode (the NTSC patch's flag), the\n"
-            "                   pace, the audio's and the CD's rate (overrides the settings' video.refresh)\n"
+            "  --refresh HZ     50 (PAL) or 60 (default: the game's video.rate): the game's own response to the rate\n"
+            "                   (game_apply_rate), the pace, the audio's and the CD's rate (overrides the settings'\n"
+            "                   video.refresh)\n"
             "  --disc PATH      the user's disc (.cue or .bin; SHA-1 checked); without it reads find no data\n"
             "  --no-disc-check  skip the disc's SHA-1 check (experiments with another image)\n"
             "  --cd-speed S     the CD's timing: realistic (default: double speed and seeks) or instant\n"
@@ -156,7 +157,7 @@ int main(int argc, char **argv) {
     PortFilter filter = PORT_FILTER_DEFAULTS;
     int print_settings = 0, print_mods = 0, script_mods = 0;
     long fps = -1;
-    int refresh = 0; /* --refresh, else the settings' video.refresh; 0: neither (PAL) */
+    int refresh = 0; /* --refresh, else the settings' video.refresh; 0: neither (the description's video.rate) */
     int i;
     /* --config first: its values are the defaults that the other options override */
     for (i = 1; i < argc; i++) {
@@ -410,11 +411,10 @@ int main(int argc, char **argv) {
     spu_init();
     /* the game's own response to the rate (psxstack/game.h game_apply_rate: dw2003's 60 Hz mode, the NTSC patch's
      * flag; docs/LAUNCHER.md "50/60 Hz"), before the snapshot (port_overlay_init) so that the reset restores it and the
-     * reset check holds; the CD's ticks follow the rate too */
+     * reset check holds; the CD's and the XA audio's ticks follow the rate too: --refresh's, else the description's
+     * (not --fps's: the drive's rate per second stays the nominal one, libcd.c) */
     game_apply_rate(port_rate);
-    if (refresh == 60) {
-        psyq_cd_set_vsync_hz(60);
-    }
+    psyq_cd_set_vsync_hz(refresh != 0 ? refresh : PSXSTACK_GAME_RATE);
     port_overlay_init();
     if (speed != NULL && !port_disc_set_speed(speed)) {
         fprintf(stderr, "port: --cd-speed: unknown speed %s\n", speed);

@@ -224,8 +224,9 @@ function(psxstack_add_game target)
     target_compile_options(${game_lib} PRIVATE ${COMMON_FLAGS} -fno-builtin -fno-common -fdata-sections
                            -ffunction-sections -Wall -Wno-pointer-sign -Wno-unused-but-set-variable -Wno-unused-variable
                            ${G_UNIT_COMPILE_OPTIONS})
-    # The Psy-Q names that are also the host libc's (open, read, write, lseek, close: the BIOS's file calls) renamed to
-    # the shim's in every unit (include/psxstack/psyq_names.h), so the runtime, SDL and libc keep the host's.
+    # The Psy-Q names that are also the host libc's (open, read, write, lseek, close: the BIOS's file calls; LIBC2's
+    # rand, srand) renamed to the shim's in every unit (include/psxstack/psyq_names.h), so the runtime, SDL and libc
+    # keep the host's.
     target_compile_options(${game_lib} PRIVATE -include "${PSXSTACK_ROOT}/include/psxstack/psyq_names.h")
     # GCC 14+ makes some old-C constructs errors; the probe (tools/port_inventory.py) keeps them warnings the same way.
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 14)

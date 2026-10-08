@@ -123,7 +123,9 @@ C the game compiles into the port alongside the runtime. It implements:
   addresses), `game_state_volatile_count()` and `game_state_volatile()` (the ranges the stable hash zeroes),
   `game_state_read(addr, size, is_signed, out)` and `game_state_host(addr, size)`: a PS1 address outside the arena
   (the EXE's globals, an overlay's objects, memcard state) mapped to the host object by the adapter, from the tables
-  the build generates for it. The stack maps the arena itself and asks the adapter for everything else.
+  the build generates for it. The stack maps the arena itself and asks the adapter for everything else. A game
+  whose random index is LIBC2's `rand` state (the PS1's generator, the shim's: `psyq/libc2.c`) returns
+  `port_rand_seed()` (`hooks.h`) from `game_state_random_index()`.
 - **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,
   version, options, `start`/`frame` callbacks and an optional `status` (text for the window title). Their logic and
   hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
@@ -150,9 +152,10 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
   `config/wstag_c.txt` and the stage tables).
 - `MAIN_UNIT`: the unit whose `main` becomes `game_main`.
   Every unit is also compiled with `include/psxstack/psyq_names.h` forced in (`-include`): the Psy-Q functions whose
-  names are also the host's (LIBAPI's `open`, `read`, `write`, `lseek`, `close`, `EnterCriticalSection`, …) are
-  renamed to the shim's `psyq_api_*` by object-like macros, so a game's call reaches the shim and the runtime, SDL and
-  libc keep the real ones (DECISIONS "LIBAPI's clashing names"). A game's own identifier of one of those names (a
+  names are also the host's (LIBAPI's `open`, `read`, `write`, `lseek`, `close`, `EnterCriticalSection`, …;
+  LIBC2's `rand`, `srand`) are renamed to the shim's `psyq_api_*` and `psyq_c2_*` by object-like macros, so a game's
+  call reaches the shim and the runtime, SDL and libc keep the real ones (DECISIONS "LIBAPI's clashing names",
+  "LIBC2's rand: the shim's, renamed"). A game's own identifier of one of those names (a
   struct member, a local) is renamed too, harmlessly, as the macros are object-like.
 - `OVERLAYS`: a file of `<NAME>\t<tier>\t<file id>\t<symbols file or ->` lines: every overlay, its slot (1-based), the
   file ID the game loads it by, and the `name = 0xADDR; // type:func` file of its PS1 functions (the overlay address

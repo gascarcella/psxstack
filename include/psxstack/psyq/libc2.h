@@ -17,4 +17,9 @@ void *memcpy(void *dst, const void *src, u32 n);
 s32 strcspn(const char *s, const char *reject);
 s32 atoi(const char *s);
 
+/* The PS1's generator (psyq/libc2.c): 0..0x7FFF. rand and srand are also libc's names: a game's units and the shim see
+ * them as psyq_c2_rand and psyq_c2_srand (psxstack/psyq_names.h). */
+s32 rand(void);
+void srand(u32 seed);
+
 #endif /* PSYQ_LIBC2_H */

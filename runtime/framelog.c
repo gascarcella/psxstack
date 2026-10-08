@@ -134,6 +134,11 @@ void port_framelog_overlay_load(int tier, s32 file, const char *name, u32 word0,
               name != NULL ? name : "(data)", word0, size);
 }
 
+/* hooks.h: LIBC2's rand state, for the adapter's random-index probe (the shim keeps it: psyq/libc2.c). */
+uint32_t port_rand_seed(void) {
+    return psyq_rand_seed();
+}
+
 void port_framelog_checkpoint(const char *name, int image) {
     PortCheckpoint *c;
     c = port_append(&port_checkpoints, &port_checkpoint_n, &port_checkpoint_cap, sizeof(*port_checkpoints));

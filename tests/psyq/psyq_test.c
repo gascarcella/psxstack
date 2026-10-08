@@ -1,6 +1,6 @@
-/* tests/psyq/psyq_test.c: the shim's LIBGTE, LIBGPU and LIBGS functions on their own (tests/psyq_test.py builds this
- * with the shim's sources and the flags of psyq/check.sh, and runs it). Documented cases and properties, no game and no
- * disc: the values a function must give by its definition (Sony's descriptions, psx-spx), a function against the
+/* tests/psyq/psyq_test.c: the shim's LIBGTE, LIBGPU, LIBGS and LIBC2 functions on their own (tests/psyq_test.py builds
+ * this with the shim's sources and the flags of psyq/check.sh, and runs it). Documented cases and properties, no game
+ * and no disc: the values a function must give by its definition (Sony's descriptions, psx-spx), a function against the
  * commands it is made of, and the packets' bytes. What only the PS1 can settle (the exact rounding of the CORDICs, FLAG
  * in corner cases) is the consumers' goldens' (psyq/README.md "Behaviour assumed"). Prints one line per failure; exit 1
  * on any. */
@@ -1152,6 +1152,106 @@ static void test_gs_sort(void) {
     GsSetLightMode(0);
 }
 
+/* ---- LIBC2's rand and srand (psyq/libc2.c) ---- */
+
+/* The host's rand, reached by its own name: the shim's must not replace it (psyq_names.h renames the PS1's). */
+static int host_rand_after_srand1(void) {
+    srand(1);
+    return rand();
+}
+
+/* A save state's blocks in memory (savestate.h; runtime/savestate.c is not linked here): saving appends, loading
+ * reads them back in the same order. */
+struct PortState {
+    int loading;
+    u8 *buf;
+    size_t len, cap, pos;
+};
+
+void port_state_bytes(PortState *s, const char *tag, void *data, size_t size) {
+    (void)tag;
+    if (s->loading) {
+        memcpy(data, s->buf + s->pos, size);
+        s->pos += size;
+        return;
+    }
+    if (s->len + size > s->cap) {
+        s->cap = (s->len + size) * 2;
+        s->buf = realloc(s->buf, s->cap);
+    }
+    memcpy(s->buf + s->len, data, size);
+    s->len += size;
+}
+
+int port_state_loading(const PortState *s) {
+    return s->loading;
+}
+
+/* From here the game's view: psyq_names.h sends rand and srand to the shim's psyq_c2_*, as in a game's unit. */
+#include "psxstack/psyq_names.h"
+s32 rand(void);
+void srand(u32 seed);
+
+static void test_libc2(void) {
+    /* the generator's definition, from seed 1: state = state * 0x41C64E6D + 12345, bits 16-30 */
+    static const s32 from1[10] = { 16838, 5758, 10113, 17515, 31051, 5627, 23010, 7419, 16212, 4086 };
+    s32 got[10], again[10], max = 0, min = 0x7FFF;
+    u32 st = 0;
+    int i, glibc;
+    PortState save = { 0, NULL, 0, 0, 0 };
+
+    /* power-on: the state is 0 (the PS1's .bss), so the first draw is 12345 >> 16 = 0, the second 21468 */
+    psyq_reset();
+    CHECK(psyq_rand_seed() == 0, "the state after the reset is %u, want 0", psyq_rand_seed());
+    CHECK(rand() == 0 && psyq_rand_seed() == 12345u, "the first draw from power-on");
+    CHECK(rand() == 21468, "the second draw from power-on");
+    srand(1);
+    for (i = 0; i < 10; i++) {
+        got[i] = rand();
+        CHECK(got[i] == from1[i], "rand #%d after srand(1) = %d, want %d", i, got[i], from1[i]);
+    }
+    /* srand's round trip: the same seed, the same sequence; the state readable as the PS1 keeps it */
+    srand(1);
+    for (i = 0; i < 10; i++) {
+        again[i] = rand();
+    }
+    CHECK(memcmp(got, again, sizeof(got)) == 0, "srand(1) again does not repeat the sequence");
+    srand(0xDEADBEEFu);
+    CHECK(psyq_rand_seed() == 0xDEADBEEFu, "srand's seed reads back as %#x", psyq_rand_seed());
+    st = 0xDEADBEEFu * 0x41C64E6Du + 12345u;
+    CHECK(rand() == (s32)((st >> 16) & 0x7FFF) && psyq_rand_seed() == st, "a draw from 0xDEADBEEF");
+    /* RAND_MAX is 0x7FFF: 2^17 draws stay in 0..0x7FFF and reach both ends */
+    for (i = 0; i < (1 << 17); i++) {
+        s32 r = rand();
+        max = r > max ? r : max;
+        min = r < min ? r : min;
+    }
+    CHECK(min == 0 && max == 0x7FFF, "2^17 draws span %d..%d, want 0..0x7FFF", min, max);
+    /* the console's reset clears the state; a save state holds it */
+    srand(77);
+    psyq_reset();
+    CHECK(psyq_rand_seed() == 0 && rand() == 0, "the reset did not clear the state");
+    srand(1);
+    rand();
+    psyq_state(&save);
+    for (i = 0; i < 5; i++) {
+        got[i] = rand();
+    }
+    srand(999);
+    save.loading = 1;
+    psyq_state(&save);
+    CHECK(save.pos == save.len, "the state read %zu of %zu bytes", save.pos, save.len);
+    for (i = 0; i < 5; i++) {
+        again[i] = rand();
+    }
+    CHECK(memcmp(got, again, 5 * sizeof(s32)) == 0 && got[0] == from1[1], "a loaded state does not resume rand");
+    free(save.buf);
+    /* the host's rand is still libc's (another generator, RAND_MAX above 0x7FFF on glibc) */
+    glibc = host_rand_after_srand1();
+    CHECK(glibc != from1[0], "the host's rand gave the PS1's first value: the shim's replaced libc's");
+    psyq_reset();
+}
+
 int main(void) {
     psyq_reset();
     test_scalar();
@@ -1166,6 +1266,7 @@ int main(void) {
     test_gs_coords();
     test_gs_setup();
     test_gs_sort();
+    test_libc2();
     printf("psyq_test: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
