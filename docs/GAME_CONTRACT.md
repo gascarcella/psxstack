@@ -110,18 +110,22 @@ C the game compiles into the port alongside the runtime. It implements:
 - `void game_apply_rate(long rate);` called after the settings are read and before `game_main`: the game's own
   response to a non-default rate (dw2003: `records_60hz = 1` for 60). May be empty.
 - **State probes** (the replay scripts, the debug channel, the checkpoint hash): `game_state_stage()`,
-  `game_state_file()`, `game_state_map()`, `game_state_random_index()`, `game_state_player_pos(s32 *x, s32 *y)`,
-  `game_state_image(u8 *out)` with `GAME_STATE_IMAGE_SIZE` (the PS1 bytes a checkpoint hashes, pointers as PS1
-  addresses), `game_state_volatile[]` (the ranges the stable hash zeroes), `game_state_host(addr, size)` for the
-  game's own fixed-address objects outside the arena (memcard state, an overlay's bss object). The stack maps the
-  arena, the EXE's symbols and the overlays' sections itself from the generated tables.
-- **The mods:** `const PortMod *const game_mods[]` and `game_mod_count`: each mod's id, version, options and
-  `start`/`frame` callbacks, in the stack's `PortMod` shape. Their logic and hooks are the game's; the option types,
-  the manifest reader, the hotkeys, `--print-mods` and the settings section are the stack's. The manifests
-  (`mods/<id>/mod.json`) sit in the game repo and the build copies them next to the binary.
+  `game_state_file()`, `game_state_map()`, `game_state_random_index()`, `game_state_player_pos(double *x, double *y)`,
+  `game_state_image_size()` and `game_state_image(uint8_t *out)` (the PS1 bytes a checkpoint hashes, pointers as PS1
+  addresses), `game_state_volatile_count()` and `game_state_volatile()` (the ranges the stable hash zeroes),
+  `game_state_read(addr, size, is_signed, out)` and `game_state_host(addr, size)`: a PS1 address outside the arena
+  (the EXE's globals, an overlay's objects, memcard state) mapped to the host object by the adapter, from the tables
+  the build generates for it. The stack maps the arena itself and asks the adapter for everything else.
+- **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,
+  version, options, `start`/`frame` callbacks and an optional `status` (text for the window title). Their logic and
+  hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
+  fast-forward (the one mod every game has) are the stack's. The manifests (`mods/<id>/mod.json`) sit in the game
+  repo and the build copies them next to the binary; `port_fast_forward_request()` lets a game mod ask for
+  fast-forward.
 - **Weak stand-ins** for data the game's residual asm owned (`asmdata.c`), placed in the right overlay section.
-Every function has a weak default in the stack that returns 0 or does nothing, so a new game starts with an empty
-adapter and adds probes as its tests need them.
+Every function has a weak default in the stack (`runtime/game_defaults.c`) that returns 0 or does nothing, so a new game
+starts with an empty adapter and adds probes as its tests need them. They are functions rather than arrays so that
+the weak defaults also work on COFF (Windows).
 
 ### 5. The build inputs
 Passed to `psxstack_add_game()` (`cmake/psxstack.cmake`, phase 2):
