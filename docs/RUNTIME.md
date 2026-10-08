@@ -88,7 +88,10 @@ logs `renderer: gpu unavailable (<why>); software` and uses SDL_Renderer. Its ra
 VRAM target of its own (`runtime/render_gpu.c`'s header comment) and a 15-bit display is presented from that target; 24-bit
 displays (the movies, the title) stay the software image. At the internal scale of 1 the picture is the software
 path's, pixel for pixel; `--internal-scale N` (`video.internal_scale`, 2 to 8) draws at N times the resolution (no
-dithering, 8-bit colour; a device that cannot allocate the targets gets a lower scale, logged). Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
+dithering, 8-bit colour; a device that cannot allocate the targets gets a lower scale, logged). Above scale 1 the 3D is
+drawn at the GTE's sub-pixel positions (`--subpixel on`, the default; `video.subpixel`; `docs/PORT.md` "Sub-pixel
+precision"), so it moves smoothly instead of a whole 1x pixel at a time; `--subpixel off` keeps the PS1's whole pixels.
+The log's last renderer line counts the polygon vertices drawn and those at their sub-pixel position. Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
 configuring the SDL build without it fails with that hint; the Windows build also compiles them to DXIL, and fails on a
 DXC that cannot sign it (no `libdxil.so` beside it). `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture
 of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
