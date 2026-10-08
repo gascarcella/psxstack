@@ -82,6 +82,12 @@ void port_pace_set(long fps);
 /* mods.c: a game mod asks for fast-forward (skip_dialogues' fast_forward_waits while a cutscene runs): on or off,
  * with fast_forward's speed and mute. */
 void port_fast_forward_request(int on);
+/* video.c: widescreen (GAME_CONTRACT.md "4. The adapter units", the mods; render_gpu_wide.c). A game mod that widens
+ * some scenes calls port_video_widescreen_enable from its start (before the window opens: with the GPU renderer a new
+ * window opens 16:9 and the rasteriser keeps a wide canvas) and port_video_widescreen every vsync: on while the
+ * scene's 3D reaches past the display's edges, off elsewhere. The software renderer stays 4:3 (logged once). */
+void port_video_widescreen_enable(void);
+void port_video_widescreen(int on);
 long port_pace_get(void);
 int port_video_available(void);
 int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malformed (or too many) */
