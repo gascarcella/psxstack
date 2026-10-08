@@ -342,3 +342,8 @@ int snd_spu_in_transfer(void) {
 void snd_spu_set_in_transfer(int on) {
     sspu.transfer_done = !on;
 }
+
+/* A save state (psyq_internal.h): LIBSPU's transfer state. */
+void snd_spu_state(PortState *s) {
+    PORT_STATE_VAR(s, sspu);
+}

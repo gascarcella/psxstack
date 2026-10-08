@@ -80,3 +80,10 @@ int SetVideoMode(int mode) {
     psyq_video_mode = mode;
     return prev;
 }
+
+/* A save state (psyq_internal.h): the game's handler, the vsync count, the video mode; the hooks are the runtime's. */
+void psyq_etc_state(PortState *s) {
+    PORT_STATE_VAR(s, psyq_vsync_handler);
+    PORT_STATE_VAR(s, psyq_vsync_count);
+    PORT_STATE_VAR(s, psyq_video_mode);
+}

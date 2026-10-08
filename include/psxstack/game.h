@@ -55,6 +55,12 @@ void *game_state_host(uint32_t addr, int size);
 int game_mod_count(void);
 PortMod *game_mods(void);
 
+/* ---- Save states (savestate.h, docs/PORT.md "Save states"): the adapter's own state that lives across vsyncs and is
+ * not in the game's sections (its mods' statics), named with port_state_bytes / PORT_STATE_VAR in a fixed order, both
+ * directions in one function. Default: nothing. */
+struct PortState;
+void game_savestate(struct PortState *s);
+
 /* ---- The state tables the build generates for the adapter from the game's symbol files (tools/port_gen.py state):
  * the EXE's functions ({PS1 address, host function}), its sized data symbols ({PS1 address, PS1 size, name, host
  * object, the layout-identical prefix}). The runtime does not read them; the adapter's probes do. */

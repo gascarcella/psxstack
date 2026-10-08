@@ -99,3 +99,15 @@ shadow is not available to a native port), so a linked polygon's vertex words ar
 run of SXY stores (one mesh) and the result is keyed by the packet word's host address, validated against the word and
 its integer when drawn. Words two vertices of a mesh share take their mean: no game-side hook is needed (the first
 game's owner chose this over a hook at its copies, which would have made them exact).
+
+## Save states hold the native stack, at fixed addresses (2026-10-08)
+A state is the end of a vsync: the game's sections, the arena, every module's state through one sync function per
+module (`savestate.h`; the same function saves and loads, so the directions cannot drift), and the game's own C stack
+and registers. The game is native code, so its frames and objects hold host pointers; rather than translate them,
+a state is valid only for the binary that saved it, at the same addresses: ELF builds are non-PIE (they already were,
+for the debug channel), the game runs on a static stack of the runtime's when states may be used, the context is
+`__builtin_setjmp`'s unmangled buffer at the end of `port_frame`, and the header names the binary (SHA-1) and the
+addresses, refused on a mismatch. A rebuild therefore invalidates every state; making one again is a replay to the
+point (the first game's battle: about 10 s headless), which is what its tests do. The heap is never in a state (the
+memory cards are media, like the disc); host state (the window, the audio device, files, caches) is the loading
+run's.

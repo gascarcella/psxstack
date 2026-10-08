@@ -477,3 +477,11 @@ void psyq_mcrd_reset(void) {
         psyq_mcrd_cards[i].fresh = psyq_mcrd_cards[i].image != NULL;
     }
 }
+
+/* A save state (psyq_internal.h): the command in progress and the new-card flags. The cards' images are media, like
+ * the disc: the loading run's own (--memcard1/2). */
+void psyq_mcrd_state(PortState *s) {
+    PORT_STATE_VAR(s, psyq_mcrd_cmd);
+    PORT_STATE_VAR(s, psyq_mcrd_cards[0].fresh);
+    PORT_STATE_VAR(s, psyq_mcrd_cards[1].fresh);
+}

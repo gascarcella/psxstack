@@ -144,6 +144,15 @@ long port_process_id(void) {
     return (long)GetCurrentProcessId();
 }
 
+int port_exe_path(char *out, size_t out_size) {
+    wchar_t w[MAX_PATH * 4];
+    DWORD n = GetModuleFileNameW(NULL, w, (DWORD)(sizeof(w) / sizeof(w[0])));
+    if (n == 0 || n >= sizeof(w) / sizeof(w[0])) {
+        return 0;
+    }
+    return WideCharToMultiByte(CP_UTF8, 0, w, -1, out, (int)out_size, NULL, NULL) > 0;
+}
+
 int port_file_open_read(const char *path) {
     wchar_t w[4096];
     if (!win_wide(path, w, 4096)) {
@@ -354,6 +363,15 @@ int port_file_replace(const char *tmp, const char *path) {
 
 long port_process_id(void) {
     return (long)getpid();
+}
+
+int port_exe_path(char *out, size_t out_size) {
+    ssize_t n = readlink("/proc/self/exe", out, out_size);
+    if (n <= 0 || (size_t)n >= out_size) {
+        return 0;
+    }
+    out[n] = '\0';
+    return 1;
 }
 
 int port_file_open_read(const char *path) {

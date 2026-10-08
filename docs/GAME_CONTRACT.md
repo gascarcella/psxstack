@@ -122,6 +122,11 @@ C the game compiles into the port alongside the runtime. It implements:
   fast-forward (the one mod every game has) are the stack's. The manifests (`mods/<id>/mod.json`) sit in the game
   repo and the build copies them next to the binary; `port_fast_forward_request()` lets a game mod ask for
   fast-forward.
+- **Save states:** `game_savestate(PortState *s)` names the adapter's own state that lives across vsyncs outside the
+  game's sections (its mods' statics: a save in progress, a remainder carried between battles) with
+  `PORT_STATE_VAR` (`<psxstack/savestate.h>`), in a fixed order; the same function saves and loads. The mods' options
+  and toggles are settings, not state. The game's own data needs nothing: every writable byte of its units is in the
+  renamed sections (`port_gen.py sections` proves it at every link), which a state holds whole.
 - **Weak stand-ins** for data the game's residual asm owned (`asmdata.c`), placed in the right overlay section.
 Every function has a weak default in the stack (`runtime/game_defaults.c`) that returns 0 or does nothing, so a new game
 starts with an empty adapter and adds probes as its tests need them. They are functions rather than arrays so that
@@ -170,7 +175,7 @@ is `examples/hello` (`tests/hello_test.py`): a Psy-Q program with no game and no
   and address tables, the interrupt pump and timing at `video.rate`, the reset, the disc source with the SHA-1 check
   over `discs[]`, the memory cards, settings (schema 1, `--config`), the per-frame log and record, the input script,
   the window and input over SDL3, the software GPU, the hardware renderer, the SPU and audio, the crash report, the
-  debug channel.
+  debug channel, save states (`--save-state`, `--load-state`).
 - **The Psy-Q shim:** the libraries' behavior over the hardware models. It implements what its games call; a new
   game's missing function stops with `port_unimplemented(name)` and is added to the shim (the shim grows per game and
   stays generic).

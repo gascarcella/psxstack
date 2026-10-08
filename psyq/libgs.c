@@ -350,3 +350,14 @@ s32 GsSetRefView2(GsRVIEW2 *pv) {
     D_80081338 = *ws;
     return 0;
 }
+
+/* A save state (psyq_internal.h): LIBGS's matrices and settings. */
+void psyq_gs_state(PortState *s) {
+    PORT_STATE_VAR(s, GsWSMATRIX);
+    PORT_STATE_VAR(s, GsLIGHTWSMATRIX);
+    PORT_STATE_VAR(s, D_80081318);
+    PORT_STATE_VAR(s, D_80081338);
+    PORT_STATE_VAR(s, D_80081398);
+    PORT_STATE_VAR(s, D_800812D8);
+    PORT_STATE_VAR(s, psyq_gs);
+}

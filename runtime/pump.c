@@ -28,6 +28,7 @@
 #include "port_harness.h"
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 
 long port_max_frames = 600;
 long port_frames;
@@ -99,6 +100,7 @@ static void port_frame(void) {
             pump_pause_wanted = 1;
         }
     }
+    PORT_SAVESTATE_POINT(); /* the end of the vsync: a state's context (runtime/savestate.c), before the pause */
     if (pump_pause_wanted) {
         port_pause();
     }

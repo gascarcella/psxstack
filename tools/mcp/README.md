@@ -34,6 +34,7 @@ symbol files under `fixtures/`; `<PREFIX>_MCP_GAME` in the environment (`PSXSTAC
 | `wait_until(target, value, size, signed, timeout_frames)`, `wait_stage(stage, timeout_frames)`, `wait_map(map, timeout_frames)` | Run until a read, the stage (overlay slot, as the pad scripts' `wait_stage`) or the map matches, or the timeout; leaves the game paused; returns `{frame, hit}`. |
 | `screenshot(path, renderer)` | The current display as a PNG image (and saved to `path` if given); `renderer="gpu"`: the hardware renderer's picture at its internal resolution (a game started with `extra_args=["--renderer", "gpu", "--internal-scale", "N"]`). |
 | `state_hash()` | The SHA-1 of the game-state image, as a replay checkpoint. |
+| `state_save(path)`, `state_load(path)` | A save state (the runtime's `save_state`/`load_state`): the whole machine at the end of the current vsync to `path`, and back to it later in this or another run of the same binary; a paused game stays paused at the loaded vsync. |
 
 Errors from the game (an unmapped address, "script owns the pad", ...) come back as tool errors with the game's
 message; a game that dies comes back with its stderr tail.

@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "spu.h"
 #include "psyq.h"
+#include "savestate.h"
 
 int port_trace;
 
@@ -49,7 +50,7 @@ static void usage(const char *argv0) {
             "          [--window] [--scale N] [--fullscreen] [--fps N] [--input-test] [--screenshot FRAME:PATH]\n"
             "          [--renderer software|gpu] [--internal-scale N] [--gpu-screenshot FRAME[@WxH]:PATH]\n"
             "          [--spu-trace FILE] [--wav FILE] [--mute] [--debug SOCKET] [--debug-hold] [--crash-dir DIR]\n"
-            "          [--version]\n"
+            "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--version]\n"
             "  --config JSON    the settings file (docs/LAUNCHER.md; what the launcher starts the game\n"
             "                   with): the disc, the window, the memory cards (default card1.mcd and card2.mcd beside\n"
             "                   the file), the watchdog (default off); the options below override it\n"
@@ -98,6 +99,11 @@ static void usage(const char *argv0) {
             "                   polled once per vsync; turns the watchdog and the default frame cap off\n"
             "  --debug-hold     with --debug: hold the game paused at its first vsync until the client resumes it\n"
             "                   (a run reproducible from frame 1: the client connects before anything happened)\n"
+            "  --save-state W:F save the whole state to F at the end of vsync W, or with a script, of the frame in\n"
+            "                   which its checkpoint W ran (docs/RUNTIME.md \"Save states\"); repeatable\n"
+            "  --save-state-exit  exit 0 once every --save-state is written\n"
+            "  --load-state F   start from the state F instead of the power-on: the same binary only; with the\n"
+            "                   script that saved it, the script goes on from there\n"
             "  --crash-dir DIR  where a crash report goes (crash-<time>.txt; docs/PORT.md \"Crash report\"); default:\n"
             "                   the current directory\n"
             "  --version        print the build's version and commit, and exit\n",
@@ -221,6 +227,15 @@ int main(int argc, char **argv) {
             debug = argv[++i];
         } else if (strcmp(argv[i], "--debug-hold") == 0) {
             debug_hold = 1;
+        } else if (strcmp(argv[i], "--save-state") == 0 && i + 1 < argc) {
+            if (!port_savestate_add(argv[++i])) {
+                fprintf(stderr, "port: --save-state: FRAME:FILE or CHECKPOINT:FILE (at most 16): %s\n", argv[i]);
+                return 64;
+            }
+        } else if (strcmp(argv[i], "--save-state-exit") == 0) {
+            port_savestate_set_exit();
+        } else if (strcmp(argv[i], "--load-state") == 0 && i + 1 < argc) {
+            port_savestate_set_load(argv[++i]);
         } else if (strcmp(argv[i], "--crash-dir") == 0 && i + 1 < argc) {
             crash_dir = argv[++i];
         } else if (strcmp(argv[i], "--version") == 0) {
@@ -372,11 +387,22 @@ int main(int argc, char **argv) {
                                         * accepts the client there (pump.c port_pause) */
         }
     }
+    if (port_savestate_wanted() || debug != NULL) {
+        port_savestate_arm(port_savestate_wanted()); /* the game on its own stack: a state can hold it (savestate.c) */
+    }
     port_pump_init();
     port_log("start: max-frames %ld, watchdog %d s, %ld Hz", port_max_frames, port_watchdog_sec, port_rate);
-    if (port_setjmp(port_reset_jmp) != 0) {
+    switch (port_setjmp(port_reset_jmp)) {
+    case 0:
+        port_savestate_run(0); /* game_main, or the --load-state resumed */
+        break;
+    case 1:
         port_reset_state(); /* the script's reset step (port_reset_request) */
+        port_savestate_run(1);
+        break;
+    default:
+        port_savestate_run(1); /* the debug channel's load_state */
+        break;
     }
-    game_main();
     port_exit(0, "game_main returned");
 }

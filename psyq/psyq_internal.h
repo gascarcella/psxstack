@@ -29,6 +29,23 @@ void psyq_gte_reset(void);
 void psyq_press_reset(void);
 void psyq_snd_reset(void);
 
+/* Each library's part of a save state (psyq_state in psyq.c; include/psxstack/savestate.h): its state the game can
+ * observe, named in a fixed order; on a load, what depends on it is fixed up (gpu.c: the decoded textures, the
+ * listener's VRAM). The runtime's hooks (the vsync hooks, the CD's reader, the listener) are the loading run's. */
+#include "savestate.h"
+void psyq_etc_state(PortState *s);
+void psyq_cd_state(PortState *s);
+void psyq_pad_state(PortState *s);
+void psyq_gpu_state(PortState *s);
+void gpu_state(PortState *s);
+void psyq_gs_state(PortState *s);
+void gte_state(PortState *s);
+void psyq_press_state(PortState *s);
+void mdec_state(PortState *s);
+void psyq_snd_state(PortState *s);
+void snd_spu_state(PortState *s);
+void psyq_mcrd_state(PortState *s);
+
 /* gte.c: the GTE (COP2). The generated gtemac.h (tools/port_gen.py overrides) calls these with the registers and
  * command words of include/psyq/gtemac.h's MIPS sequences, and declares them itself (the game's units do not see
  * this header): mtc2/lwc2 write data register `reg` (0..31), mfc2/swc2 read it, ctc2/cfc2 the control registers,

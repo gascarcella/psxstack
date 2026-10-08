@@ -418,3 +418,8 @@ u32 mdec_decode_out(u32 *dst, u32 words) {
     }
     return done / 4;
 }
+
+/* A save state (psyq_internal.h): the tables, the decode in progress, the macroblock being output. */
+void mdec_state(PortState *s) {
+    PORT_STATE_VAR(s, mdec);
+}

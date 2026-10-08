@@ -78,6 +78,11 @@ def test_client():
             idat = out[out.index(b"IDAT") + 4:]
             raw = zlib.decompress(idat[: len(idat) - 12])
             check(len(raw) == 240 * (1 + 320 * 3) and raw[1:4] == pix[:3], "PNG rows round-trip")
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "s.state")
+            check(g.save_state(p)["frame"] == 57, "save_state")
+            g.step(3)
+            check(g.load_state(p) == 57 and g.status()["frame"] == 57 and g.hash() == h, "load_state")
         check(g.reset() == 57 and g.status()["frame"] == 0, "reset")
         check(len(g.log()) > 0 and "fake_game" in g.log(1)[0], "stderr log captured")
         g2 = Game.attach(g.socket_path) if False else None  # the fake accepts one client at a time
@@ -194,6 +199,11 @@ def test_server():
     lk = server.symbol_lookup("gamestate_data")
     check(lk["ps1"]["addr"] == "0x80048d34", f"symbol_lookup {lk}")
     check(server.symbol_search("gamestate_data", 3)["count"] >= 1, "symbol_search")
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "s.state")
+        check(server.state_save(p)["frame"] == 29, "state_save")
+        server.game_step(2)
+        check(server.state_load(p)["frame"] == 29 and server.game_status()["frame"] == 29, "state_load")
     check(server.game_reset()["frame"] == 29 and server.game_status()["frame"] == 0, "game_reset")
     lg = server.game_log(5)["lines"]
     check(len(lg) == 5 and all("fake_game" in l for l in lg), f"game_log {lg[-1]}")

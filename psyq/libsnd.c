@@ -414,3 +414,9 @@ s16 SsUtKeyOff(s16 voice, s16 vabId, s16 prog, s16 tone, s16 note) {
     snd_call("SsUtKeyOff(%d, %d, %d, %d, %d)", voice, vabId, prog, tone, note);
     return (s16)snd_ut_key_off(voice, vabId, prog, tone, note);
 }
+
+/* A save state (psyq_internal.h): LIBSND's state (its pointers are into the arena and into itself). */
+void psyq_snd_state(PortState *s) {
+    PORT_STATE_VAR(s, snd);
+    PORT_STATE_VAR(s, snd_max_progs);
+}

@@ -16,6 +16,8 @@ build/port/<game> --max-frames 600 --log run.log --record run.json   # the per-f
 build/port/<game> --disc <disc>.cue --script scripts/new_game.json --log run.log --record run.json
 build/port/<game> --help                  # every option (--cd-speed instant|realistic, --no-disc-check, ...)
 build/port/<game> --disc <disc>.cue --debug /tmp/game.sock   # the debug channel (runtime/debug.c; tools/mcp drives it)
+build/port/<game> --disc <disc>.cue --script s.json --save-state <checkpoint>:s.state --save-state-exit   # a state
+build/port/<game> --disc <disc>.cue --load-state s.state [--script s.json] [--window]   # the run goes on from it
 ```
 Options (CMake cache): `-DPSXSTACK_SANITIZE=ON` (`-fsanitize=address,undefined`; needs libasan/libubsan installed),
 `-DPSXSTACK_M32=ON` (a 32-bit binary: `-m32` on every compile and link; needs gcc-multilib),
@@ -193,8 +195,9 @@ pointer's PS1-style address (`PTR_TO_S32`) is `PORT_SLOT1_BASE + offset`. An
 ordering-table tag (`PTR_TO_U32`) is a pointer's word offset in the **tag window**, the units' `.data`/`.bss` regions
 plus the arena (a few MB, more under ASan; measured by `port_overlay_init`, under 64 MB by a startup check), since
 a game may keep an ordering table static; the shim's `DrawOTag` walks tags from `port_tag_base`. No alignment or link
-address is assumed by the arena (the ELF link is still non-PIE, for the ld script's RELRO interaction only;
-`port/CMakeLists.txt`): the arrangement a PE build can use as it is.
+address is assumed by the arena: the arrangement a PE build can use as it is. The ELF link is non-PIE all the same
+(`cmake/psxstack.cmake`): the debug channel's symbols are `nm`'s addresses, and a save state holds host addresses
+("Save states").
 
 **Overlay manager**: every overlay is linked in. `OVERLAY_COPY` (a game's overlay `memcpy` sites) calls
 `port_overlay_load(tier, file, ...)`: a file with a table becomes the tier's current overlay and gets its `.data` and
@@ -238,6 +241,49 @@ the input trace and the script's next step go on; the log gets an `R` line. `<PR
 proves the restore: at startup (the last setup call before `game_main`) and after every reset, every game section is
 compared with its startup snapshot and the arena with zero, fatal on a difference; with `port_gen.py sections` (no
 game data outside the sections) that is the whole of the game's writable state.
+
+## Save states (`--save-state`, `--load-state`)
+`runtime/savestate.c` (docs/PORT.md "Save states" for the design): the whole machine at the end of a vsync in a file,
+and a later run of **the same binary** going on from it.
+- `--save-state WHEN:FILE`: at the end of vsync `WHEN` (a frame number, `port_frames`), or, when `WHEN` is not a
+  number, at the end of the frame in which the script's checkpoint `WHEN` ran; repeatable (16 at most), each written
+  once. `--save-state-exit` ends the run (status 0, reason `state saved`) once every one is written. A run with them is
+  otherwise unchanged: its log and record are the plain run's.
+- `--load-state FILE`: after the setup (the disc, the cards, the log, the window, the script), the state replaces
+  power-on: the game goes on from the vsync after the saved one. With `--script` naming the script that was running
+  when the state was saved, the script goes on from its saved step, so the run's record is the straight run's and its
+  log is the straight log's lines after the saved frame. With another script, that script starts at the loaded frame
+  (its `max_frames` counted from there); without one, the pad is the window's (or none). `--max-frames` still counts
+  from frame 0 (the saved frame count goes on).
+- **What must match:** the binary (its SHA-1), its pointer size and the addresses of its image, the arena and the
+  game stack; the rate (`--refresh`). Anything else is refused with a message and status 1. The disc, the memory cards,
+  `--cd-speed`, the window and the renderer are the loading run's: a state is not tied to them (the CD timing of a
+  read in progress follows the loading run's `--cd-speed`).
+- **Through the debug channel:** `save_state` and `load_state` (docs/PORT.md "Debug channel and the MCP server"; the MCP
+  tools `state_save` and `state_load`): the same files.
+- **The cost** (the first game, its first battle): about 8 MB, saved or loaded in under 0.1 s; the sanitizer build's
+  is 27 MB (its sections carry ASan's redzones), 1.5 s, and needs `ASAN_OPTIONS=detect_stack_use_after_return=0`.
+- **When states are on:** with `--save-state`, `--load-state` or `--debug`, the game runs on a stack of the runtime's
+  (8 MB, static) instead of the main thread's; without them nothing of it exists but one branch in `port_frame`.
+  Under AddressSanitizer with its fake stacks on, `--debug` alone runs without states (logged).
+
+**The state file.** A sequence of blocks, each `<tag length: 1 byte><tag><size: 8 bytes, host order><bytes>`, in an
+order fixed by the code: each module's sync function (`<module>_state(PortState *)`, `include/psxstack/savestate.h`)
+names its variables with `port_state_bytes`, and a load checks every block's tag and size against the build reading
+it. The blocks, in order:
+| Blocks | What |
+|---|---|
+| `header` | `PSXSTATE`, the format (1), the pointer size, the binary's SHA-1, the game's id, the addresses of the image, the arena and the game stack, the rate, the frame, the stack protector's canary (fixed widths: any build reads any state's header) |
+| `port_frames`, `audio_vsync` | The frame count; the vsyncs the audio rendered (each vsync's sample count) |
+| one per game section, `port_current`, `port_word0` | The EXE's and every overlay's `.data` and `.bss` (named by the overlay), the current overlay and the first word per tier |
+| `arena` | The PS1's RAM: the slots and the heap |
+| `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command |
+| `spu` | The SPU: registers, voices, its RAM |
+| `count`, `overlay_seq`, `map_seq`, `checkpoints`, `inputs`, ... | The record so far and what the next frame's log compares with |
+| `name`, `index`, `started`, `held`, ... | The script's name and progress |
+| the adapter's (`game_savestate`) | The game's own (its mods' state across vsyncs) |
+| `lo`, `stack`, `port_savestate_ctx` | The game stack from the capture point up, and `__builtin_setjmp`'s buffer |
+A state holds the game's data: it is generated from the user's disc, never committed.
 
 ## The per-frame log (`--log FILE`)
 Text, line-buffered, one line per frame and one per event; nothing in it depends on the host (no time, no address),

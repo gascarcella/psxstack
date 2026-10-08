@@ -95,3 +95,12 @@ int DecDCTvlc2(u32 *bs, u32 *buf, u16 *table) {
 void DecDCTvlcBuild(u16 *table) {
     PSYQ_TRACE("DecDCTvlcBuild %u", PSYQ_PTR(table));
 }
+
+/* A save state (psyq_internal.h): DecDCTout's handler and transfer (mdec.c has the decoder). */
+void psyq_press_state(PortState *s) {
+    PORT_STATE_VAR(s, psyq_press_out_handler);
+    PORT_STATE_VAR(s, psyq_press_out_in_handler);
+    PORT_STATE_VAR(s, psyq_press_out_pending);
+    PORT_STATE_VAR(s, psyq_press_out_buf);
+    PORT_STATE_VAR(s, psyq_press_out_size);
+}

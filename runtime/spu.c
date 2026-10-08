@@ -11,6 +11,7 @@
  * leaves open and the reading taken here. */
 #include <string.h>
 
+#include "savestate.h"
 #include "spu_internal.h"
 
 /* Register offsets from 0x1F801C00 (psx-spx names in comments). */
@@ -682,4 +683,9 @@ const uint8_t *spu_ram(void) {
 
 uint64_t spu_samples(void) {
     return spu.samples;
+}
+
+/* A save state (savestate.h): the whole SPU (no pointers in it); the write hook is the runtime's. */
+void spu_state(PortState *s) {
+    PORT_STATE_VAR(s, spu);
 }

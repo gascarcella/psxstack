@@ -672,3 +672,9 @@ void psyq_gte_cmd(u32 op) {
     }
     gte_c[GTE_FLAG] = gte_flag;
 }
+
+/* A save state (psyq_internal.h): the registers (FLAG lives in control 31 between commands). */
+void gte_state(PortState *s) {
+    PORT_STATE_VAR(s, gte_d);
+    PORT_STATE_VAR(s, gte_c);
+}

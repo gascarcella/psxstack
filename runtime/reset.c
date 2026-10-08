@@ -25,6 +25,7 @@
 
 #include "port_harness.h"
 #include "port_runtime.h"
+#include "savestate.h"
 #include "spu.h"
 #include "psyq.h"
 
@@ -33,6 +34,7 @@ static long port_reset_count;
 
 void port_reset_request(void) {
     port_log("reset: frame %ld: back to the game's start", port_frames);
+    port_savestate_leave_stack();
     longjmp(port_reset_jmp, 1);
 }
 

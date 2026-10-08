@@ -18,6 +18,7 @@
 
 #include "port_harness.h"
 #include "port_runtime.h"
+#include "savestate.h"
 
 
 /* The EXE's units' .data and .bss (the ld script's symbols, as the overlays' in overlay_tables.c). */
@@ -286,4 +287,15 @@ void (*port_overlay_resolve(int tier, uintptr_t addr))(void) {
     }
     port_fatal("overlay: 0x%08X is not a host function of %s (tier %d): static, or still INCLUDE_ASM, or a data file",
                (u32)addr, o->name, tier);
+}
+
+/* A save state (savestate.h): every game section as it is now, and the current overlay and first word per tier. */
+void port_overlay_state(PortState *s) {
+    int i;
+    for (i = 0; i < port_region_count; i++) {
+        PortRegion *r = &port_regions[i];
+        port_state_bytes(s, r->name, r->start, (size_t)(r->stop - r->start));
+    }
+    PORT_STATE_VAR(s, port_current);
+    PORT_STATE_VAR(s, port_word0);
 }

@@ -51,3 +51,19 @@ void psyq_reset(void) {
     psyq_snd_reset();
     psyq_mcrd_reset();
 }
+
+/* A save state (savestate.h): every library's part, in a fixed order. */
+void psyq_state(PortState *s) {
+    psyq_etc_state(s);
+    psyq_cd_state(s);
+    psyq_pad_state(s);
+    psyq_gpu_state(s);
+    gpu_state(s);
+    psyq_gs_state(s);
+    gte_state(s);
+    psyq_press_state(s);
+    mdec_state(s);
+    psyq_snd_state(s);
+    snd_spu_state(s);
+    psyq_mcrd_state(s);
+}

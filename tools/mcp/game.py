@@ -335,6 +335,15 @@ class Game:
     def reset(self) -> int:
         return self.request("reset")["frame"]
 
+    def save_state(self, path: str) -> dict:
+        """The whole state at the end of the current vsync to `path` (written at once when paused, else at this vsync's
+        end): {frame, path}."""
+        return self.request("save_state", path=path)
+
+    def load_state(self, path: str) -> int:
+        """Goes on from the state in `path` (the same binary's; a paused game stays paused there): its frame."""
+        return self.request("load_state", path=path)["frame"]
+
     def quit(self, status: int = 0):
         try:
             return self.request("quit", timeout_s=2.0, status=int(status))
