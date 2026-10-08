@@ -280,6 +280,15 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
             s.filter = "none";
         }
+        if (const Json *crt = video->find("crt")) {
+            if (!crt->is_object()) {
+                warn(w, "video.crt: expected an object; using the defaults");
+            } else {
+                read_int(crt, "video.crt", "scanlines", 0, 100, &s.crt_scanlines, w);
+                read_int(crt, "video.crt", "mask", 0, 100, &s.crt_mask, w);
+                read_int(crt, "video.crt", "curvature", 0, 100, &s.crt_curvature, w);
+            }
+        }
     }
     if (const Json *audio = section(doc, "audio", w)) {
         read_bool(audio, "audio", "mute", &s.mute, w);
@@ -321,6 +330,17 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("internal_scale", Json::number(s.internal_scale));
     if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
         video.set("filter", Json::string(s.filter));
+    }
+    const Settings defaults;
+    if (s.crt_scanlines != defaults.crt_scanlines || s.crt_mask != defaults.crt_mask ||
+        s.crt_curvature != defaults.crt_curvature || video.find("crt") != nullptr) { // as video.filter
+        if (const Json *crt = video.find("crt"); crt != nullptr && !crt->is_object()) {
+            video.erase("crt");
+        }
+        Json &crt = video.member("crt");
+        crt.set("scanlines", Json::number(s.crt_scanlines));
+        crt.set("mask", Json::number(s.crt_mask));
+        crt.set("curvature", Json::number(s.crt_curvature));
     }
     doc->member("audio").set("mute", Json::boolean(s.mute));
     for (int i = 0; i < 2; i++) {

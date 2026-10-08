@@ -92,9 +92,11 @@ static void usage(const char *argv0) {
             "  --gpu-screenshot F[@WxH]:P  the hardware renderer's picture of vsync F to P (binary PPM): the image, or\n"
             "                   with @WxH its present into a W x H output; repeatable; a build with -DPSXSTACK_SDL=ON;\n"
             "                   skipped (logged) when no GPU device opens\n"
-            "  --filter NAME    the hardware renderer's present filter: none (default: the picture pixel for pixel)\n"
-            "                   or sharp (sharp bilinear); the window and --gpu-screenshot's @WxH pictures; the\n"
-            "                   software renderer shows the picture unfiltered (overrides video.filter)\n"
+            "  --filter NAME[:KEY=V,...]  the hardware renderer's present filter: none (default: the picture pixel\n"
+            "                   for pixel), sharp (sharp bilinear), scanlines[:scanlines=0..100] or\n"
+            "                   crt[:scanlines=,mask=,curvature=] (video.crt's values otherwise; default 50, 30, 0);\n"
+            "                   the window and --gpu-screenshot's @WxH pictures; the software renderer shows the\n"
+            "                   picture unfiltered (overrides video.filter and video.crt)\n"
             "  --spu-trace FILE every SPU write and DMA block, per vsync (tests/sound's trace format)\n"
             "  --wav FILE       the audio output as a 44.1 kHz stereo WAV (any build, headless too)\n"
             "  --mute           no audio device in window mode\n"
@@ -135,7 +137,7 @@ int main(int argc, char **argv) {
     int disc_check = 1, max_frames_given = 0;
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
     const char *config = NULL;
-    PortFilter filter = { PORT_FILTER_NONE };
+    PortFilter filter = PORT_FILTER_DEFAULTS;
     int print_settings = 0, print_mods = 0, script_mods = 0;
     long fps = -1;
     int refresh = 0; /* --refresh, else the settings' video.refresh; 0: neither (PAL) */
@@ -155,6 +157,9 @@ int main(int argc, char **argv) {
         gpu = port_settings.gpu;
         internal_scale = port_settings.internal_scale;
         filter.kind = port_settings.filter;
+        filter.scanlines = port_settings.crt_scanlines;
+        filter.mask = port_settings.crt_mask;
+        filter.curvature = port_settings.crt_curvature;
         mute = port_settings.mute;
         port_watchdog_sec = port_settings.watchdog;
         for (i = 0; i < 2; i++) {
@@ -321,6 +326,9 @@ int main(int argc, char **argv) {
         eff.gpu = gpu;
         eff.internal_scale = internal_scale;
         eff.filter = filter.kind;
+        eff.crt_scanlines = filter.scanlines;
+        eff.crt_mask = filter.mask;
+        eff.crt_curvature = filter.curvature;
         for (i = 0; i < 2; i++) {
             eff.memcard[i] = memcard_given[i] > 0 && memcard[i] != NULL ? port_settings_abspath(memcard[i]) : NULL;
         }

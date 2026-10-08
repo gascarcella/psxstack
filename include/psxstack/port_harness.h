@@ -89,18 +89,25 @@ int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malform
  * --gpu-screenshot "FRAME[@WxH]:PATH" (SDL build): the hardware renderer's picture; 0 when malformed (or too many). */
 int port_video_set_renderer(const char *name);
 void port_video_set_internal_scale(int scale); /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
-/* The present's filter (`--filter NAME[:KEY=V,...]`, video.filter; video_filter.c): the hardware renderer draws the
- * picture into the window through it (render_gpu_present.c); the software renderer shows the picture unfiltered and
- * says so once. PORT_FILTER_NONE (the default) is the integer nearest mapping, the picture pixel for pixel. */
-enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_COUNT };
+/* The present's filter (`--filter NAME[:KEY=V,...]`, video.filter and video.crt; video_filter.c): the hardware
+ * renderer draws the picture into the window through it (render_gpu_present.c); the software renderer shows the
+ * picture unfiltered and says so once. PORT_FILTER_NONE (the default) is the integer nearest mapping, the picture pixel
+ * for pixel. The parameters (0..100) are video.crt's: scanlines for `scanlines` and `crt`, mask and curvature for
+ * `crt`. */
+enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_SCANLINES, PORT_FILTER_CRT, PORT_FILTER_COUNT };
 typedef struct PortFilter {
-    int kind; /* PORT_FILTER_* */
+    int kind;      /* PORT_FILTER_* */
+    int scanlines; /* the lines' strength, 0..100 (default 50) */
+    int mask;      /* the aperture grille's strength, 0..100 (default 30) */
+    int curvature; /* the screen's curvature, 0..100 (default 0) */
 } PortFilter;
+#define PORT_FILTER_DEFAULTS { PORT_FILTER_NONE, 50, 30, 0 }
 extern const char *const port_filter_names[PORT_FILTER_COUNT];
 int port_filter_from_name(const char *name); /* PORT_FILTER_*; -1 for another name */
 /* The names for a message: "\"none\" or \"sharp\"" (quoted) or "none or sharp". */
 const char *port_filter_choices(int quoted);
-/* `--filter`'s argument into *f (the defaults first); 0 with the reason in `err` when it is malformed. */
+/* `--filter`'s argument into *f: the name, and the parameters it names (KEY=V, V 0..100; the others keep their value);
+ * 0 with the reason in `err` when it is malformed. */
 int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
 void port_video_set_filter(const PortFilter *f);
 int port_video_gpu_screenshot_add(const char *spec);

@@ -24,6 +24,7 @@ typedef struct PortSettings {
     int gpu;         /* video.renderer: 0 "software" (default), 1 "gpu" (the hardware renderer; issue #31) */
     int internal_scale; /* video.internal_scale, 1..8 (default 1): the hardware renderer's resolution, x 1024x512 */
     int filter;      /* video.filter: PORT_FILTER_* (default 0, "none"): the hardware renderer's present filter */
+    int crt_scanlines, crt_mask, crt_curvature; /* video.crt: the filters' parameters, 0..100 (default 50, 30, 0) */
     int mute;        /* audio.mute (default 0) */
     int watchdog;    /* watchdog: seconds, 0 off (default 0: a player's game is never killed by the debugging aid) */
     char *memcard[2]; /* memcard1/2, absolute; NULL: no card (null in the file); default card1.mcd/card2.mcd */
