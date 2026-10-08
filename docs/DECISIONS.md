@@ -140,3 +140,10 @@ CLUT's content, never by VRAM position: the first game loads one image at up to 
 others. The hash is SHA-1 truncated to 64 bits (`runtime/sha1.c`, no new third-party code; hashing all the first
 game's transfers costs nothing measurable). Ownership is tracked per VRAM word, not per transfer, because 30% of the
 first game's textured draws sample the intact rest of a transfer that a later one partly covered.
+
+## Texture packs are data mods named by key; scale 1 stays exact (2026-10-08)
+A pack (docs/RUNTIME.md "Texture packs") is a data mod whose PNG file names are the dump's keys, so an artist edits a
+dump in place and nothing else maps files to textures; the first pack given wins. A replacement's alpha thresholds
+stand for the PS1's texel 0 and bit 15. At internal scale 1 its colour is rounded back to 5 bits, so an unedited dump
+used as a pack leaves the target equal to the software VRAM (checked over the first game's replays); above scale 1 its
+8 bits are kept.

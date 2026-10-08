@@ -550,6 +550,13 @@ int port_video_dump_textures(const char *dir) {
     return render_gpu_tex_dump_open(dir);
 }
 
+int port_video_texture_pack(const char *dir) {
+    if (!video_gpu_wanted && video_gpu_shot_count == 0) {
+        port_log("texture packs: drawn by the hardware renderer only (--renderer gpu)");
+    }
+    return render_gpu_tex_pack_add(dir);
+}
+
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h) {
     u32 *buf;
     int ok, pw, s = render_gpu_scale();
@@ -577,6 +584,11 @@ void port_video_gpu_headless(void) {
 }
 
 int port_video_dump_textures(const char *dir) {
+    (void)dir;
+    return 0;
+}
+
+int port_video_texture_pack(const char *dir) {
     (void)dir;
     return 0;
 }

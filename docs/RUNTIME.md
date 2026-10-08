@@ -168,6 +168,34 @@ texture a primitive samples, the first time it samples it, under DIR:
 - **A dump continues:** an existing `index.json` is read back at the start, existing files are never rewritten, and
   the counts and ranges add up over the runs.
 
+## Texture packs
+`--texture-pack DIR` (repeatable; the SDL build) loads a texture pack, which the hardware renderer's rasteriser draws
+instead of the game's textures (`--renderer gpu`, at any internal scale; docs/PORT.md "Texture replacement"). A pack
+is a data mod:
+```
+DIR/mod.json
+DIR/textures/**/<image>-<clut>-<4|8>bpp-<w>x<h>.png                   replaces the whole image (under that CLUT)
+DIR/textures/**/<image>-<clut>-<4|8>bpp-<w>x<h>@<u>,<v>,<uw>x<vh>.png  only that sub-rectangle (in its texels)
+DIR/textures/**/<image>-15bpp-<w>x<h>.png
+```
+```json
+{ "schema": 1, "id": "hd_field", "name": "HD field sprites", "version": "1.0", "kind": "data", "requires_port": 1,
+  "description": "...", "textures": { "dir": "textures", "filter": "linear" } }
+```
+- **The file name is the key**, as the dump names it ("Texture dump"); directories under `textures/` (`dir`, default
+  `textures`) are free, and other PNGs are ignored (logged). A file named like a dump replaces it: an unedited dump is
+  a pack that changes nothing at internal scale 1.
+- **Any size**: a file is stretched over the whole image or its sub-rectangle; integer multiples of the original are
+  best. PNG, RGBA or indexed.
+- **Alpha**: below 64 transparent (as the texel `0x0000`), 64 to 191 semi-transparent (bit 15: blended where the
+  primitive is), 192 and above opaque. The colour is used in 8 bits above internal scale 1, in 5 bits at it.
+- **Which file**: a primitive takes a sub-rectangle file whose rectangle holds all its texels before the whole image's
+  file, and the first pack given before later ones; with none it samples the VRAM as before (also under a texture
+  window, and for render-to-texture and copies, which have no key).
+- **`filter`**: `linear` (the default; with mipmaps) or `nearest`.
+- Files are decoded on first use (a decode over 4 ms is logged: a hitch) and kept up to 1 GB of textures, then the
+  ones unused for longest are released. Without `--renderer gpu` a pack is loaded but nothing draws it (logged).
+
 ## What the build generates (`build/port/gen/`, by `tools/port_gen.py`)
 At configure time (the inputs are the files the game's tooling writes: `units.txt`, `overlays.txt`, `tag_sites.txt`,
 `volatile.txt`; GAME_CONTRACT.md "5"):

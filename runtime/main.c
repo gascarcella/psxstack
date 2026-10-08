@@ -103,6 +103,8 @@ static void usage(const char *argv0) {
             "                   picture unfiltered (overrides video.filter and video.crt)\n"
             "  --dump-textures DIR  every texture the game samples, the first time, as a PNG named by its key, and\n"
             "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
+            "  --texture-pack DIR  a texture pack (DIR/mod.json, PNGs named by key) for the hardware renderer;\n"
+            "                   repeatable, the first given wins\n"
             "  --spu-trace FILE every SPU write and DMA block, per vsync (tests/sound's trace format)\n"
             "  --wav FILE       the audio output as a 44.1 kHz stereo WAV (any build, headless too)\n"
             "  --mute           no audio device in window mode\n"
@@ -139,6 +141,8 @@ int main(int argc, char **argv) {
     const char *memcard[2] = { NULL, NULL };
     const char *spu_trace = NULL, *wav = NULL, *debug = NULL, *crash_dir = NULL;
     const char *dump_textures = NULL;
+    const char *packs[32];
+    int npacks = 0;
     int mute = 0, debug_hold = 0;
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
@@ -301,6 +305,12 @@ int main(int argc, char **argv) {
             gpu_shots = 1;
         } else if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
             dump_textures = argv[++i];
+        } else if (strcmp(argv[i], "--texture-pack") == 0 && i + 1 < argc) {
+            if (npacks == (int)(sizeof(packs) / sizeof(packs[0]))) {
+                fprintf(stderr, "port: --texture-pack: at most %d\n", npacks);
+                return 64;
+            }
+            packs[npacks++] = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -361,6 +371,10 @@ int main(int argc, char **argv) {
     }
     if (dump_textures != NULL && !port_video_available()) {
         fprintf(stderr, "port: --dump-textures: this build has no texture dump: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (npacks > 0 && !port_video_available()) {
+        fprintf(stderr, "port: --texture-pack: this build has no hardware renderer: configure with -DPSXSTACK_SDL=ON\n");
         return 64;
     }
     port_video_set_renderer(gpu ? "gpu" : "software");
@@ -424,6 +438,11 @@ int main(int argc, char **argv) {
     }
     if (dump_textures != NULL && !port_video_dump_textures(dump_textures)) {
         port_exit(1, "--dump-textures: the directory cannot be made");
+    }
+    for (i = 0; i < npacks; i++) {
+        if (!port_video_texture_pack(packs[i])) {
+            port_exit(1, "--texture-pack: not a texture pack");
+        }
     }
     if (debug != NULL) {
         /* a driven run: the tool decides when it ends, and may hold the game paused for as long as it likes */

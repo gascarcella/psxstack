@@ -79,7 +79,8 @@ enum {
     F_CHECK_MASK = 32,
     F_PAIRS = 64,
     F_BACKGROUND = 128,
-    F_PRECISE = 256 /* a triangle at sub-pixel positions, attributes from the float planes `sp` */
+    F_PRECISE = 256, /* a triangle at sub-pixel positions, attributes from the float planes `sp` */
+    F_REPLACED = 512 /* a texture pack's replacement (render_gpu_packs.c) is sampled instead of the VRAM */
 };
 
 typedef struct {
@@ -91,6 +92,7 @@ typedef struct {
     Sint32 kind[4], a[4], col[4], nrg[4], nbu[4], nva[4], tex[4], win[4], s01[4], s2[4], res[4], uvr[4], cmin[4],
         cmax[4];
     float sp[SUBPIXEL_PLANES][4]; /* F_PRECISE: the planes (render_gpu_subpixel.h) */
+    Sint32 rep[4]; /* F_REPLACED: the replacement's rectangle in the texture page (u0, v0, w, h in texels) */
 } RasterUnit;
 
 /* An entry of the frame's list, in stream order. */
@@ -102,6 +104,8 @@ typedef struct {
     int vertices;     /* the draw's: 3 (a triangle) or 6 (a rectangle) */
     RasterGeometry geometry;
     RasterUnit unit;
+    SDL_GPUTexture *replacement; /* F_REPLACED: the texture, sampled linearly or nearest */
+    int linear;
 } Record;
 
 static struct {
@@ -113,6 +117,8 @@ static struct {
     SDL_GPUGraphicsPipeline *pipe_swap, *pipe_vram_swap; /* the presents into the swapchain's format */
     SDL_GPUGraphicsPipeline *pipe_off, *pipe_vram_off;   /* into B8G8R8A8_UNORM (the readback target) */
     SDL_GPUSampler *sampler;               /* bound with the textures (the shaders read them with Load) */
+    SDL_GPUSampler *sampler_linear;        /* a texture pack's replacements, filtered (render_gpu_packs.c) */
+    SDL_GPUTexture *no_replacement;        /* bound in the replacement's slot while none is */
     SDL_GPUTexture *image;                 /* the software image, RENDER_IMAGE_W x RENDER_IMAGE_H */
     SDL_GPUTransferBuffer *upload;         /* its pixels on the way */
     SDL_GPUTexture *target;                /* the readback's offscreen target and its download buffer */
@@ -324,6 +330,21 @@ static void rect_geometry(Record *e, int x, int y, int w, int h) {
     e->geometry.rect[3] = (float)(y + h);
 }
 
+/* A texture pack's replacement for a textured triangle's or rectangle's unit (render_gpu_packs.c), when packs are
+ * loaded and one has the unit's texture. */
+static void replace(Record *e, const GpuEvent *ev) {
+    RenderTexReplacement rp;
+    if (render_gpu_tex_packs() && ev->textured && render_gpu_tex_replacement(r.device, ev, &rp)) {
+        e->unit.kind[1] |= F_REPLACED;
+        e->unit.rep[0] = rp.u0;
+        e->unit.rep[1] = rp.v0;
+        e->unit.rep[2] = rp.w;
+        e->unit.rep[3] = rp.h;
+        e->replacement = rp.texture;
+        e->linear = rp.linear;
+    }
+}
+
 /* The flags, blend mode, depth, texture page, CLUT and window of a drawing event. */
 static void unit_mode(RasterUnit *u, int op, const GpuEvent *ev) {
     memset(u, 0, sizeof(*u));
@@ -462,6 +483,7 @@ static void raster_triangle(const GpuEvent *ev) {
         memcpy(u.sp, sp, sizeof(u.sp));
     }
     e = draw_add(&u, 3, sx, sy, sw, sh);
+    replace(e, ev);
     e->geometry.v01[0] = precise ? pos[0][0] : (float)a->x;
     e->geometry.v01[1] = precise ? pos[0][1] : (float)a->y;
     e->geometry.v01[2] = precise ? pos[1][0] : (float)b->x;
@@ -506,6 +528,7 @@ static void raster_rect(const GpuEvent *ev) {
         sync_background(x, y, w, h);
     }
     e = draw_add(&u, 6, x, y, w, h);
+    replace(e, ev);
     rect_geometry(e, x, y, w, h);
     mark_dirty(x, y, w, h);
 }
@@ -694,7 +717,6 @@ static void raster_event(const GpuEvent *ev) {
     if (r.cols > VRAM_W) {
         render_gpu_wide_before(ev); /* a display buffer gets its wide canvas (render_gpu_wide.c) */
     }
-    render_gpu_tex_event(ev); /* the texture keys (render_gpu_textures.c), when switched on */
     switch (ev->kind) {
     case GPU_EV_TRIANGLE:
         raster_triangle(ev);
@@ -722,6 +744,7 @@ static void raster_event(const GpuEvent *ev) {
     if (r.cols > VRAM_W) {
         render_gpu_wide_event(ev); /* its copy in the wide canvas (render_gpu_wide.c), when a display buffer has one */
     }
+    render_gpu_tex_event(ev); /* the texture keys, after the units took their replacement (render_gpu_textures.c) */
 }
 
 /* ---- For render_gpu_wide.c (render_gpu_wide.h): units drawn into the wide canvas strip ---- */
@@ -795,7 +818,7 @@ static void render_release(void) {
         render_present_release(r.device); /* the filter's pipelines (render_gpu_present.c) */
     }
     if (r.device != NULL) {
-        SDL_GPUTexture *textures[] = { r.target, r.image, r.vram_target, r.background, r.mirror };
+        SDL_GPUTexture *textures[] = { r.target, r.image, r.vram_target, r.background, r.mirror, r.no_replacement };
         SDL_GPUTransferBuffer *buffers[] = { r.download, r.upload, r.staging_buf, r.vram_download };
         SDL_GPUGraphicsPipeline *pipes[] = { r.pipe_off, r.pipe_swap, r.pipe_vram_off, r.pipe_vram_swap,
                                              r.pipe_raster };
@@ -814,6 +837,10 @@ static void render_release(void) {
         if (r.sampler != NULL) {
             SDL_ReleaseGPUSampler(r.device, r.sampler);
         }
+        if (r.sampler_linear != NULL) {
+            SDL_ReleaseGPUSampler(r.device, r.sampler_linear);
+        }
+        render_gpu_tex_packs_release(r.device);
         for (i = 0; i < SDL_arraysize(pipes); i++) {
             if (pipes[i] != NULL) {
                 SDL_ReleaseGPUGraphicsPipeline(r.device, pipes[i]);
@@ -986,15 +1013,26 @@ int render_gpu_raster_start(int scale, char *why, size_t why_size) {
         return 1;
     }
     r.raster_vert = render_shader(RENDER_SHADER(raster_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    r.raster_frag = render_shader(RENDER_SHADER(raster_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+    r.raster_frag = render_shader(RENDER_SHADER(raster_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
     if (r.raster_vert == NULL || r.raster_frag == NULL) {
         snprintf(why, why_size, "the rasteriser's shaders: %s", SDL_GetError());
         return 0;
     }
     r.pipe_raster = render_pipeline(r.raster_vert, r.raster_frag, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
     r.mirror = render_texture(SDL_GPU_TEXTUREFORMAT_R16_UINT, VRAM_W, VRAM_H, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+    r.no_replacement = render_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+    {
+        SDL_GPUSamplerCreateInfo si;
+        memset(&si, 0, sizeof(si));
+        si.min_filter = si.mag_filter = SDL_GPU_FILTER_LINEAR;
+        si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.max_lod = 1000.0f;
+        r.sampler_linear = SDL_CreateGPUSampler(r.device, &si);
+    }
     r.vram_download = render_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, VRAM_W * VRAM_H * 4);
-    if (r.pipe_raster == NULL || r.mirror == NULL || r.vram_download == NULL) {
+    if (r.pipe_raster == NULL || r.mirror == NULL || r.vram_download == NULL || r.no_replacement == NULL ||
+        r.sampler_linear == NULL) {
         snprintf(why, why_size, "the rasteriser's pipeline and textures: %s", SDL_GetError());
         return 0;
     }
@@ -1057,6 +1095,8 @@ void render_gpu_raster_resync(void) {
 static void raster_run(SDL_GPUCommandBuffer *cb) {
     SDL_GPURenderPass *pass = NULL;
     SDL_GPUCopyPass *copy = NULL;
+    SDL_GPUTexture *bound = NULL; /* the replacement's slot */
+    int bound_linear = 0;
     size_t i;
 
     if (r.nstaging > 0) {
@@ -1092,7 +1132,7 @@ static void raster_run(SDL_GPUCommandBuffer *cb) {
             }
             if (pass == NULL) {
                 SDL_GPUColorTargetInfo ct;
-                SDL_GPUTextureSamplerBinding bind[2];
+                SDL_GPUTextureSamplerBinding bind[3];
                 memset(&ct, 0, sizeof(ct));
                 ct.texture = r.vram_target;
                 ct.load_op = SDL_GPU_LOADOP_LOAD;
@@ -1103,7 +1143,18 @@ static void raster_run(SDL_GPUCommandBuffer *cb) {
                 bind[0].sampler = r.sampler;
                 bind[1].texture = r.background;
                 bind[1].sampler = r.sampler;
-                SDL_BindGPUFragmentSamplers(pass, 0, bind, 2);
+                bind[2].texture = r.no_replacement;
+                bind[2].sampler = r.sampler;
+                SDL_BindGPUFragmentSamplers(pass, 0, bind, 3);
+                bound = NULL;
+            }
+            if (e->replacement != NULL && (e->replacement != bound || e->linear != bound_linear)) {
+                SDL_GPUTextureSamplerBinding rb;
+                rb.texture = e->replacement;
+                rb.sampler = e->linear ? r.sampler_linear : r.sampler;
+                SDL_BindGPUFragmentSamplers(pass, 2, &rb, 1);
+                bound = e->replacement;
+                bound_linear = e->linear;
             }
             scissor.x = e->x * r.scale;
             scissor.y = e->y * r.scale;
@@ -1182,6 +1233,8 @@ void render_gpu_frame(void) {
     *slot = SDL_SubmitGPUCommandBufferAndAcquireFence(cb);
     if (*slot == NULL) {
         port_fatal("renderer: gpu: SDL_SubmitGPUCommandBufferAndAcquireFence: %s", SDL_GetError());
+    }    if (render_gpu_tex_packs()) {
+        render_gpu_tex_packs_frame(r.device); /* the packs' textures past their budget released */
     }
 }
 
