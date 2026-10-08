@@ -53,10 +53,20 @@
 
 #define SLOT_PTR(tier, type, addr) ((type)(port_slot##tier + ((addr) - PORT_SLOT##tier##_BASE)))
 
+#if PORT_HEAP_PRESENT
 #define HEAP_START(type) ((type)port_heap_start)
 #define HEAP_END(type) ((type)port_heap_end)
 #define HEAP_SIZE_FROM(first) ((uint32_t)(port_heap_end - (uint8_t *)(first)))
 #define HEAP_ADDR(addr) (port_heap_start + ((addr) - PORT_HEAP_START_ADDR))
+#else
+/* The description has no memory.heap (GAME_CONTRACT.md "1. game.json": the game's heap is its own data), so a use
+ * of a heap hook is a mistake: each expands to the sizeof of an incomplete type, whose name says why it fails. */
+#define PSXSTACK_NO_HEAP_ERROR sizeof(struct psxstack_error_the_game_description_has_no_memory_heap)
+#define HEAP_START(type) ((type)PSXSTACK_NO_HEAP_ERROR)
+#define HEAP_END(type) ((type)PSXSTACK_NO_HEAP_ERROR)
+#define HEAP_SIZE_FROM(first) ((uint32_t)PSXSTACK_NO_HEAP_ERROR)
+#define HEAP_ADDR(addr) ((uint8_t *)PSXSTACK_NO_HEAP_ERROR)
+#endif
 
 #define BIOS_PTR(type, addr) ((type)port_bios_ptr(addr))
 
@@ -81,13 +91,16 @@ void *port_overlay_load(int tier, int32_t file, void *dst, const void *src, uint
 void (*port_overlay_resolve(int tier, uintptr_t addr))(void);
 
 /* The memory arena (docs/PORT.md "Memory arena"): one static block, port_arena, that stands for the PS1's RAM from the
- * first slot up, at the PS1's distances: the slots, then the heap (larger than the PS1's). The regions are macros on
- * port_arena (port_slot<n>, PORT_SLOT<n>_OFS and PORT_HEAP_OFS are generated), so that their addresses stay constant
- * expressions for static initializers. No alignment is assumed: an arena pointer's PS1-style address is
- * PORT_SLOT1_BASE + its offset, and an ordering-table tag is an offset in the tag window (below). */
+ * first slot up, at the PS1's distances: the slots, then the heap (larger than the PS1's) when the description has
+ * one (PORT_HEAP_PRESENT). The regions are macros on port_arena (port_slot<n>, PORT_SLOT<n>_OFS and PORT_HEAP_OFS
+ * are generated), so that their addresses stay constant expressions for static initializers. No alignment is
+ * assumed: an arena pointer's PS1-style address is PORT_SLOT1_BASE + its offset, and an ordering-table tag is an
+ * offset in the tag window (below). */
 extern uint8_t port_arena[PORT_ARENA_SIZE];
+#if PORT_HEAP_PRESENT
 #define port_heap_start (port_arena + PORT_HEAP_OFS)
 #define port_heap_end (port_arena + PORT_ARENA_SIZE)
+#endif
 
 /* NULL <-> 0; an arena pointer <-> its PS1-style address; anything else is a fatal error. */
 int32_t port_ptr_to_s32(const void *p);

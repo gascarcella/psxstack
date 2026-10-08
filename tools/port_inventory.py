@@ -28,7 +28,11 @@ identifiers after `.`/`->`, prototypes and definitions are not calls. Site kinds
   port         uses of the macros the game's port.h defines (found at run time; tag: the macro)
 
 probe compiles each file with the host gcc (PROBE_FLAGS + GATE below) into <out>/<width>/, with INCLUDE_ASM/
-INCLUDE_RODATA empty and every gte_* macro a no-op (override headers generated there). A file fails on a gating
+INCLUDE_RODATA empty and every gte_* macro a no-op (override headers generated there: include_asm.h, and the GTE
+header at the path the game includes it by, `gtemac_include`, found as `gtemac` relative to the game's include
+directories: the first game's include/psyq/gtemac.h is `psyq/gtemac.h`, a game's include/gte.h is `gte.h`). A game
+whose symbol files carry no `// LIBxxx.LIB/OBJ.OBJ` comments gives the libraries with `psyq_libraries`, a callable
+returning {name: "LIBGPU", ...}, consulted for every symbol the files leave untagged. A file fails on a gating
 diagnostic (GATE), on any other compiler error, or on an assembler error (MIPS inline asm). GCC 14+ gets -fpermissive
 so that its other default errors stay warnings, as on GCC 13: the gate is the same on every version.
 --target windows compiles with llvm-mingw's clang (tools/llvm-mingw; the Windows cross build's compiler) with clang's
@@ -55,7 +59,7 @@ class Config:
 
     def __init__(self, root, game_json, sources, headers, include_dirs, symbol_files, module_of=None, gtemac=None,
                  include_asm=None, port_h=None, psyq_dir=None, tool_dirs=(), defines=("NON_MATCHING",), out=None,
-                 psyq_decl_headers=None):
+                 psyq_decl_headers=None, gtemac_include=None, psyq_libraries=None):
         import json
         self.root = Path(root)
         self.game_json = Path(game_json)
@@ -65,6 +69,10 @@ class Config:
         self.symbol_files = [Path(f) for f in symbol_files]
         self.module_of = module_of or (lambda rel: rel.split("/")[-2] if "/" in rel else rel)
         self.gtemac = Path(gtemac) if gtemac else None
+        # The path the game's C includes the GTE header by (the override is written there, first on the include
+        # path): given, else `gtemac` relative to the first include directory that holds it, else psyq/gtemac.h.
+        self.gtemac_include = gtemac_include or gtemac_include_path(self.gtemac, [Path(d) for d in include_dirs])
+        self.psyq_libraries = psyq_libraries    # () -> {name: library}, for symbol files without library comments
         self.include_asm = Path(include_asm) if include_asm else None
         self.port_h = Path(port_h) if port_h else None
         self.psyq_dir = Path(psyq_dir) if psyq_dir else self.root / "include" / "psyq"
@@ -79,14 +87,31 @@ class Config:
         addr = lambda v: int(v, 0) if isinstance(v, str) else int(v)
         ram = addr(g["memory"]["ram"]["base"]), addr(g["memory"]["ram"]["size"])
         slots = [(addr(sl["base"]), sl["name"]) for sl in g["memory"]["slots"]]
-        heap = addr(g["memory"]["heap"]["start"]), addr(g["memory"]["heap"]["end"])
-        # Memory regions: the EXE (from the load area up to the first slot), the slots by name, the heap, high.
-        self.regions = [(ram[0] + 0x10000, "exe")] + slots + [(heap[0], "heap"), (heap[1] + 1, "high"),
-                                                              (ram[0] + ram[1], None)]
+        # Memory regions: the EXE (from the load area up to the first slot), the slots by name, the heap (when the
+        # description has one; else "high" starts where the last slot ends), high.
+        last = g["memory"]["slots"][-1]
+        if "heap" in g["memory"]:
+            heap = addr(g["memory"]["heap"]["start"]), addr(g["memory"]["heap"]["end"])
+            tail = [(heap[0], "heap"), (heap[1] + 1, "high")]
+        else:
+            tail = [(addr(last["base"]) + addr(last["size"]), "high")]
+        self.regions = [(ram[0] + 0x10000, "exe")] + slots + tail + [(ram[0] + ram[1], None)]
         self.slot_base = slots[0][0]      # late-bound addresses: anything from the first slot up
 
 
 CFG = None
+
+
+def gtemac_include_path(gtemac, include_dirs):
+    """The include path of the game's GTE header: relative to the first include directory it lies under, else the
+    first game's name, psyq/gtemac.h."""
+    if gtemac:
+        for d in include_dirs:
+            try:
+                return gtemac.resolve().relative_to(Path(d).resolve()).as_posix()
+            except ValueError:
+                continue
+    return "psyq/gtemac.h"
 
 
 def configure(**kwargs):
@@ -270,6 +295,11 @@ def read_symbols():
             syms.setdefault(name, (addr, is_func))
             if lib:
                 sdk.setdefault(name, (lib, is_func))
+    if CFG.psyq_libraries is not None:
+        # The game's own map (a symbol file without library comments): every name it knows and the files left untagged.
+        for name, lib in CFG.psyq_libraries().items():
+            if name in syms and name not in sdk:
+                sdk[name] = (lib, syms[name][1])
     return sdk, syms
 
 
@@ -615,7 +645,7 @@ def write_overrides(out):
     """The override headers: INCLUDE_ASM/INCLUDE_RODATA empty, every gte_* macro a no-op. They carry the real headers'
     include guards, so the real ones are skipped wherever they are included from."""
     inc = out / "include"
-    (inc / "psyq").mkdir(parents=True, exist_ok=True)
+    inc.mkdir(parents=True, exist_ok=True)
     gen = CFG.include_asm
     guard = (include_guard(gen) if gen and gen.exists() else None) or "INCLUDE_ASM_H"
     (inc / "include_asm.h").write_text(
@@ -627,8 +657,9 @@ def write_overrides(out):
         guard = include_guard(real) or "PSYQ_GTEMAC_H"
         body = "".join(f"#define {n}{a} ((void)0)\n"
                        for n, a in re.findall(r"^[ \t]*#[ \t]*define[ \t]+(gte_\w+)(\([^)]*\))", text, flags=re.M))
-        (inc / "psyq" / "gtemac.h").write_text(
-            f"/* generated by tools/port_inventory.py */\n#ifndef {guard}\n#define {guard}\n{body}#endif\n")
+        target = inc / CFG.gtemac_include
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"/* generated by tools/port_inventory.py */\n#ifndef {guard}\n#define {guard}\n{body}#endif\n")
     # psxstack_game_gen.h: the game's description, which psxstack's hooks.h includes (the game's port.h includes that
     # under PC_PORT): the same header the port's build generates (tools/game_gen.py).
     subprocess.run([sys.executable, str(STACK_ROOT / "tools" / "game_gen.py"), str(CFG.game_json),

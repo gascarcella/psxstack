@@ -9,6 +9,8 @@ The description is validated against schema/game.schema.json (with `jsonschema` 
 the same required keys, types, patterns and ranges) and against what the schema cannot say: the slots are in address
 order and contiguous with each other and with the heap, the rates include the nominal one. Every string reaches the
 header as a C string literal; addresses as hex integer constants. Nothing reads the description at run time.
+`memory.heap` is optional: without it the arena is the slots alone (PORT_HEAP_PRESENT 0, no PORT_HEAP_START_ADDR /
+PORT_HEAP_END_ADDR, PORT_HEAP_SIZE 0) and the HEAP_* hook macros refuse to compile.
 """
 import argparse
 import json
@@ -94,7 +96,7 @@ def validate_schema(game, schema):
     mem = game["memory"]
     if not isinstance(mem, dict):
         fail("memory: an object")
-    for k in ("ram", "slots", "heap"):
+    for k in ("ram", "slots"):
         if k not in mem:
             fail(f"memory: missing {k}")
     if not isinstance(mem["slots"], list) or not 1 <= len(mem["slots"]) <= 8:
@@ -105,9 +107,10 @@ def validate_schema(game, schema):
                 fail(f"memory/slots/{i}: missing {k}")
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", str(s["name"])):
             fail(f"memory/slots/{i}/name: lower-case identifier")
-    for k in ("start", "end"):
-        if k not in mem["heap"]:
-            fail(f"memory/heap: missing {k}")
+    if "heap" in mem:
+        for k in ("start", "end"):
+            if k not in mem["heap"]:
+                fail(f"memory/heap: missing {k}")
 
 
 def load(path):
@@ -150,23 +153,28 @@ def resolve(game):
         if cur["base"] != prev["base"] + prev["size"]:
             fail(f"memory.slots[{i}] ({cur['name']}): base {cur['base']:#x} is not where slot {i - 1} ({prev['name']}) "
                  f"ends, {prev['base'] + prev['size']:#x}: the slots must be in address order and contiguous")
-    heap_start = addr(mem["heap"]["start"], "memory.heap.start")
-    heap_end = addr(mem["heap"]["end"], "memory.heap.end")
-    heap_size = addr(mem["heap"].get("host_size", 0x400000), "memory.heap.host_size")
     last = slots[-1]
-    if heap_start != last["base"] + last["size"]:
-        fail(f"memory.heap.start {heap_start:#x} is not where the last slot ({last['name']}) ends, "
-             f"{last['base'] + last['size']:#x}: the heap must follow the slots")
-    if heap_end <= heap_start:
-        fail("memory.heap.end must be above memory.heap.start")
-    if heap_size < heap_end - heap_start:
-        fail(f"memory.heap.host_size {heap_size:#x} is smaller than the PS1 heap ({heap_end - heap_start:#x})")
     ram_end = g["ram_base"] + g["ram_size"]
+    if "heap" in mem:
+        heap_start = addr(mem["heap"]["start"], "memory.heap.start")
+        heap_end = addr(mem["heap"]["end"], "memory.heap.end")
+        heap_size = addr(mem["heap"].get("host_size", 0x400000), "memory.heap.host_size")
+        if heap_start != last["base"] + last["size"]:
+            fail(f"memory.heap.start {heap_start:#x} is not where the last slot ({last['name']}) ends, "
+                 f"{last['base'] + last['size']:#x}: the heap must follow the slots")
+        if heap_end <= heap_start:
+            fail("memory.heap.end must be above memory.heap.start")
+        if heap_size < heap_end - heap_start:
+            fail(f"memory.heap.host_size {heap_size:#x} is smaller than the PS1 heap ({heap_end - heap_start:#x})")
+        if heap_end > ram_end:
+            fail("memory.heap.end: outside the RAM")
+    else:
+        # No stack heap: the game's heap is its own data. The arena ends with the last slot.
+        heap_start = heap_end = None
+        heap_size = 0
     for s in slots:
         if not g["ram_base"] <= s["base"] < ram_end or s["base"] + s["size"] > ram_end:
             fail(f"memory.slots ({s['name']}): outside the RAM")
-    if heap_end > ram_end:
-        fail("memory.heap.end: outside the RAM")
     for n in set(s["name"] for s in slots):
         if sum(1 for s in slots if s["name"] == n) > 1:
             fail(f"memory.slots: the name {n!r} is used twice")
@@ -228,11 +236,19 @@ def header(g, source):
         w(f"#define PORT_SLOT{i}_NAME {cstr(s['name'])}")
         w(f"#define PORT_SLOT{i}_OFS {s['base'] - base0:#x}u /* from the arena's start */")
         w(f"#define port_slot{i} (port_arena + PORT_SLOT{i}_OFS)")
-    w(f"#define PORT_HEAP_START_ADDR {g['heap_start']:#010x}u")
-    w(f"#define PORT_HEAP_END_ADDR {g['heap_end']:#010x}u")
-    w(f"#define PORT_HEAP_OFS {g['heap_start'] - base0:#x}u")
-    w(f"#define PORT_HEAP_SIZE {g['heap_size']:#x}u /* the host heap region; the PS1's is "
-      f"{g['heap_end'] - g['heap_start']:#x} */")
+    last = g["slots"][-1]
+    if g["heap_start"] is not None:
+        w("#define PORT_HEAP_PRESENT 1")
+        w(f"#define PORT_HEAP_START_ADDR {g['heap_start']:#010x}u")
+        w(f"#define PORT_HEAP_END_ADDR {g['heap_end']:#010x}u")
+        w(f"#define PORT_HEAP_OFS {g['heap_start'] - base0:#x}u")
+        w(f"#define PORT_HEAP_SIZE {g['heap_size']:#x}u /* the host heap region; the PS1's is "
+          f"{g['heap_end'] - g['heap_start']:#x} */")
+    else:
+        w("#define PORT_HEAP_PRESENT 0 /* no stack heap: the game's heap is its own data; the HEAP_* hooks are "
+          "unusable */")
+        w(f"#define PORT_HEAP_OFS {last['base'] + last['size'] - base0:#x}u /* the arena's end */")
+        w("#define PORT_HEAP_SIZE 0u")
     w("#define PORT_ARENA_SIZE (PORT_HEAP_OFS + PORT_HEAP_SIZE)")
     w("")
     w("/* The discs the port accepts: the whole BIN's SHA-1 and size; `label` completes \"This is <label>.\" and "
@@ -308,7 +324,8 @@ def main():
         if not args.check:
             sys.stdout.write(header(g, Path(args.game).name))
         else:
-            print(f"game_gen: {args.game}: ok ({g['id']}: {len(g['slots'])} slots, {len(g['discs'])} discs)")
+            print(f"game_gen: {args.game}: ok ({g['id']}: {len(g['slots'])} slots, {len(g['discs'])} discs"
+                  + ("" if g["heap_start"] is not None else ", no heap") + ")")
     return 0
 
 

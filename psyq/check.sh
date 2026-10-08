@@ -3,12 +3,18 @@
 # own Psy-Q declarations (include/psxstack/psyq/), and, given a game's probe objects, checks that it covers every
 # Psy-Q symbol the game's host objects need. Needs no CMake or SDL.
 #
-#   psyq/check.sh [--game-root DIR] [--probe-dir DIR] [--compile] [-I DIR]...
+#   psyq/check.sh [--game-root DIR] [--probe-dir DIR] [--inventory FILE] [--python EXE] [--game-json FILE]
+#                 [--compile] [-I DIR]...
 #     --game-root DIR   the game checkout, for the coverage: its probe objects say what it needs
-#     --probe-dir DIR   the game's probe output (tools/port_inventory.py probe: DIR/include holds the generated
+#     --probe-dir DIR   the game's probe output (the game's port_inventory.py probe: DIR/include holds the generated
 #                       psxstack_game_gen.h, DIR/m64/obj the game's objects); default <game-root>/build/port_inventory
+#     --inventory FILE  the game's inventory wrapper (for the coverage); default <game-root>/tools/port_inventory.py
+#     --python EXE      the Python that runs it; default <game-root>/tools/venv/bin/python, else <game-root>/.venv/bin/python,
+#                       else python3
+#     --game-json FILE  the description to generate psxstack_game_gen.h from when the probe directory holds none;
+#                       default examples/hello/game.json
 #     --compile         compile only: no game needed (the shim compiles against the stack's own declarations,
-#                       include/psxstack/psyq/, with examples/hello's game.json standing in for the description)
+#                       include/psxstack/psyq/, with --game-json or hello's standing in for the description)
 #     -I DIR            more include directories
 #   EXTRA="-O2 -fsanitize=address,undefined" psyq/check.sh --compile   # with more flags
 # Exit 0: compiled (and, with the coverage, nothing missing and no duplicate global).
@@ -16,14 +22,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 CC=${CC:-gcc}
 EXTRA=${EXTRA:-}
-game= probe= compile_only=0 extra_inc=()
+game= probe= inv= py= game_json= compile_only=0 extra_inc=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --game-root) game="$2"; shift 2 ;;
         --probe-dir) probe="$2"; shift 2 ;;
+        --inventory) inv="$2"; shift 2 ;;
+        --python) py="$2"; shift 2 ;;
+        --game-json) game_json="$2"; shift 2 ;;
         --compile) compile_only=1; shift ;;
         -I) extra_inc+=("-I$2"); shift 2 ;;
-        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "check: unknown argument $1" >&2; exit 2 ;;
     esac
 done
@@ -32,9 +41,17 @@ if [[ -z "$game" && $compile_only -eq 0 ]]; then
 fi
 if [[ -n "$game" ]]; then
     probe="${probe:-$game/build/port_inventory}"
+    inv="${inv:-$game/tools/port_inventory.py}"
+    if [[ -z "$py" ]]; then
+        for cand in "$game/tools/venv/bin/python" "$game/.venv/bin/python"; do
+            [[ -x "$cand" ]] && { py="$cand"; break; }
+        done
+    fi
 else
     probe="${probe:-$HERE/build/psyq_check}"
 fi
+py="${py:-python3}"
+game_json="${game_json:-$HERE/examples/hello/game.json}"
 OUT="$probe/psyq"
 mkdir -p "$OUT"
 # The generated description header (hooks.h includes it): the game's probe wrote one; without a game, hello's.
@@ -44,7 +61,7 @@ else
     [[ -z "$game" ]] || { echo "check: $probe/include is missing: run the game's tools/port_inventory.py probe first" >&2; exit 2; }
     gen_inc="$OUT/include"
     mkdir -p "$gen_inc"
-    python3 "$HERE/tools/game_gen.py" "$HERE/examples/hello/game.json" --out "$gen_inc/psxstack_game_gen.h"
+    python3 "$HERE/tools/game_gen.py" "$game_json" --out "$gen_inc/psxstack_game_gen.h"
 fi
 CFLAGS=(-m64 -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -DPC_PORT -Wall -Wextra -Werror
         -I"$gen_inc" -I"$HERE/psyq" -I"$HERE/include" -I"$HERE/include/psxstack" -I"$HERE/runtime" "${extra_inc[@]}")
@@ -64,8 +81,7 @@ if [[ ! -d "$probe/m64/obj" ]]; then
     exit 2
 fi
 game_objs=$(find "$probe/m64/obj" -name '*.o')
-inv="$game/tools/port_inventory.py"
-py="$game/tools/venv/bin/python"; [[ -x "$py" ]] || py=python3
+[[ -f "$inv" ]] || { echo "check: $inv is missing: pass --inventory FILE (the game's port_inventory.py wrapper)" >&2; exit 2; }
 need=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q function:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
 need_data=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q data:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
 have=$(nm -g --defined-only "$OUT"/*.o | awk '$2 ~ /^[TDBR]$/ {print $3}' | sort -u)

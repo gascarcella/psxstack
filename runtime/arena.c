@@ -1,7 +1,8 @@
 /* The memory arena (psxstack/hooks.h; docs/PORT.md "Memory arena"): one block that stands for the PS1 RAM from the first
- * slot up: the PORT_SLOT_COUNT slots and the heap at the PS1's distances (psxstack_game_gen.h, from the game's game.json),
- * so that a pointer's PS1-style address is PORT_SLOT1_BASE + its offset. The heap is larger than the PS1's
- * (PORT_HEAP_SIZE).
+ * slot up: the PORT_SLOT_COUNT slots and, when the description has one (PORT_HEAP_PRESENT), the heap at the PS1's
+ * distances (psxstack_game_gen.h, from the game's game.json), so that a pointer's PS1-style address is
+ * PORT_SLOT1_BASE + its offset. The heap is larger than the PS1's (PORT_HEAP_SIZE). A game whose heap is its own
+ * data has none here: the arena ends with the last slot.
  * The block needs no alignment: an ordering-table tag's 24 bits are a pointer's word offset in the tag window
  * (PTR_TO_U32, port_ptr_to_u32: the game's static data and the arena, one image's writable memory, measured at
  * startup; words, so that a sanitizer build's redzones (22 MB of game data) fit), which the shim's DrawOTag resolves
@@ -18,7 +19,9 @@
 #include "savestate.h"
 
 _Static_assert(PORT_SLOT1_OFS == 0, "the first slot starts the arena");
+#if PORT_HEAP_PRESENT
 _Static_assert(PORT_HEAP_OFS == PORT_HEAP_START_ADDR - PORT_SLOT1_BASE, "the heap follows the slots at the PS1's distance");
+#endif
 _Static_assert(PORT_ARENA_SIZE < ((u32)0xFFFFFF << PORT_TAG_SHIFT), "the arena must fit the tag window: a 24-bit tag of words");
 
 u8 port_arena[PORT_ARENA_SIZE] __attribute__((aligned(4096)));
@@ -40,8 +43,8 @@ void port_arena_init(void) {
         memcpy(port_bios_standin + (b->address - BIOS_STANDIN_BASE), b->text, n);
     }
     if (port_trace) {
-        port_log("arena: %p, %u KB (%d slots, %#x; heap %u KB)", (void *)port_arena, PORT_ARENA_SIZE >> 10,
-                 PORT_SLOT_COUNT, PORT_HEAP_OFS, PORT_HEAP_SIZE >> 10);
+        port_log("arena: %p, %u KB (%d slots, %#x; heap %u KB%s)", (void *)port_arena, PORT_ARENA_SIZE >> 10,
+                 PORT_SLOT_COUNT, PORT_HEAP_OFS, PORT_HEAP_SIZE >> 10, PORT_HEAP_PRESENT ? "" : ": none");
     }
 }
 

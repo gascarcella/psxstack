@@ -9,7 +9,10 @@
 #       [TAG_SITES <tag_sites.txt>]                 # the game's tag sites whose overlay is known
 #       [EXE_SYMBOLS <symbol_addrs.txt>]            # the EXE's functions and sized data: the state tables
 #       [VOLATILE <volatile.txt>]                   # the stable hash's zeroed ranges
-#       [GTEMAC <gtemac.h>] [INCLUDE_ASM_GUARD <X>] # the game's GTE macros to translate; its include_asm.h's guard
+#       [GTEMAC <gtemac.h>] [INCLUDE_ASM_GUARD <X>] # the game's GTE macros to translate (the override is written at the
+#                                                   #   header's path relative to the game's include dir); its
+#                                                   #   include_asm.h's guard. A game may pass no GTEMAC and put a host
+#                                                   #   GTE header of its own first in INCLUDE_DIRS
 #       INCLUDE_DIRS <dir>...                       # the game's include/ (its common.h, port.h, psyq/*.h) and root
 #       [ADAPTER <source>...]                       # the adapter units (psxstack/game.h)
 #       [MODS_DIRS <dir>...]                        # directories of mods/<id>/mod.json, copied beside the binary
@@ -109,6 +112,14 @@ function(psxstack_add_game target)
     set(_ov overrides --out "${GEN}/include")
     if(G_GTEMAC)
         list(APPEND _ov --gtemac "${G_GTEMAC}")
+        # The override goes where `#include "<path>"` finds it first: the header's path under the game's include dir.
+        foreach(d IN LISTS G_INCLUDE_DIRS)
+            file(RELATIVE_PATH _gte_rel "${d}" "${G_GTEMAC}")
+            if(NOT _gte_rel MATCHES "^\\.\\." AND NOT IS_ABSOLUTE "${_gte_rel}")
+                list(APPEND _ov --gtemac-include "${_gte_rel}")
+                break()
+            endif()
+        endforeach()
     endif()
     if(G_INCLUDE_ASM_GUARD)
         list(APPEND _ov --include-asm-guard "${G_INCLUDE_ASM_GUARD}")
