@@ -35,3 +35,14 @@ index, so the game C does not change.
 ## Versioning (2026-10-07)
 Semver tags; `PSXSTACK_API` counts incompatible contract changes and replaces `PORT_MODS_API` (manifests keep
 `requires_port`). The settings file's `schema` stays 1; changing it is a MAJOR.
+
+## The game's hook header keeps the PS1 side; the stack's hooks.h is the host side only (2026-10-07)
+Phase 0 had the game's `port.h` include `<psxstack/hooks.h>` for both sides. The matching build must not depend on
+the stack at all (a clone without the submodule still rebuilds the executable byte for byte), so the PS1 expansions
+stay in the game's header and `<psxstack/hooks.h>` is included only under `#ifdef PC_PORT`. The game's constants and
+the description's are tied by `_Static_assert`s in the adapter.
+
+## The launcher's self-test carries its fixtures (2026-10-07)
+The four test manifests live as files under `tests/fixtures/mods/` (readable, diffable), and the launcher's CMake
+compiles them into the binary as string constants. The self-test keeps needing no file beside the executable, which
+is what lets it run inside a release package and under Wine.
