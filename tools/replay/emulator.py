@@ -47,6 +47,30 @@ RUN_LUA = HERE / "run.lua"
 BOOT_LUA = HERE / "boot_check.lua"
 # Fields of a checkpoint / sequence entry that the record keeps (in this order).
 CHECKPOINT_FIELDS = ("name", "frame", "stage", "map", "random_index", "gamestate_sha1", "gamestate_sha1_stable")
+# A checkpoint step with `"image": false` is recorded without the two hashes and with `"image": false` (absent: true).
+CHECKPOINT_PLAIN_FIELDS = CHECKPOINT_FIELDS[:5]
+IMAGE_FIELDS = CHECKPOINT_FIELDS[5:]
+
+
+def has_image(cp):
+    """Whether a script step or a record's checkpoint carries the checkpoint image (the default)."""
+    return cp.get("image", True) is not False
+
+
+def image_diffs(script, record, what="record"):
+    """The checkpoint steps' `image` flags of a script against a record's checkpoints (in order): a record that hashes
+    a no-image checkpoint, or lacks the hashes of an image one, does not belong to the script."""
+    steps = [st for st in script.get("steps", []) if st.get("type") == "checkpoint"]
+    diffs = []
+    for i, (st, cp) in enumerate(zip(steps, record["checkpoints"])):
+        if has_image(st) != has_image(cp):
+            diffs.append(f"checkpoint {i} ({cp.get('name')}): the script says image {has_image(st)}, the {what} says "
+                         f"{has_image(cp)}")
+        elif not has_image(cp) and any(f in cp for f in IMAGE_FIELDS):
+            diffs.append(f"checkpoint {i} ({cp.get('name')}): the {what} has a hash for a checkpoint without an image")
+        elif has_image(cp) and not all(f in cp for f in IMAGE_FIELDS):
+            diffs.append(f"checkpoint {i} ({cp.get('name')}): the {what} lacks the image hashes")
+    return diffs
 
 
 class Config:
@@ -215,6 +239,9 @@ def run_once(script_path, script, bios, out_dir, verbose=False, lua=None, emu_ar
     checkpoints = []
     for cp in result["checkpoints"]:
         entry = {k: cp[k] for k in CHECKPOINT_FIELDS if k in cp}
+        if not has_image(cp):
+            checkpoints.append({**{k: entry[k] for k in CHECKPOINT_PLAIN_FIELDS}, "image": False})
+            continue
         data = (out_dir / cp["gamestate_file"]).read_bytes()
         entry["gamestate_sha1"] = hashlib.sha1(data).hexdigest()
         stable = bytearray(data)
@@ -234,6 +261,9 @@ def run_once(script_path, script, bios, out_dir, verbose=False, lua=None, emu_ar
         "map_sequence": result["map_sequence"],
         "inputs": result["inputs"],
     }
+    diffs = image_diffs(script, record)
+    if diffs:
+        raise RuntimeError("the script and the record disagree: " + "; ".join(diffs))
     print(f"  run: {result['frames']} frames, {len(checkpoints)} checkpoints, {elapsed:.0f} s wall")
     return record
 
@@ -247,9 +277,10 @@ def compare(expected, actual, ignore=("tree_commit",)):
         if expected.get(key) != actual.get(key):
             if key == "checkpoints":
                 for i, (e, a) in enumerate(zip(expected[key], actual[key])):
-                    for f in CHECKPOINT_FIELDS:
-                        if e.get(f) != a.get(f):
-                            diffs.append(f"checkpoint {i} ({e.get('name')}) {f}: expected {e.get(f)!r}, got {a.get(f)!r}")
+                    for f in (*CHECKPOINT_FIELDS, "image"):
+                        ev, av = (has_image(e), has_image(a)) if f == "image" else (e.get(f), a.get(f))
+                        if ev != av:
+                            diffs.append(f"checkpoint {i} ({e.get('name')}) {f}: expected {ev!r}, got {av!r}")
                 if len(expected[key]) != len(actual[key]):
                     diffs.append(f"checkpoints: expected {len(expected[key])}, got {len(actual[key])}")
             else:
@@ -260,9 +291,12 @@ def compare(expected, actual, ignore=("tree_commit",)):
 def cross_core_view(record):
     """The part of a record that must not depend on the CPU core (dynarec or -interpreter), nor on the port's timing:
     checkpoint names, stages, maps and stable hashes, and the overlay and map sequences without frames. Frames, RNG
-    draw counts, the full hash (timers) and the input trace follow the emulated timing."""
+    draw counts, the full hash (timers) and the input trace follow the emulated timing. A checkpoint without an image
+    (`"image": false`) has no hash: it is its name, stage and map, and `"image": false`."""
     return {
-        "checkpoints": [{k: cp[k] for k in ("name", "stage", "map", "gamestate_sha1_stable")} for cp in record["checkpoints"]],
+        "checkpoints": [{k: cp[k] for k in ("name", "stage", "map", "gamestate_sha1_stable")} if has_image(cp) else
+                        {**{k: cp[k] for k in ("name", "stage", "map")}, "image": False}
+                        for cp in record["checkpoints"]],
         "overlay_sequence": [(o["stage"], o["file"]) for o in record["overlay_sequence"]],
         "map_sequence": [m["map"] for m in record["map_sequence"]],
     }
@@ -355,6 +389,9 @@ def check_one(script_path, args):
     expected = json.loads(expected_path.read_text())
     if expected.get("script_sha1") != sha1_file(script_path):
         return 1, [f"replay {script['name']}: FAIL (the script changed since it was recorded; re-record)"]
+    diffs = image_diffs(script, expected, "expected file")
+    if diffs:
+        return 1, [f"replay {script['name']}: FAIL (script and expected file disagree: " + "; ".join(diffs) + ")"]
     bios = bios_path(expected["bios"]["name"])
     out = Path(tempfile.mkdtemp(prefix=f"{CFG.game_id}_replay_{script['name']}_"))
     lines = [f"replay {script['name']} (bios {expected['bios']['name']})"]

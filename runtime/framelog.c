@@ -32,6 +32,7 @@ typedef struct PortCheckpoint {
     s32 stage;
     u32 map;
     s32 random_index;
+    int image; /* 0: the script said "image": false; no hashes */
     char sha1[41], stable[41];
 } PortCheckpoint;
 typedef struct PortInput {
@@ -133,7 +134,7 @@ void port_framelog_overlay_load(int tier, s32 file, const char *name, u32 word0,
               name != NULL ? name : "(data)", word0, size);
 }
 
-void port_framelog_checkpoint(const char *name) {
+void port_framelog_checkpoint(const char *name, int image) {
     PortCheckpoint *c;
     c = port_append(&port_checkpoints, &port_checkpoint_n, &port_checkpoint_cap, sizeof(*port_checkpoints));
     c->name = strdup(name);
@@ -144,6 +145,13 @@ void port_framelog_checkpoint(const char *name) {
     c->stage = game_state_stage();
     c->map = (u32)game_state_map();
     c->random_index = game_state_random_index();
+    c->image = image;
+    if (!image) {
+        c->sha1[0] = c->stable[0] = '\0';
+        port_logf("C %ld %s stage %d map 0x%X rnd %d image false", c->frame, c->name, c->stage, c->map,
+                  c->random_index);
+        return;
+    }
     port_state_sha1(c->sha1, c->stable);
     port_logf("C %ld %s stage %d map 0x%X rnd %d sha1 %s stable %s", c->frame, c->name, c->stage, c->map,
               c->random_index, c->sha1, c->stable);
@@ -271,6 +279,11 @@ static void port_write_record(int status, const char *reason) {
         const PortCheckpoint *c = &port_checkpoints[i];
         fprintf(f, "%s\n  {\"name\": ", i ? "," : "");
         port_json_string(f, c->name);
+        if (!c->image) {
+            fprintf(f, ", \"frame\": %ld, \"stage\": %d, \"map\": %u, \"random_index\": %d, \"image\": false}",
+                    c->frame, c->stage, c->map, c->random_index);
+            continue;
+        }
         fprintf(f,
                 ", \"frame\": %ld, \"stage\": %d, \"map\": %u, \"random_index\": %d, \"gamestate_sha1\": \"%s\", "
                 "\"gamestate_sha1_stable\": \"%s\"}",

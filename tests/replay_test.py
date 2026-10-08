@@ -37,9 +37,17 @@ image = bytes(range(64)) * 4                      # 256 bytes; bytes 0..3 are "t
 image = bytearray(image); image[0:4] = frame.to_bytes(4, "little")
 with open(os.path.join(out, "cp01_first.bin"), "wb") as f:
     f.write(image)
+cps = [{"name": "first", "frame": frame, "stage": 3, "map": 0x2D7, "random_index": frame // 7,
+        "gamestate_file": "cp01_first.bin", "image": True}]
+if os.environ.get("FAKE_NOIMAGE"):
+    # what run.lua writes for {"type": "checkpoint", "name": "early", "image": false}, first in the script
+    os.remove(os.path.join(out, "cp01_first.bin"))
+    with open(os.path.join(out, "cp02_first.bin"), "wb") as f:
+        f.write(image)
+    cps = [{"name": "early", "frame": 30, "stage": 0, "map": 0, "random_index": 4, "gamestate_file": None, "image": False},
+           dict(cps[0], gamestate_file="cp02_first.bin")]
 result = {"script": "fake", "frames": frame * 2, "status": "ok",
-          "checkpoints": [{"name": "first", "frame": frame, "stage": 3, "map": 0x2D7, "random_index": frame // 7,
-                           "gamestate_file": "cp01_first.bin"}],
+          "checkpoints": cps,
           "overlay_sequence": [{"frame": 1, "stage": 0, "file": 0}, {"frame": frame - 10, "stage": 3, "file": -1}],
           "map_sequence": [{"frame": 1, "map": 0}, {"frame": frame - 5, "map": 0x2D7}],
           "inputs": [{"frame": 1, "buttons": []}, {"frame": 10, "buttons": ["START"]}]}
@@ -70,6 +78,18 @@ def test_helpers():
     view = emulator.cross_core_view(rec)
     check(view == {"checkpoints": [{"name": "x", "stage": 1, "map": 2, "gamestate_sha1_stable": "a"}],
                    "overlay_sequence": [(0, 0)], "map_sequence": [0]}, f"cross_core_view: {view}")
+    ni = {"name": "early", "frame": 3, "stage": 0, "map": 0, "random_index": 1, "image": False}
+    rec2 = {"checkpoints": [ni, rec["checkpoints"][0]], "overlay_sequence": [], "map_sequence": []}
+    view2 = emulator.cross_core_view(rec2)
+    check(view2["checkpoints"] == [{"name": "early", "stage": 0, "map": 0, "image": False},
+                                   {"name": "x", "stage": 1, "map": 2, "gamestate_sha1_stable": "a"}], f"view: {view2}")
+    steps = {"steps": [{"type": "checkpoint", "name": "early", "image": False}, {"type": "checkpoint", "name": "x"}]}
+    check(emulator.image_diffs(steps, rec2) == [], "image_diffs: agree")
+    check(emulator.image_diffs({"steps": [{"type": "checkpoint", "name": "early"}, {"type": "checkpoint", "name": "x"}]},
+                               rec2) != [], "image_diffs: script hashes, record does not")
+    bad = {"checkpoints": [dict(ni, gamestate_sha1_stable="z"), rec["checkpoints"][0]]}
+    check("has a hash" in emulator.image_diffs(steps, bad)[0], "image_diffs: record hashed a no-image checkpoint")
+    check(emulator.compare(rec2, bad) != [], "compare sees the extra hash")
     run1 = (b"a\nb\n", b"{}", {}, "", b"spu")
     run2 = (b"a\nc\n", b"{}", {}, "", b"spu2")
     diffs = port_test.same_output(run1, run2, "x")
@@ -114,6 +134,35 @@ def test_driver(tmp):
           "run --interpreter: the cross-core view matches")
     (scripts / "fake.json").write_text((scripts / "fake.json").read_text() + "\n")
     check(emulator.main(["check"]) == 1, "check refuses a changed script")
+    # a script with one no-image checkpoint (the fake emulator writes what run.lua writes for it)
+    noimg = {"name": "noimg", "max_frames": 2000, "steps": [{"type": "checkpoint", "name": "early", "image": False},
+                                                          {"type": "wait_map", "map": "0x2D7"}, {"type": "checkpoint", "name": "first"}]}
+    (scripts / "noimg.json").write_text(json.dumps(noimg))
+    os.environ["FAKE_NOIMAGE"] = "1"
+    check(emulator.main(["run", str(scripts / "noimg.json"), "--record", "--repeat", "2", "--out", str(tmp / "o4")]) == 0,
+          "run --record, a no-image checkpoint")
+    rec = json.loads((expected / "noimg.json").read_text())
+    early, first = rec["checkpoints"]
+    check(early == {"name": "early", "frame": 30, "stage": 0, "map": 0, "random_index": 4, "image": False}
+          and "gamestate_sha1" in first and "image" not in first, f"no-image record: {rec['checkpoints']}")
+    check(emulator.image_diffs(noimg, rec, "expected file") == [], "script and record agree")
+    check(emulator.main(["check", str(scripts / "noimg.json")]) == 0, "check, a no-image checkpoint")
+    check(emulator.main(["run", str(scripts / "noimg.json"), "--interpreter", "--out", str(tmp / "o5")]) == 0,
+          "the cross-core view with a no-image checkpoint")
+    view = emulator.cross_core_view(rec)
+    check(view["checkpoints"][0] == {"name": "early", "stage": 0, "map": 0, "image": False}, f"view: {view}")
+    # the script says hash it, the emulator did not: a mismatch of script and record, reported
+    hashed = dict(noimg, steps=[dict(noimg["steps"][0], image=True)] + noimg["steps"][1:])
+    (scripts / "hashed.json").write_text(json.dumps(hashed))
+    check(emulator.main(["run", str(scripts / "hashed.json"), "--out", str(tmp / "o6")]) == 1,
+          "a script that wants the image against a record without it fails")
+    # the expected file hashes a checkpoint the script says not to: check reports it
+    bad = json.loads((expected / "noimg.json").read_text())
+    bad["checkpoints"][0].pop("image")
+    bad["checkpoints"][0]["gamestate_sha1"] = bad["checkpoints"][0]["gamestate_sha1_stable"] = "0" * 40
+    (expected / "noimg.json").write_text(json.dumps(bad))
+    check(emulator.main(["check", str(scripts / "noimg.json")]) == 1, "check: an expected file with a hash for a no-image checkpoint")
+    os.environ.pop("FAKE_NOIMAGE")
     print("driver: ok")
 
 

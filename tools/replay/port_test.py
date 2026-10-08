@@ -47,7 +47,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from emulator import compare, cross_core_view, sha1_file  # noqa: E402  (the emulator test's own comparison)
+from emulator import compare, cross_core_view, has_image, image_diffs, sha1_file  # noqa: E402  (the emulator test's own comparison)
 
 SANITIZER_MARKS = ("runtime error:", "ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "SUMMARY: AddressSanitizer",
                    "SUMMARY: UndefinedBehaviorSanitizer")
@@ -176,10 +176,13 @@ def summary(expected, rec):
     print(f"  {'checkpoint':<16} {'stage':>5} {'map':>7} {'port frame':>10} {'emulator':>8}  stable hash")
     for cp in rec["checkpoints"]:
         e = exp_cps.get(cp["name"], {})
-        mark = "ok" if e.get("gamestate_sha1_stable") == cp["gamestate_sha1_stable"] else \
-            f"DIFFERS (emulator {e.get('gamestate_sha1_stable', '?')[:12]})"
-        print(f"  {cp['name']:<16} {cp['stage']:>5} {cp['map']:>#7x} {cp['frame']:>10} {e.get('frame', '-'):>8}  "
-              f"{cp['gamestate_sha1_stable'][:12]} {mark}")
+        if not has_image(cp):
+            hashes = "no image" + ("" if not has_image(e) else " (DIFFERS: the emulator hashed it)")
+        else:
+            mark = "ok" if e.get("gamestate_sha1_stable") == cp["gamestate_sha1_stable"] else \
+                f"DIFFERS (emulator {e.get('gamestate_sha1_stable', '?')[:12]})"
+            hashes = f"{cp['gamestate_sha1_stable'][:12]} {mark}"
+        print(f"  {cp['name']:<16} {cp['stage']:>5} {cp['map']:>#7x} {cp['frame']:>10} {e.get('frame', '-'):>8}  {hashes}")
     view = cross_core_view(rec)
     print("  overlay sequence: " + " ".join(f"({s},{f})" for s, f in view["overlay_sequence"]))
     print("  map sequence:     " + " ".join(f"{m:#x}" for m in view["map_sequence"]))
@@ -203,6 +206,11 @@ def check_script(name, args, env, out):
         run1 = run_port(binary, script, out, "run1", args.cd_speed)
         run2 = run_port(binary, script, out, "run2", args.cd_speed)
         rec = run1[2]
+        for what, r in (("expected file", expected), ("port record", rec)):
+            diffs = image_diffs(json.loads(script.read_text()), r, what)
+            failures += diffs
+            if diffs:
+                print("  script vs " + what + ": " + "; ".join(diffs))
         print(f"  runs: {rec['frames']} frames (emulator {expected['frames']}), {rec['reason']}; exit 0")
         diffs = same_output(run1, run2, "run 1 vs run 2")
         failures += diffs

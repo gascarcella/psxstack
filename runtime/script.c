@@ -81,6 +81,7 @@ typedef struct ScriptStep {
     u16 buttons;   /* press */
     double x, y, tol; /* walk */
     char *name;    /* checkpoint, vram (default "unnamed") */
+    int no_image;  /* checkpoint with "image": false: the image is not dumped nor hashed */
 } ScriptStep;
 
 static char *script_name;
@@ -301,6 +302,13 @@ static void script_load_step(const PortJson *obj, ScriptStep *s, long default_ti
         if (s->name == NULL) {
             port_fatal("script: out of memory");
         }
+        if (s->type == SCRIPT_CHECKPOINT) {
+            const PortJson *image = port_json_get(obj, "image");
+            if (image != NULL && image->type != PORT_JSON_BOOL) {
+                script_error(step, "checkpoint: `image` is true or false");
+            }
+            s->no_image = image != NULL && !image->boolean;
+        }
         break;
     }
     }
@@ -410,14 +418,14 @@ static int script_cond_met(const ScriptCond *c) {
 
 /* With <PREFIX>_PORT_CHECKPOINT_DIR set, a checkpoint also writes the game-state image (the bytes it hashes) to
  * <dir>/cpNN_<name>.bin, as run.lua names its dumps: a stable-hash mismatch is then a byte diff away. */
-static void script_dump_checkpoint(const char *name) {
-    static int count;
+static int script_checkpoints;
+
+static void script_dump_checkpoint(const char *name, int count) {
     const char *dir = getenv(PSXSTACK_GAME_ENV_PREFIX "_PORT_CHECKPOINT_DIR");
     const u8 *image;
     size_t size = game_state_image_size();
     char path[4096];
     FILE *f;
-    count++;
     if (dir == NULL || dir[0] == '\0') {
         return;
     }
@@ -461,8 +469,11 @@ static int script_run_step(const ScriptStep *s, int *instant) {
     elapsed = frame - script_step_started;
     switch (s->type) {
     case SCRIPT_CHECKPOINT:
-        port_framelog_checkpoint(s->name);
-        script_dump_checkpoint(s->name);
+        script_checkpoints++; /* the dump's number counts the checkpoints without an image too, as run.lua's */
+        port_framelog_checkpoint(s->name, !s->no_image);
+        if (!s->no_image) {
+            script_dump_checkpoint(s->name, script_checkpoints);
+        }
         port_savestate_checkpoint(s->name); /* --save-state NAME:FILE */
         *instant = 1;
         return 1;

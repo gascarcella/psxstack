@@ -363,7 +363,7 @@ far (an event between two ticks carries the last tick's number, as an emulator's
 | `S <frame> stage <stage> file <file>` | An overlay-sequence entry: `(stage, file)` changed (frame 1 always) |
 | `M <frame> map 0x<map>` | A map-sequence entry: the map changed (frame 1 always) |
 | `L <frame> tier <t> file 0x<id> <name> word0 0x<8 hex> size 0x<n>` | A file copied into a slot (`port_overlay_load`): the overlay's name, or `(data)`; its first word; its size |
-| `C <frame> <name> stage <stage> map 0x<map> rnd <index> sha1 <40 hex> stable <40 hex>` | A checkpoint |
+| `C <frame> <name> stage <stage> map 0x<map> rnd <index> sha1 <40 hex> stable <40 hex>` | A checkpoint; `... rnd <index> image false` for a checkpoint step with `"image": false` (no hashes) |
 | `I <frame> buttons 0x<4 hex>` | The script's pad changed (`port_framelog_input`; PS1 bit order, active high) |
 | `R <frame> reset` | The console's reset (the script's `reset` step): the next frame runs the game from `main()` again |
 | `X <frame> status <status> <reason>` | The exit (`port_exit`) |
@@ -371,7 +371,7 @@ far (an event between two ticks carries the last tick's number, as an emulator's
 ## The record (`--record FILE`)
 JSON written at exit, with the keys of the first game's emulator records (its `replay.py` reads it as it is):
 `runner` (`"port"`), `status` (the exit status), `reason`, `frames`, `checkpoints` (`name`, `frame`, `stage`, `map`,
-`random_index`, `gamestate_sha1`, `gamestate_sha1_stable`, as the emulator runner records them), `overlay_sequence`
+`random_index`, `gamestate_sha1`, `gamestate_sha1_stable`, as the emulator runner records them; a checkpoint whose script step says `"image": false` has `"image": false` instead of the two hashes, and a record without `image` means true), `overlay_sequence`
 (`{frame, stage, file}`), `map_sequence` (`{frame, map}`), and `inputs` (`{frame, buttons: [names]}`, the names sorted) once the script has called `port_framelog_input`. The sequences follow the emulator runner's vsync
 listener: an entry at every change, the first frame always (`{1, 0, 0}`, map 0).
 
@@ -394,13 +394,23 @@ by the stack's CI: it needs a game, its disc and its pinned emulator.
   `map_sequence`, `inputs` ("The record" above: the port writes the same shape). `check` compares a run with the
   expected file whole; `--interpreter` and `--prelude` compare the **cross-core view** (checkpoint names, stages,
   maps and stable hashes; the overlay and map sequences without frames), the part of a record that neither the CPU
-  core nor the port's timing changes. The emulator's environment: `PSXSTACK_REPLAY_SCRIPT`, `_OUT`, `_PROBES`,
+  core nor the port's timing changes; a checkpoint without an image contributes its name, stage and map and
+  `"image": false`. The emulator's environment: `PSXSTACK_REPLAY_SCRIPT`, `_OUT`, `_PROBES`,
   `_SLOT1_BASE`, `_SPEED`, `_VERBOSE`, and the same under the game's prefix.
 - **`run.lua`** is the step engine in the emulator (`runtime/script.c` is the same engine on the port): every vsync it
   records the (stage, file) and map transitions, applies the held buttons through the pad override, advances the
   steps (`press` with `repeat`/`until`, `wait_stage`/`wait_map`/`wait_mem`/`wait_frames`, `walk`, `reset`,
   `checkpoint`, `vram`), and writes `result.json`. It reads the game's state through the probes chunk
   (`PSXSTACK_REPLAY_PROBES`), loaded with `PSXSTACK_REPLAY` (`u8`..`s32` over the emulated RAM) in scope.
+- **The script's `checkpoint` step** is `{"type": "checkpoint", "name": "x"}`: the frame, stage, map and random
+  index, and the hashes of the checkpoint image (the dump, with `<PREFIX>_PORT_CHECKPOINT_DIR`). **`"image": false`**
+  (optional, default true) says the image is not to be hashed there (before the game has set its state up, its bytes
+  are leftover memory and timing-dependent values that neither the PS1 nor the port define): neither runner dumps or
+  hashes it, the record's checkpoint carries `"image": false` and no `gamestate_sha1*`, and the comparisons use its
+  name, stage and map (and the sequences) only. The rest of the checkpoint is unchanged. A record that has hashes for
+  such a checkpoint, or lacks them for one with an image, does not belong to the script: the emulator runner and the
+  port test report it as a failure, and do so for an expected file as well. Dump files are numbered by the
+  checkpoint's position (`cp02_x.bin` is the second checkpoint), no-image ones included.
 - **`boot_check.lua`** waits for the probes' `booted()` (`PSXSTACK_BOOT_FRAMES`, default 3000) and prints
   `boot check: OK` or `FAIL`.
 - **`port_test.py`** builds the port (`cmake -S <port> -B build/port -G Ninja`, and `build/port-m32`,

@@ -25,7 +25,7 @@
 --   3. advances the step list: press (hold buttons for N frames, then release for `release` frames; optionally
 --      `repeat`ed or repeated `until` a wait condition holds), wait_frames, wait_stage / wait_map / wait_mem (with a
 --      timeout), walk (hold the d-pad toward a field position), reset (reboot the console), checkpoint (dump the
---      checkpoint image to a file and log the frame, stage, map and random index), vram (append the whole VRAM to
+--      checkpoint image to a file, unless `image` is false, and log the frame, stage, map and random index), vram (append the whole VRAM to
 --      vram_<name>.bin on each of its `frames` frames).
 -- At the end it writes result.json and exits 0; a timeout or a Lua error writes what it has and exits 1.
 
@@ -171,10 +171,14 @@ end
 
 local function checkpoint(step)
     local n = #result.checkpoints + 1
-    local file = string.format('cp%02d_%s.bin', n, step.name or 'unnamed')
-    local f = assert(io.open(out_dir .. '/' .. file, 'wb'))
-    f:write(ffi.string(ptr(game.image_addr), game.image_size))
-    f:close()
+    -- `image = false` on the step: no dump, no hash (the record says image = false)
+    local file = nil
+    if step.image ~= false then
+        file = string.format('cp%02d_%s.bin', n, step.name or 'unnamed')
+        local f = assert(io.open(out_dir .. '/' .. file, 'wb'))
+        f:write(ffi.string(ptr(game.image_addr), game.image_size))
+        f:close()
+    end
     result.checkpoints[n] = {
         name = step.name or 'unnamed',
         frame = frame,
@@ -182,6 +186,7 @@ local function checkpoint(step)
         map = game.map(),
         random_index = game.random_index(),
         gamestate_file = file,
+        image = step.image ~= false,
     }
     print('replay: checkpoint ' .. (step.name or '?') .. ' ' .. state_string())
 end
