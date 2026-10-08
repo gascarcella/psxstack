@@ -14,9 +14,10 @@ Code cites this file as `docs/LAUNCHER.md "<heading>"`; keep the headings stable
   file.
 - **The game never loads a configuration on its own.** Without `--config` it behaves as the bare binary always did:
   the tests and CI run it that way and must not depend on the machine.
-- The launcher edits that file and starts `<id> --config <dir>/settings.json --crash-dir <dir>/crashes` in the
-  settings directory (`SDL_CreateProcess`). Before that it runs `<id> --config FILE --print-settings`, the game's own
-  check of the file. The game stays startable without the launcher (`--config`, or plain options).
+- The launcher edits that file and starts `<id> --config <dir>/settings.json --crash-dir <dir>/crashes --mods-dir
+  <dir>/mods` in the settings directory (`SDL_CreateProcess`). Before that it runs `<id> --config FILE --mods-dir
+  <dir>/mods --print-settings`, the game's own check of the file (a game without `--config`, `--crash-dir` or
+  `--mods-dir` in its usage is too old for the launcher). The game stays startable without the launcher (`--config`, or plain options).
 - A game started with `--config` has, by default: a window, memory card files beside the settings file, and the
   watchdog off.
 - The disc's SHA-1 check stays the game's (the runtime's `disc.c`, `sha1.c`), against the discs the description lists.
@@ -40,7 +41,7 @@ The launcher picks one directory, the first of these that applies (`launcher/src
    set), `%APPDATA%\<id>\` on Windows.
 
 The directory holds `settings.json`, the memory cards, `logs/` (the game's output: `last-run.log`, the previous run's
-as `last-run.1.log`), `crashes/` (the game's crash reports) and (later) `mods/`. The launcher shows which directory it
+as `last-run.1.log`), `crashes/` (the game's crash reports) and `mods/` (the user's data mods, "Data mods"). The launcher shows which directory it
 chose and why. The game itself never looks for a settings directory: it reads only the file `--config` names.
 
 ## Settings file
@@ -102,6 +103,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `watchdog` | integer 0-3600 | 0 | Seconds without a vsync before the game exits 4; 0 is off. The bare binary (no `--config`) keeps its 10 s |
 | `input` | object | the game's | "Input bindings" |
 | `mods` | object | every mod off | "Mods section" |
+| `mod_order` | list of strings | by id | The data mods' ids by priority, the first winning ("Data mods"). The launcher's Earlier/Later buttons write the whole list. Ids of data mods not found are kept |
 | `launcher` | object | none | The launcher's own state (e.g. `last_dir`, where its file dialog opens). The game never reads it and `--print-settings` prints it back unchanged |
 
 ### Input bindings
@@ -158,8 +160,8 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 ## Mod manifest
 
 Each mod has a manifest, `mods/<mod id>/mod.json` in the game repo. The game's build copies them beside the binary
-(`<build dir>/mods/<mod id>/mod.json`), where the launcher lists them; later the launcher will also list the settings
-directory's `mods/`. The user-facing text (names, descriptions, labels) lives in the manifests only; the user's values
+(`<build dir>/mods/<mod id>/mod.json`), where the launcher lists them; the launcher also lists the data mods in the settings
+directory's `mods/` ("Data mods"). The user-facing text (names, descriptions, labels) lives in the manifests only; the user's values
 live in the settings file, never in the manifest.
 
 **Top level:**
@@ -171,7 +173,8 @@ live in the settings file, never in the manifest.
 | `name` | yes | Shown in the launcher |
 | `version` | no | A string |
 | `description` | no | Shown on the mod's page |
-| `kind` | yes | `builtin` (the only kind supported; `data` is reserved for data-override mods) |
+| `kind` | yes | `builtin` (code in the game, from the game's build) or `data` (files: "Data mods") |
+| `textures` | data mods | `{ "dir": "textures", "filter": "linear" }`, both optional: the mod is a texture pack (RUNTIME.md "Texture packs"), its PNGs under `dir`, filtered `linear` or `nearest` |
 | `requires_port` | no | Integer: the stack's mod interface the mod needs (`PSXSTACK_API`, GAME_CONTRACT.md "Compatibility and versions"; 1 now) |
 | `options` | no | A list of options |
 | `presets` | no | A list of presets: `{ "id", "name", "description" (optional), "values": { "<option id>": value } }`. The launcher shows a button per preset (pressed while all its values are in place) that sets those values; the game never sees a preset, only the values |
@@ -208,8 +211,23 @@ keeps the value); while it is on the option is a typed number from `min` to `max
 ```
 
 The built-in mods use the same schema as later data mods, so one renderer in the launcher serves both. A manifest the
-launcher cannot use (not JSON, another schema, an `id` that is not its directory's name, a bad option or preset, a
-`kind` other than `builtin`) is listed with the reason and cannot be switched on.
+launcher cannot use (not JSON, another schema, an `id` that is not its directory's name, a bad option or preset, an
+unknown `kind`, a data mod with options or without `textures`) is listed with the reason and cannot be switched on.
+
+## Data mods
+
+A data mod is files, no code: `<settings dir>/mods/<mod id>/mod.json` with `"kind": "data"` and the files it names. The
+only kind of data so far is `textures`, a texture pack (RUNTIME.md "Texture packs"; drawn by the hardware renderer).
+- **The launcher** lists them on the Mods screen below the built-in mods, in their priority order, each with its
+  on/off switch and, on its page, **Earlier**/**Later** (priority) and its directory. A built-in manifest there, an id a
+  built-in mod has, or a data mod with options is listed as unusable.
+- **The game** finds them through `--mods-dir DIR` (the launcher passes `<settings dir>/mods`; the game never looks for
+  a directory itself) and reads each `DIR/<mod id>/mod.json`: schema 1, the id its directory's name, `kind` `data`,
+  `requires_port` at most its API; others are logged and skipped. The settings switch one on as a built-in mod
+  (`mods.<mod id>.enabled`; an unknown id is not logged for a data mod found there) and `mod_order` orders them, the
+  first winning where two replace the same texture; those it does not name come after, by id. Packs given with
+  `--texture-pack` come before all of them. Off under `--script` unless `--script-mods`, as every mod. Only the SDL
+  build takes `--mods-dir` (the headless build exits 64).
 
 ## Mod runtime
 
@@ -246,7 +264,7 @@ edit, unknown ones included), and starts the game. Screens: **Disc** (file dialo
 the described discs' SHA-1s are accepted), **Play** (starts the game; on an error shows the exit status, the crash
 report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
 two, renderer, mute, memory cards), **Controls** (keyboard, gamepad, hotkeys), **Mods** (an on/off switch per mod and a
-page generated from its manifest). Build, run, details and the self-test: `launcher/README.md`.
+page generated from its manifest; the data mods in the settings directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
 
 ## Crash report
 

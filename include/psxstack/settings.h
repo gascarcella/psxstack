@@ -30,6 +30,7 @@ typedef struct PortSettings {
     PortJson *root;            /* the parsed file (owns the values below) */
     const PortJson *input;     /* input: { keyboard, gamepad, hotkeys } (input.c); NULL: the defaults */
     const PortJson *mods;      /* mods: { <id>: { enabled, <option>: value } } (mods.c); NULL: every mod off */
+    const PortJson *mod_order; /* mod_order: the data mods' ids by priority (mods_data.c); NULL: by id */
     const PortJson *launcher;  /* launcher: the launcher's own state, never read by the game (printed back as is) */
 } PortSettings;
 

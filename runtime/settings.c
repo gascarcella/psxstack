@@ -140,7 +140,7 @@ static void settings_memcard(const PortJson *root, const char *key, int slot) {
 
 void port_settings_load(const char *path) {
     static const char *const top_keys[] = { "schema", "disc", "video", "audio", "memcard1", "memcard2", "watchdog",
-                                            "input", "mods", "launcher", NULL };
+                                            "input", "mods", "mod_order", "launcher", NULL };
     static const char *const disc_keys[] = { "path", "sha1", NULL };
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
                                               "subpixel",
@@ -238,6 +238,15 @@ void port_settings_load(const char *path) {
     settings_int(root, "", "watchdog", 0, 3600, &s->watchdog);
     s->input = settings_member(root, "", "input", PORT_JSON_OBJECT);
     s->mods = settings_member(root, "", "mods", PORT_JSON_OBJECT);
+    s->mod_order = settings_member(root, "", "mod_order", PORT_JSON_ARRAY);
+    if (s->mod_order != NULL) {
+        size_t i;
+        for (i = 0; i < s->mod_order->count; i++) {
+            if (s->mod_order->items[i].type != PORT_JSON_STRING) {
+                port_settings_fail("mod_order", "a list of data mods' ids");
+            }
+        }
+    }
     s->launcher = settings_member(root, "", "launcher", PORT_JSON_OBJECT);
     port_settings_loaded = 1;
     port_log("settings: %s", s->file);
@@ -272,6 +281,10 @@ void port_settings_print(FILE *f, const PortSettings *s) {
     }
     fputs(",\n  \"mods\": ", f);
     port_mods_print(f, 1);
+    if (s->mod_order != NULL) {
+        fputs(",\n  \"mod_order\": ", f);
+        port_json_write(f, s->mod_order, 2, 1);
+    }
     if (s->launcher != NULL) {
         fputs(",\n  \"launcher\": ", f);
         port_json_write(f, s->launcher, 2, 1);

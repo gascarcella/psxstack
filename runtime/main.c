@@ -98,6 +98,8 @@ static void usage(const char *argv0) {
             "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
             "  --texture-pack DIR  a texture pack (DIR/mod.json, PNGs named by key) for the hardware renderer;\n"
             "                   repeatable, the first given wins\n"
+            "  --mods-dir DIR   the data mods (DIR/<id>/mod.json: texture packs), switched on and ordered by the\n"
+            "                   settings (mods.<id>.enabled, mod_order); a build with -DPSXSTACK_SDL=ON\n"
             "  --spu-trace FILE every SPU write and DMA block, per vsync (tests/sound's trace format)\n"
             "  --wav FILE       the audio output as a 44.1 kHz stereo WAV (any build, headless too)\n"
             "  --mute           no audio device in window mode\n"
@@ -136,6 +138,7 @@ int main(int argc, char **argv) {
     const char *dump_textures = NULL;
     const char *packs[32];
     int npacks = 0;
+    const char *mods_dir = NULL;
     int mute = 0, debug_hold = 0;
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
@@ -291,6 +294,8 @@ int main(int argc, char **argv) {
                 return 64;
             }
             packs[npacks++] = argv[++i];
+        } else if (strcmp(argv[i], "--mods-dir") == 0 && i + 1 < argc) {
+            mods_dir = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -314,7 +319,15 @@ int main(int argc, char **argv) {
         port_pace_set(fps);
     }
     port_input_settings(config != NULL ? port_settings.input : NULL);
+    if (mods_dir != NULL && !port_video_available()) {
+        fprintf(stderr, "port: --mods-dir: this build has no data mods: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (mods_dir != NULL) {
+        port_mods_data_scan(mods_dir); /* before the settings' mods, which then know the data mods' ids */
+    }
     port_mods_settings(config != NULL ? port_settings.mods : NULL);
+    port_mods_data_settings(config != NULL ? port_settings.mods : NULL, config != NULL ? port_settings.mod_order : NULL);
     if (print_mods) {
         port_mods_print_registry(stdout);
         return 0;
@@ -419,6 +432,7 @@ int main(int argc, char **argv) {
             port_exit(1, "--texture-pack: not a texture pack");
         }
     }
+    port_mods_data_start(script == NULL || script_mods); /* after --texture-pack's: those win */
     if (debug != NULL) {
         /* a driven run: the tool decides when it ends, and may hold the game paused for as long as it likes */
         port_watchdog_sec = 0;

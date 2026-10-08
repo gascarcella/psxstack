@@ -84,6 +84,9 @@ public:
     // The mods found beside the game.
     const std::vector<ModManifest> &mods() const { return mods_; }
     const std::string &mods_dir() const { return mods_dir_; }
+    const std::string &user_mods_dir() const { return user_mods_dir_; }
+    // The usable data mods' ids, the game's and the user's (their priority: ModValues::data_order).
+    std::vector<std::string> data_mod_ids() const;
     void select_mod(const std::string &id);
 
 private:
@@ -98,6 +101,7 @@ private:
     void draw_hotkeys();
     void draw_capture_popup();
     void draw_mods();
+    void draw_data_mod(const ModManifest &m, ModValues &values);
     void draw_mod(const ModManifest &m);
     bool draw_mod_option(const ModManifest &m, const ModOption &o, ModValues &values,
                          const std::vector<BindingUse> &uses);
@@ -141,8 +145,8 @@ private:
     bool want_capture_ = false;   // binding_editor's + was pressed
     std::string capture_option_;  // section 3 (a mod's binding option): capture_id_ is the mod
 
-    // The mods: the manifests beside the game, the one shown.
-    std::string mods_dir_;
+    // The mods: the manifests beside the game and the data mods in the settings directory's mods/, the one shown.
+    std::string mods_dir_, user_mods_dir_;
     std::vector<ModManifest> mods_;
     std::string mod_selected_;
 

@@ -130,3 +130,9 @@ dump in place and nothing else maps files to textures; the first pack given wins
 stand for the PS1's texel 0 and bit 15. At internal scale 1 its colour is rounded back to 5 bits, so an unedited dump
 used as a pack leaves the target equal to the software VRAM (checked over the first game's replays); above scale 1 its
 8 bits are kept.
+
+## The user's data mods: --mods-dir, mods.<id>.enabled, mod_order (2026-10-08)
+Texture packs are installed as data mods in the settings directory's `mods/` (docs/LAUNCHER.md "Data mods"). The game
+still never looks for a directory: the launcher passes `--mods-dir`, as it passes `--config` and `--crash-dir`. A data
+mod is switched on like a built-in one (`mods.<id>.enabled`), and one new top-level key, `mod_order`, holds their
+priority, because data mods compete where built-in mods do not (two packs replacing the same texture).
