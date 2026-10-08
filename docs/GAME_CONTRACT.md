@@ -162,8 +162,9 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
   the translator cannot take passes none and puts a host GTE header of its own first in `INCLUDE_DIRS`
   (docs/PORT.md "Compiling the game C for the host"). `INCLUDE_ASM_GUARD`: its `include_asm.h`'s guard.
 - `INCLUDE_DIRS`: the game's `include/` and root (its `common.h`, its own Psy-Q declarations). The units get them
-  first on their include path, the adapter as quote-only directories (`-iquote`); the runtime and the shim never see
-  them. The game's Psy-Q declarations must agree with the stack's in ABI: `tools/psyq_decls.py`, the inventory's
+  first on their include path, after the generated overrides and before the stack's `include/` (so units say
+  `<psxstack/hooks.h>`; the stack's `include/psxstack` is not on it, so a game's own `game.h` stays its own), the
+  adapter as quote-only directories (`-iquote`); the runtime and the shim never see them. The game's Psy-Q declarations must agree with the stack's in ABI: `tools/psyq_decls.py`, the inventory's
   `decls` command (DECISIONS "Psy-Q declarations: the stack's").
 - `ADAPTER`: the adapter units; `MODS_DIRS`: directories of `<id>/mod.json` manifests (the stack's `mods/` is added).
 - `DEFINES`, `UNIT_COMPILE_OPTIONS`, `CONFIGURE_DEPENDS` (the inputs' sources, so a change reruns the configure), `RC`.
