@@ -20,6 +20,8 @@
  *  - the background (a copy of the target): before a unit that reads the background (semi-transparent, mask-checked;
  *    a VRAM copy), the 16x16 tiles of its rectangle that something drew into since their last copy are copied. A unit
  *    is one triangle or one line segment (a quad's two triangles may overlap, a polyline's segments share a pixel).
+ * Widescreen (render_gpu_wide.c): the target is then 1024 + 512 VRAM pixels wide, and every unit drawn into a display
+ * buffer is drawn a second time into that buffer's wide canvas in the strip (render_gpu_unit_*, below the listener).
  * Above scale 1 a triangle whose vertices the GTE shadow knows is drawn at their sub-pixel positions, with float
  * attribute planes (render_gpu_subpixel.c, F_PRECISE; docs/PORT.md "Sub-pixel precision").
  * At internal scale 1 the target is the software VRAM, pixel for pixel, but for what tests/host/gpu_hw_mismatches.json
@@ -47,6 +49,7 @@
 #include "psyq_internal.h"
 #include "render_gpu.h"
 #include "render_gpu_internal.h"
+#include "render_gpu_wide.h"
 #include "render_gpu_subpixel.h"
 
 #include "render_gpu_shaders.h"
@@ -56,7 +59,7 @@
 #define VRAM_W 1024
 #define VRAM_H 512
 #define TILE 16 /* the background's dirty tiles */
-#define TILES_X (VRAM_W / TILE)
+#define TILES_X ((VRAM_W + RENDER_WIDE_COLS) / TILE) /* the target's widest: the VRAM and the wide canvas strip */
 #define TILES_Y (VRAM_H / TILE)
 #define BLOCKS 16 /* gpu.c's write-stamp blocks per row (64 pixels each) */
 #define STAMP_NONE 0xFFFFFFFFu
@@ -119,7 +122,10 @@ static struct {
 
     /* The rasteriser. */
     int raster;
-    int scale;                             /* the internal scale: the target is 1024 scale x 512 scale */
+    int scale;                             /* the internal scale: the target is cols scale x 512 scale */
+    int cols;                              /* the target's width in VRAM pixels: 1024, plus the wide canvas strip
+                                              (render_gpu_wide.c) when widescreen is enabled */
+    int pair_x0;                           /* >= 0: the drawing area's x0 the per-pair rule uses (a wide copy) */
     SDL_GPUShader *raster_vert, *raster_frag;
     SDL_GPUGraphicsPipeline *pipe_raster;
     SDL_GPUTexture *vram_target;           /* RGBA8 1024 scale x 512 scale: the rasteriser's VRAM */
@@ -235,7 +241,7 @@ static void sync_vram(int x0, int y0, int w, int h) {
     }
 }
 
-/* The rectangle clipped to the VRAM; 0 when empty. */
+/* The rectangle clipped to the target (the VRAM, and the wide canvas strip right of it); 0 when empty. */
 static int clip(int *x, int *y, int *w, int *h) {
     if (*x < 0) {
         *w += *x;
@@ -245,8 +251,8 @@ static int clip(int *x, int *y, int *w, int *h) {
         *h += *y;
         *y = 0;
     }
-    if (*x + *w > VRAM_W) {
-        *w = VRAM_W - *x;
+    if (*x + *w > r.cols) {
+        *w = r.cols - *x;
     }
     if (*y + *h > VRAM_H) {
         *h = VRAM_H - *y;
@@ -300,9 +306,9 @@ static Record *draw_add(const RasterUnit *u, int vertices, int sx, int sy, int s
     e->w = sw;
     e->h = sh;
     e->unit.res[0] = r.scale;
-    e->unit.res[1] = VRAM_W * r.scale;
+    e->unit.res[1] = r.cols * r.scale;
     e->unit.res[2] = VRAM_H * r.scale;
-    e->geometry.target[0] = (float)(VRAM_W * r.scale);
+    e->geometry.target[0] = (float)(r.cols * r.scale);
     e->geometry.target[1] = (float)(VRAM_H * r.scale);
     e->geometry.target[2] = (float)r.scale;
     e->geometry.target[3] = vertices == 3 ? 0.5f : 0.0f;
@@ -334,7 +340,7 @@ static void unit_mode(RasterUnit *u, int op, const GpuEvent *ev) {
     u->win[1] = ev->u_or;
     u->win[2] = ev->v_and;
     u->win[3] = ev->v_or;
-    u->nva[2] = ev->area_x0;
+    u->nva[2] = r.pair_x0 >= 0 ? r.pair_x0 : ev->area_x0;
 }
 
 /* The drawing area as a scissor clipped to the VRAM; 0 when empty. */
@@ -684,6 +690,9 @@ static void raster_copy(const GpuEvent *ev) {
 }
 
 static void raster_event(const GpuEvent *ev) {
+    if (r.cols > VRAM_W) {
+        render_gpu_wide_before(ev); /* a display buffer gets its wide canvas (render_gpu_wide.c) */
+    }
     switch (ev->kind) {
     case GPU_EV_TRIANGLE:
         raster_triangle(ev);
@@ -708,6 +717,61 @@ static void raster_event(const GpuEvent *ev) {
         raster_load(0, 0, VRAM_W, VRAM_H, 0);
         break;
     }
+    if (r.cols > VRAM_W) {
+        render_gpu_wide_event(ev); /* its copy in the wide canvas (render_gpu_wide.c), when a display buffer has one */
+    }
+}
+
+/* ---- For render_gpu_wide.c (render_gpu_wide.h): units drawn into the wide canvas strip ---- */
+
+/* A triangle, rectangle or segment event already moved into the canvas; pair_x0: the drawing area's x0 the per-pair
+ * rule keeps (the copy's widened area must not move a span's start inside the picture). */
+void render_gpu_unit_event(const GpuEvent *ev, int pair_x0) {
+    r.pair_x0 = pair_x0;
+    switch (ev->kind) {
+    case GPU_EV_TRIANGLE:
+        raster_triangle(ev);
+        break;
+    case GPU_EV_RECT:
+        raster_rect(ev);
+        break;
+    default:
+        break;
+    }
+    r.pair_x0 = -1;
+}
+
+/* An opaque fill of the target's rectangle (no VRAM wrap: the canvas lies right of the VRAM). */
+void render_gpu_unit_fill(int x, int y, int w, int h, u16 color) {
+    RasterUnit u;
+    Record *e;
+    if (!clip(&x, &y, &w, &h)) {
+        return;
+    }
+    memset(&u, 0, sizeof(u));
+    u.kind[0] = OP_FILL;
+    u.a[0] = color;
+    e = draw_add(&u, 6, x, y, w, h);
+    rect_geometry(e, x, y, w, h);
+    mark_dirty(x, y, w, h);
+}
+
+/* The target's w x h pixels at (sx, sy) copied to (dx, dy), as they are at this point of the frame. */
+void render_gpu_unit_mirror(int sx, int sy, int dx, int dy, int w, int h) {
+    RasterUnit u;
+    Record *e;
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    memset(&u, 0, sizeof(u));
+    u.kind[0] = OP_COPY;
+    u.kind[1] = F_BACKGROUND;
+    sync_background(sx, sy, w, h);
+    u.s2[2] = sx - dx;
+    u.s2[3] = sy - dy;
+    e = draw_add(&u, 6, dx, dy, w, h);
+    rect_geometry(e, dx, dy, w, h);
+    mark_dirty(dx, dy, w, h);
 }
 
 /* ---- The device ---- */
@@ -935,8 +999,10 @@ int render_gpu_raster_start(int scale, char *why, size_t why_size) {
     /* The target and its background copy at the scale asked for (2 x 4 bytes x 1024 x 512 per scale squared: 256 MB
      * at 8), or at the largest scale below it that the device can allocate (logged). */
     scale = SDL_clamp(scale, 1, RENDER_MAX_SCALE);
+    r.cols = VRAM_W + (render_gpu_wide_enabled() ? RENDER_WIDE_COLS : 0); /* x 1.5 with the wide canvas strip */
+    r.pair_x0 = -1;
     for (r.scale = scale; r.scale >= 1; r.scale--) {
-        int w = VRAM_W * r.scale, h = VRAM_H * r.scale;
+        int w = r.cols * r.scale, h = VRAM_H * r.scale;
         r.vram_target = render_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h,
                                        SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
         r.background = r.vram_target != NULL
@@ -1233,6 +1299,7 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
         u.src[0] = w;
         u.src[1] = h;
         if (vram_xy != NULL) { /* the display at the internal scale, in the 1024 N x 512 N target */
+            int wide[2];
             u.src[0] = w * r.scale;
             u.src[1] = h * r.scale;
             u.src[2] = VRAM_W * r.scale;
@@ -1240,6 +1307,11 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
             u.cut[0] = vram_xy[0] & 1023;
             u.cut[1] = vram_xy[1] & 511;
             u.cut[2] = r.scale;
+            if (render_gpu_wide_cut(vram_xy, w, h, wide)) { /* a wide picture: its canvas, right of the VRAM */
+                u.src[2] = r.cols * r.scale;
+                u.cut[0] = wide[0];
+                u.cut[1] = wide[1];
+            }
         }
         if (filter != NULL) {
             u.cut[3] = h; /* the display's lines */
