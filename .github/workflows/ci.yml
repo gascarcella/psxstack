@@ -55,6 +55,8 @@ jobs:
         run: python3 tests/tasks_test.py --sanitize
       - name: The shim compiles on its own, against the stack's declarations (psyq/check.sh --compile, no game)
         run: psyq/check.sh --compile
+      - name: The shim's LIBGTE and LIBGPU functions on their own, also under AddressSanitizer and UBSan (tests/psyq_test.py)
+        run: python3 tests/psyq_test.py --sanitize
       - name: "The declarations check runs (tools/psyq_decls.py, the stack's headers on both sides, all the same)"
         run: |
           mkdir -p build/decls

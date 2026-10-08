@@ -328,8 +328,8 @@ and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and 
 
 | Library | In the shim |
 |---|---|
-| LIBGPU | Real; drives the software GPU (`libgpu.c`, `gpu.c`) |
-| LIBGTE | Real, on the software GTE (`libgte.c`, `gte.c`) |
+| LIBGPU | Real; drives the software GPU (`libgpu.c`, `gpu.c`): environments, ordering tables, the primitives' function forms, the drawing-mode packets, VRAM transfers both ways, TIMs |
+| LIBGTE | Real, on the software GTE (`libgte.c`, `gte.c`): the perspective transforms, the matrix stack and helpers, normalisation, lighting, `csqrt`/`catan`/`ratan2`, each with LIBGTE's command sequence |
 | LIBGS | TIM info, the GTE set-up, the world-screen and light matrices (`libgs.c`); `GsInitGraph`/`GsInit3D` do the PS1's GTE and matrix set-up and skip its draw environments |
 | LIBETC | `VSync`, `VSyncCallback`, `SetVideoMode`, `ResetCallback`: real, on the pump |
 | LIBCD | A real command model over the disc image, timed in ticks; interrupt-driven sector reads, streaming (`St*`, `CdRead2`); XA sectors to the XA decoder (`libcd.c`, `xa.c`) |
@@ -525,6 +525,7 @@ The stack's own tests need no game and no disc (`.github/workflows/ci.yml`):
 | Check | What it proves | Where |
 |---|---|---|
 | hello | A Psy-Q program builds through `psxstack_add_game()` (the generators, the sections, the shim, the runtime) and draws the same picture everywhere | `tests/hello_test.py` |
+| The shim's LIBGTE and LIBGPU | Documented values and properties of their functions (the transforms against their commands, the matrix stack, AddPrim's links, the packets' bytes, VRAM transfers, TIMs), at -O0 and -O2 and under the sanitizers | `tests/psyq_test.py` |
 | The game description | `game_gen.py` validates and generates; the examples validate | `tests/game_gen_test.py` |
 | The launcher | Its headless self-test on Linux, and under Wine from the Windows cross-build | `launcher/README.md` |
 | The debug tools | The client, the symbols and the server's tools against the protocol double | `tools/mcp/selftest.py` |
