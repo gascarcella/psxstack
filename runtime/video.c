@@ -21,6 +21,11 @@
  * the hardware renderer's picture of vsync FRAME: the image itself, or with @WxH its present into a W x H output (the
  * window's layout); a run without a window opens a device and the rasteriser for it at the start
  * (port_video_gpu_headless), and skips the shot with a log line when there is none.
+ * Widescreen (render_gpu_wide.c): a game mod calls port_video_widescreen_enable before the window opens (with the GPU
+ * renderer chosen, a new window opens 16:9) and port_video_widescreen(on) every vsync; while it is on, a 15-bit display
+ * that has a wide canvas is presented 16:9 inside the window (the window's size is kept: the picture switches between
+ * 4:3 and 16:9 in it), and `--gpu-screenshot` and the debug channel's GPU screenshot give the wide image. The
+ * software renderer, `--screenshot` and the frame hash stay 4:3 (logged once while it is asked for).
  * `<PREFIX>_PORT_PRESENT_READBACK=FRAME:PATH` reads SDL_Renderer's output of vsync FRAME back into a PPM (the comparison
  * of the two present paths: tests/port/render_gpu.py); `<PREFIX>_PORT_GPU_VRAM_CHECK=N` compares the rasteriser's whole
  * target with the software VRAM every N vsyncs (video_vram_check).
@@ -73,6 +78,8 @@ static int video_vram_xy[2]; /* the display's corner in the VRAM, when video_vra
 static long video_check_every = -1, video_checks, video_checks_failed; /* <PREFIX>_PORT_GPU_VRAM_CHECK (below) */
 #endif
 static int video_vram;
+static int video_wide_wanted;  /* port_video_widescreen_enable: a game mod widens some scenes */
+static int video_wide_logged;  /* the software renderer's 4:3, logged once */
 
 static u32 video_rgb15(u16 c) {
     u32 r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
@@ -231,6 +238,7 @@ static int video_tex_w, video_tex_h;
 static Uint64 video_start_ns;
 static long video_presents;
 static int video_gpu; /* the window presents through the hardware renderer */
+static int video_aspect[2] = { 4, 3 }; /* the presented picture's aspect: 4:3, or 16:9 at the display's pixel aspect */
 
 int port_video_available(void) {
     return 1;
@@ -242,7 +250,10 @@ void port_video_open(int scale, int fullscreen) {
         port_fatal("SDL_Init: %s (a host without a display: SDL_VIDEO_DRIVER=offscreen)", SDL_GetError());
     }
     atexit(SDL_Quit);
-    video_window = SDL_CreateWindow(PSXSTACK_GAME_ID, 320 * scale, 240 * scale, flags);
+    /* with widescreen and the GPU renderer, 16:9 at the same height (the picture switches between 4:3 and 16:9) */
+    video_window = SDL_CreateWindow(PSXSTACK_GAME_ID, video_wide_wanted && video_gpu_wanted ? (240 * scale * 16 + 8) / 9
+                                                                                           : 320 * scale,
+                                    240 * scale, flags);
     if (video_window == NULL) {
         port_fatal("SDL_CreateWindow: %s", SDL_GetError());
     }
@@ -272,7 +283,8 @@ void port_video_open(int scale, int fullscreen) {
     port_log("window: SDL %d.%d.%d, video driver %s, renderer %s%s%s, %dx%d%s", SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
              SDL_VERSIONNUM_MINOR(SDL_GetVersion()), SDL_VERSIONNUM_MICRO(SDL_GetVersion()),
              SDL_GetCurrentVideoDriver(), video_gpu ? "gpu (" : SDL_GetRendererName(video_renderer),
-             video_gpu ? render_gpu_describe() : "", video_gpu ? ")" : "", 320 * scale, 240 * scale,
+             video_gpu ? render_gpu_describe() : "", video_gpu ? ")" : "",
+             video_wide_wanted && video_gpu_wanted ? (240 * scale * 16 + 8) / 9 : 320 * scale, 240 * scale,
              fullscreen ? " (fullscreen)" : "");
 }
 
@@ -282,21 +294,22 @@ void port_video_toggle_fullscreen(void) {
     }
 }
 
-/* The image's place in the renderer's output (ow x oh pixels): 4:3, as tall as an integer multiple of its lines
- * allows (every line the same height), centred; scaled to fit when the output has fewer pixel rows than it has lines.
- * The width is not an integer multiple for every mode (only 320 and 640 wide displays are 4:3 pixel for pixel). */
+/* The image's place in the renderer's output (ow x oh pixels): 4:3 (video_aspect; a wide picture's 16:9), as tall as
+ * an integer multiple of its lines allows (every line the same height), centred; scaled to fit when the output has
+ * fewer pixel rows than it has lines. The width is not an integer multiple for every mode (only 320 and 640 wide
+ * displays are 4:3 pixel for pixel). */
 static void video_dest(int ow, int oh, SDL_FRect *dst) {
-    int f = oh / video_h;
+    int f = oh / video_h, an = video_aspect[0], ad = video_aspect[1];
     float dw, dh;
-    while (f > 0 && (video_h * f * 4 + 2) / 3 > ow) {
+    while (f > 0 && (video_h * f * an + ad - 1) / ad > ow) {
         f--;
     }
     if (f > 0) {
         dh = (float)(video_h * f);
-        dw = (float)((video_h * f * 4 + 2) / 3);
+        dw = (float)((video_h * f * an + ad - 1) / ad); /* rounded up: 4:3's (h f 4 + 2) / 3 */
     } else {
-        dh = (float)oh < ow * 3.0f / 4.0f ? (float)oh : ow * 3.0f / 4.0f;
-        dw = dh * 4.0f / 3.0f;
+        dh = (float)oh < ow * (float)ad / (float)an ? (float)oh : ow * (float)ad / (float)an;
+        dw = dh * (float)an / (float)ad;
     }
     dst->w = dw;
     dst->h = dh;
@@ -342,16 +355,27 @@ static void video_readback(void) {
     SDL_DestroySurface(shot);
 }
 
+/* The width the hardware renderer shows the converted display with: its wide canvas's while widescreen is on (and
+ * video_aspect 16:9 at the display's pixel aspect), else the display's (4:3). */
+static int video_gpu_width(void) {
+    int w = video_vram ? render_gpu_wide_width(video_vram_xy, video_w, video_h) : 0;
+    video_aspect[0] = w > 0 ? 4 * w : 4;
+    video_aspect[1] = w > 0 ? 3 * video_w : 3;
+    return w > 0 ? w : video_w;
+}
+
 static void video_present(void) {
     SDL_FRect dst;
     int ow, oh;
     if (video_gpu) {
-        if (render_gpu_present(video_pixels, video_w, video_h, video_vram ? video_vram_xy : NULL,
+        if (render_gpu_present(video_pixels, video_gpu_width(), video_h, video_vram ? video_vram_xy : NULL,
                                video_dest_rect)) {
             video_presents++;
         }
         return;
     }
+    video_aspect[0] = 4; /* the software renderer: always 4:3 */
+    video_aspect[1] = 3;
     if (video_texture == NULL || video_tex_w != video_w || video_tex_h != video_h) {
         if (video_texture != NULL) {
             SDL_DestroyTexture(video_texture);
@@ -446,12 +470,13 @@ static void video_gpu_shots_due(void) {
         if (video_gpu_shots[i].frame != port_frames) {
             continue;
         }
-        /* the image: a display from the rasteriser's target at its internal scale */
-        w = video_gpu_shots[i].w > 0 ? video_gpu_shots[i].w : video_w * (video_vram ? render_gpu_scale() : 1);
+        /* the image: a display from the rasteriser's target at its internal scale (a wide one: its canvas) */
+        int pw = video_gpu_width();
+        w = video_gpu_shots[i].w > 0 ? video_gpu_shots[i].w : pw * (video_vram ? render_gpu_scale() : 1);
         h = video_gpu_shots[i].h > 0 ? video_gpu_shots[i].h : video_h * (video_vram ? render_gpu_scale() : 1);
         buf = malloc((size_t)w * (size_t)h * 4);
         if (!render_gpu_active() || buf == NULL ||
-            !render_gpu_readback(video_pixels, video_w, video_h, video_vram ? video_vram_xy : NULL, w, h,
+            !render_gpu_readback(video_pixels, pw, video_h, video_vram ? video_vram_xy : NULL, w, h,
                                  video_gpu_shots[i].w > 0 ? video_dest_rect : NULL, buf)) {
             port_log("gpu screenshot: frame %ld skipped (no GPU device) -> %s", port_frames, video_gpu_shots[i].path);
         } else if (!video_ppm(video_gpu_shots[i].path, buf, w, h)) {
@@ -513,17 +538,18 @@ void port_video_gpu_headless(void) {
 
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h) {
     u32 *buf;
-    int ok, s = render_gpu_scale();
+    int ok, pw, s = render_gpu_scale();
     if (!render_gpu_active()) {
         return -1;
     }
     if (video_converted_frame != port_frames) {
         video_convert();
     }
-    *w = video_w * (video_vram ? s : 1);
+    pw = video_gpu_width();
+    *w = pw * (video_vram ? s : 1);
     *h = video_h * (video_vram ? s : 1);
     buf = malloc((size_t)*w * (size_t)*h * 4);
-    ok = buf != NULL && render_gpu_readback(video_pixels, video_w, video_h, video_vram ? video_vram_xy : NULL, *w, *h,
+    ok = buf != NULL && render_gpu_readback(video_pixels, pw, video_h, video_vram ? video_vram_xy : NULL, *w, *h,
                                             NULL, buf) && video_ppm(path, buf, *w, *h);
     free(buf);
     return ok;
@@ -575,6 +601,26 @@ void port_video_close(void) {
 void port_video_quit(void) {
 }
 #endif
+
+void port_video_widescreen_enable(void) {
+    video_wide_wanted = 1;
+#ifdef PSXSTACK_SDL
+    render_gpu_wide_enable();
+#endif
+}
+
+void port_video_widescreen(int on) {
+#ifdef PSXSTACK_SDL
+    int gpu = render_gpu_rasterising();
+    render_gpu_wide_set(on);
+#else
+    int gpu = 0;
+#endif
+    if (on && !gpu && !video_wide_logged) {
+        video_wide_logged = 1;
+        port_log("widescreen: needs the GPU renderer (video.renderer gpu); the picture stays 4:3");
+    }
+}
 
 /* The present cap (fast-forward): at most `hz` presents a second (0: every vsync). Every vsync is still drawn into
  * the VRAM by the software GPU; only the conversion and the present are skipped. */

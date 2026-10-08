@@ -50,6 +50,13 @@ void render_gpu_raster_resync(void);
  * @WxH pictures; the picture itself (no @WxH, the debug channel's) stays unfiltered. A filter whose pipelines cannot
  * be created is logged and the present stays nearest. */
 void render_gpu_set_filter(const PortFilter *f);
+/* Widescreen (render_gpu_wide.c; video.c port_video_widescreen): enable before render_gpu_raster_start (the target gets
+ * the wide canvas strip, 1.5 times as wide); on or off every vsync (the scenes that widen; off without the
+ * rasteriser); the width a 15-bit display of w x h at vram_xy is presented with: its canvas's (16:9 at the display's
+ * pixel aspect), or 0 when it stays 4:3. render_gpu_present and render_gpu_readback show the canvas for that width. */
+void render_gpu_wide_enable(void);
+void render_gpu_wide_set(int on);
+int render_gpu_wide_width(const int vram_xy[2], int w, int h);
 /* Releases everything, the window's claim, then the device (before SDL_Quit: video.c port_video_quit). */
 void render_gpu_close(void);
 #endif
