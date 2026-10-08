@@ -823,9 +823,16 @@ static void test_game(const std::string &root) {
     for (int i = 0; i < 120000 / 10 && game.poll(); i++) {
         SDL_Delay(10);
     }
+    // The game's own disc line: "disc: PATH: N sectors, SHA-1 <hash> (<the disc's label>)"; the label comes from the
+    // game description, so the check keys on the hash of one of its discs.
     bool disc_ok = false;
     for (const std::string &l : game.lines()) {
-        disc_ok |= l.find("(the EU disc)") != std::string::npos;
+        if (l.find("disc: ") == std::string::npos) {
+            continue;
+        }
+        for (const PsxstackGameDisc &d : GAME_DISCS) {
+            disc_ok |= l.find(std::string("SHA-1 ") + d.sha1) != std::string::npos;
+        }
     }
     check(!game.running() && game.exit_code() == 0 && disc_ok,
           "the real game runs 300 frames from the launcher's command: it " + game_exit_text(game.exit_code()) +
