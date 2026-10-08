@@ -9,6 +9,15 @@
 // from float planes instead (`sp`, render_gpu_subpixel.c).
 Texture2D<uint> vram : register(t0, space2);
 Texture2D<float4> background : register(t1, space2);
+// A texture pack's replacement (runtime/render_gpu_packs.c; F_REPLACED), filtered: a combined image sampler in
+// SPIR-V (SDL_GPU's Vulkan layout); DXIL takes the texture and the sampler at t2 and s2 as they are.
+#ifdef __spirv__
+#define COMBINED_IMAGE_SAMPLER [[vk::combinedImageSampler]]
+#else
+#define COMBINED_IMAGE_SAMPLER
+#endif
+COMBINED_IMAGE_SAMPLER Texture2D<float4> replacement : register(t2, space2);
+COMBINED_IMAGE_SAMPLER SamplerState replacement_sampler : register(s2, space2);
 cbuffer Unit : register(b0, space3) {
     int4 kind; // x: the operation (OP_*), y: flags (F_*), z: the blend mode (0..3), w: the texture depth (0, 1..3)
     int4 a;    // triangle: a.x, a.y, a.u, a.v; rectangle: x0, y0, u0, v0; fill: the colour (x)
@@ -26,6 +35,7 @@ cbuffer Unit : register(b0, space3) {
     int4 cmax; // and maximum
     float4 sp[7]; // F_PRECISE: [0] the origin (vertex a, VRAM pixels), [1] q, [2..6] u, v, r, g, b times q; each
                   // (value at the origin, d/dx, d/dy, unused): render_gpu_subpixel.c
+    int4 rep;  // F_REPLACED: the replacement's rectangle in the texture page (u0, v0, w, h in texels)
 };
 
 #define OP_TRIANGLE 0
@@ -43,6 +53,7 @@ cbuffer Unit : register(b0, space3) {
 #define F_PAIRS 64
 #define F_BACKGROUND 128
 #define F_PRECISE 256
+#define F_REPLACED 512
 
 static const int dither_table[16] = { -4, 0, -3, 1, 2, -2, 3, -1, -3, 1, -4, 0, 3, -1, 2, -2 };
 
@@ -102,6 +113,33 @@ uint texel(int u, int v) {
     return vram.Load(int3((tex.x + u) & 1023, row, 0));
 }
 
+// A texture pack's replacement at the sample point. Texel u of the VRAM is centred on u: at scale 1 the texture
+// coordinates are gpu.c's integers (a replacement of the image's own size gives back its texels), above it the planes'
+// exact values (a triangle at sub-pixel positions: its float planes, F_PRECISE; a rectangle's: the sample point's
+// offset). They are mapped onto the replacement's rectangle. Called before any discard, so that the mipmap level's
+// derivatives are defined (the flags are the same for the whole draw).
+float4 replaced(int2 P, int N) {
+    float2 uv;
+    if (kind.x == OP_TRIANGLE) {
+        relative(P, N);
+        if (N == 1) {
+            uv = float2(attr(a.z, nbu.z, nbu.w, 1), attr(a.w, nva.x, nva.y, 1));
+        } else if (kind.y & F_PRECISE) {
+            float2 s = (float2(P) + 0.5) / float(N) - 0.5 - sp[0].xy;
+            float q = sp[1].x + sp[1].y * s.x + sp[1].z * s.y;
+            uv = float2(sp[2].x + sp[2].y * s.x + sp[2].z * s.y, sp[3].x + sp[3].y * s.x + sp[3].z * s.y) / q;
+            uv = clamp(uv, float2(uvr.xz), float2(uvr.yw));
+        } else {
+            float2 d = (float2(P) + 0.5) / N - 0.5 - float2(a.xy);
+            uv = float2(a.zw) + float2(dot(d, float2(nbu.zw)), dot(d, float2(nva.xy))) / col.w;
+            uv = clamp(uv, float2(uvr.xz), float2(uvr.yw));
+        }
+    } else {
+        uv = float2(a.zw) + (float2(P) + 0.5) / N - 0.5 - float2(a.xy);
+    }
+    return replacement.Sample(replacement_sampler, (uv - float2(rep.xy) + 0.5) / float2(rep.zw));
+}
+
 // The target's pixel (the background copy): the channels in 8-bit units, the mask bit.
 static int3 bg8;
 static bool bg_mask;
@@ -134,6 +172,10 @@ float4 main(float4 pos : SV_Position) : SV_Target0 {
     bool hires = N > 1;
     bool set_mask = (flags & F_SET_MASK) != 0;
 
+    float4 rc = float4(0.0, 0.0, 0.0, 0.0);
+    if (flags & F_REPLACED) {
+        rc = replaced(P, N);
+    }
     bg8 = int3(0, 0, 0);
     bg_mask = false;
     if (flags & F_BACKGROUND) {
@@ -203,15 +245,30 @@ float4 main(float4 pos : SV_Position) : SV_Target0 {
     bool stp = false;
     int3 f;
     if (kind.w != 0) {
-        uint t = texel((u & win.x) | win.y, (v & win.z) | win.w);
-        if (t == 0) {
-            discard;
+        int3 tc, t8;
+        if (flags & F_REPLACED) {
+            // Alpha below 64: transparent (texel 0); below 192: bit 15 (semi-transparent); else opaque. The colour
+            // in 8 bits above scale 1, in 5 bits at it (the dump's widening undone: its texel exactly).
+            int a8 = int(rc.a * 255.0 + 0.5);
+            if (a8 < 64) {
+                discard;
+            }
+            t8 = int3(rc.rgb * 255.0 + 0.5);
+            tc = (t8 * 31 + 127) / 255;
+            t8 = hires ? t8 : tc << 3;
+            stp = a8 < 192;
+        } else {
+            uint t = texel((u & win.x) | win.y, (v & win.z) | win.w);
+            if (t == 0) {
+                discard;
+            }
+            tc = int3(int(t & 31u), int((t >> 5) & 31u), int((t >> 10) & 31u));
+            t8 = tc << 3;
+            stp = (t & 0x8000u) != 0;
         }
-        int3 tc = int3(int(t & 31u), int((t >> 5) & 31u), int((t >> 10) & 31u));
-        stp = (t & 0x8000u) != 0;
         semi = semi && stp;
         if (eight) {
-            f = (flags & F_RAW) ? tc << 3 : (tc * c) >> 4;
+            f = (flags & F_RAW) ? t8 : (t8 * c) >> 7;
         } else if (flags & F_RAW) {
             f = tc;
         } else if (semi && abr == 3) {

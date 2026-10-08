@@ -349,6 +349,15 @@ SDL build, and nothing of it runs unless it is switched on.
 - **The dump** (`--dump-textures DIR`, docs/RUNTIME.md "Texture dump") writes each key the first time a primitive
   samples it. The first game's new_game replay has 134 keys, first_battle_save 1,728 (18 MB of PNGs; its run takes
   26 s instead of 17 s with the dump on). The game's log and record are unchanged by it.
+- **Packs** (`runtime/render_gpu_packs.c`, `--texture-pack DIR`, docs/RUNTIME.md "Texture packs") are data mods whose
+  PNGs are named by key. The rasteriser looks a textured triangle's or rectangle's key up when it records the unit
+  (before the unit's own writes change the owner map); a unit with a replacement binds it in the pixel shader's third
+  texture slot and samples it instead of the VRAM (`F_REPLACED` in `shaders/raster.frag.hlsl`): at the sample point's
+  texture coordinates (gpu.c's integers at internal scale 1, the planes' exact values above it) mapped onto the
+  replacement's rectangle, filtered, before any discard (the mipmap level needs defined derivatives). Its alpha decides
+  transparency and bit 15; modulation, blending, dithering and the mask then run as for a VRAM texel. At internal scale 1
+  a texel's colour is rounded back to 5 bits, so a pack made of the unedited dump keeps the target equal to the
+  software VRAM (the first game's replays, every 10 vsyncs).
 
 ## GTE
 `psyq/gte.c` is the geometry coprocessor in software: the 64 registers with their read/write rules, every

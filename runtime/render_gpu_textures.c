@@ -79,7 +79,8 @@ typedef struct {
 } ClutCache;
 
 static struct {
-    int active;
+    int active;             /* keys tracked: a dump or a pack */
+    int dump;
     char dir[1024];
     u32 own[VRAM_H][VRAM_W]; /* the transfer's sequence number, 0: none */
     u8 tile[VRAM_H / TILE][VRAM_W / TILE];
@@ -630,9 +631,8 @@ int render_gpu_tex_key(const GpuEvent *ev, int u_lo, int u_hi, int v_lo, int v_h
 }
 
 /* A textured unit's texel range (gpu.c's: the vertices' range, a triangle's far edges not sampled; a rectangle's
- * texels exactly; the texture window's when one is set), then its key and the dump. */
-static void tex_unit(const GpuEvent *ev, int umin, int umax, int vmin, int vmax) {
-    RenderTexKey k;
+ * texels exactly; the texture window's when one is set) into range (u_lo, u_hi, v_lo, v_hi), and its key. */
+static int unit_range_key(const GpuEvent *ev, int umin, int umax, int vmin, int vmax, int range[4], RenderTexKey *k) {
     if (ev->u_and != 0xFF || ev->u_or != 0) {
         umin = ev->u_or;
         umax = ev->u_or | (~ev->u_and & 0xFF);
@@ -647,30 +647,46 @@ static void tex_unit(const GpuEvent *ev, int umin, int umax, int vmin, int vmax)
     if (vmin < 0 || vmax > 255 || vmin > vmax) {
         vmin = 0, vmax = 255;
     }
-    if (render_gpu_tex_key(ev, umin, umax, vmin, vmax, &k)) {
-        dump_unit(ev, &k, umin, umax, vmin, vmax);
+    range[0] = umin, range[1] = umax, range[2] = vmin, range[3] = vmax;
+    return render_gpu_tex_key(ev, umin, umax, vmin, vmax, k);
+}
+
+int render_gpu_tex_unit_key(const GpuEvent *ev, RenderTexKey *key, int range[4]) {
+    if (!t.active || !ev->textured) {
+        return 0;
     }
+    if (ev->kind == GPU_EV_TRIANGLE) {
+        const GpuVertex *a = &ev->v[0], *b = &ev->v[1], *c = &ev->v[2];
+        int umin = SDL_min(a->u, SDL_min(b->u, c->u)), umax = SDL_max(a->u, SDL_max(b->u, c->u));
+        int vmin = SDL_min(a->v, SDL_min(b->v, c->v)), vmax = SDL_max(a->v, SDL_max(b->v, c->v));
+        return unit_range_key(ev, umin, umax > umin ? umax - 1 : umax, vmin, vmax > vmin ? vmax - 1 : vmax, range,
+                              key);
+    }
+    if (ev->kind == GPU_EV_RECT && ev->w > 0 && ev->h > 0) {
+        return unit_range_key(ev, ev->v[0].u, ev->v[0].u + ev->w - 1, ev->v[0].v, ev->v[0].v + ev->h - 1, range, key);
+    }
+    return 0;
 }
 
 void render_gpu_tex_event(const GpuEvent *ev) {
+    RenderTexKey k;
+    int range[4];
     if (!t.active) {
         return;
     }
     switch (ev->kind) {
     case GPU_EV_TRIANGLE: {
         const GpuVertex *a = &ev->v[0], *b = &ev->v[1], *c = &ev->v[2];
-        int umin = SDL_min(a->u, SDL_min(b->u, c->u)), umax = SDL_max(a->u, SDL_max(b->u, c->u));
-        int vmin = SDL_min(a->v, SDL_min(b->v, c->v)), vmax = SDL_max(a->v, SDL_max(b->v, c->v));
-        if (ev->textured) {
-            tex_unit(ev, umin, umax > umin ? umax - 1 : umax, vmin, vmax > vmin ? vmax - 1 : vmax);
+        if (t.dump && render_gpu_tex_unit_key(ev, &k, range)) {
+            dump_unit(ev, &k, range[0], range[1], range[2], range[3]);
         }
         own_clear_drawn(ev, SDL_min(a->x, SDL_min(b->x, c->x)), SDL_min(a->y, SDL_min(b->y, c->y)),
                         SDL_max(a->x, SDL_max(b->x, c->x)), SDL_max(a->y, SDL_max(b->y, c->y)));
         break;
     }
     case GPU_EV_RECT:
-        if (ev->textured && ev->w > 0 && ev->h > 0) {
-            tex_unit(ev, ev->v[0].u, ev->v[0].u + ev->w - 1, ev->v[0].v, ev->v[0].v + ev->h - 1);
+        if (t.dump && render_gpu_tex_unit_key(ev, &k, range)) {
+            dump_unit(ev, &k, range[0], range[1], range[2], range[3]);
         }
         own_clear_drawn(ev, ev->x, ev->y, ev->x + ev->w - 1, ev->y + ev->h - 1);
         break;
@@ -705,7 +721,7 @@ void render_gpu_tex_event(const GpuEvent *ev) {
         l->w = w;
         l->h = h;
         own_set(l->x, l->y, w, h, t.seq);
-        if (image_find(l->hash, w, h, 0) == NULL) {
+        if (t.dump && image_find(l->hash, w, h, 0) == NULL) {
             TexImage *img = image_find(l->hash, w, h, 1);
             for (j = 0; j < h; j++) {
                 int i;
@@ -734,16 +750,24 @@ int render_gpu_tex_dump_open(const char *dir) {
     }
     snprintf(t.dir, sizeof(t.dir), "%s", dir);
     index_read();
-    t.active = 1;
-    if (!render_gpu_rasterising()) {
-        gpu_set_listener(render_gpu_tex_event); /* the rasteriser's listener forwards to it once it runs */
-    }
+    t.dump = 1;
+    render_gpu_tex_track();
     port_log("textures: dumping to %s", dir);
     return 1;
 }
 
+void render_gpu_tex_track(void) {
+    if (t.active) {
+        return;
+    }
+    t.active = 1;
+    if (!render_gpu_rasterising()) {
+        gpu_set_listener(render_gpu_tex_event); /* the rasteriser's listener forwards to it once it runs */
+    }
+}
+
 void render_gpu_tex_frame(void) {
-    if (t.active && t.added) {
+    if (t.dump && t.added) {
         index_write();
     }
 }
@@ -753,10 +777,12 @@ void render_gpu_tex_close(void) {
     if (!t.active) {
         return;
     }
-    if (t.added || t.changed) {
-        index_write();
+    if (t.dump) {
+        if (t.added || t.changed) {
+            index_write();
+        }
+        port_log("textures: %zu keys in %s/index.json", t.nentries, t.dir);
     }
-    port_log("textures: %zu keys in %s/index.json", t.nentries, t.dir);
     for (i = 0; i < t.capimages; i++) {
         free(t.images[i].pixels);
     }
