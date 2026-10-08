@@ -10,6 +10,7 @@ own commands; the game's CLI is:
   tools/port_inventory.py probe --m32            # the same at -m32 (compile only)
   tools/port_inventory.py probe --target windows # the same with llvm-mingw's clang (Windows x86_64)
   tools/port_inventory.py link                   # probe, then nm: duplicate / undefined globals
+  tools/port_inventory.py decls [-v]             # the game's Psy-Q declarations vs the stack's (tools/psyq_decls.py)
 
 counts reads only tracked files (the game's C and headers, its symbol files): comments and strings are stripped,
 identifiers after `.`/`->`, prototypes and definitions are not calls. Site kinds for --sites (KIND or KIND:TAG, e.g.
@@ -53,7 +54,8 @@ class Config:
     """What a game tells the inventory (its tools/port_inventory.py calls configure())."""
 
     def __init__(self, root, game_json, sources, headers, include_dirs, symbol_files, module_of=None, gtemac=None,
-                 include_asm=None, port_h=None, psyq_dir=None, tool_dirs=(), defines=("NON_MATCHING",), out=None):
+                 include_asm=None, port_h=None, psyq_dir=None, tool_dirs=(), defines=("NON_MATCHING",), out=None,
+                 psyq_decl_headers=None):
         import json
         self.root = Path(root)
         self.game_json = Path(game_json)
@@ -66,6 +68,10 @@ class Config:
         self.include_asm = Path(include_asm) if include_asm else None
         self.port_h = Path(port_h) if port_h else None
         self.psyq_dir = Path(psyq_dir) if psyq_dir else self.root / "include" / "psyq"
+        # The game headers that declare the Psy-Q functions its units call (`decls`: tools/psyq_decls.py). Default:
+        # the recovered psyq_dir/*.h; a game that redeclares them in one header names it.
+        self.psyq_decl_headers = ([Path(h) for h in psyq_decl_headers] if psyq_decl_headers
+                                  else sorted(self.psyq_dir.glob("*.h")) if self.psyq_dir.is_dir() else [])
         self.tool_dirs = [Path(d) for d in tool_dirs]
         self.defines = list(defines)
         self.out = Path(out) if out else self.root / "build" / "port_inventory"
@@ -936,6 +942,27 @@ def cmd_link(args):
     return 1 if dups else 0
 
 
+def cmd_decls(args):
+    """The game's Psy-Q declarations against the stack's (tools/psyq_decls.py), with the probe's flags."""
+    sys.path.insert(0, str(STACK_ROOT / "tools"))
+    import psyq_decls
+    if not CFG.psyq_decl_headers:
+        print("decls: no game header declares Psy-Q functions (configure(psyq_decl_headers=[...]))")
+        return 2
+    missing = [str(h) for h in CFG.psyq_decl_headers if not h.exists()]
+    if missing:
+        sys.exit(f"decls: no such header: {' '.join(missing)}")
+    CFG.out.mkdir(parents=True, exist_ok=True)
+    inc = write_overrides(CFG.out)
+    cflags = [f for f in PROBE_FLAGS if f != "-O0"] + [f"-D{d}" for d in CFG.defines] + [f"-I{inc}"]
+    cflags += [f"-I{d}" for d in CFG.include_dirs] + [f"-I{STACK_ROOT / 'include'}", f"-I{STACK_ROOT / 'include/psxstack'}"]
+    counts, lines = psyq_decls.run(STACK_ROOT, CFG.out / "decls", inc, CFG.psyq_decl_headers, cflags, "gcc",
+                                   args.verbose)
+    what = ", ".join(h.relative_to(CFG.root).as_posix() if h.is_relative_to(CFG.root) else str(h)
+                     for h in CFG.psyq_decl_headers)
+    return psyq_decls.report(counts, lines, f"{what} against psxstack's include/psxstack/psyq/ ({git_head()})")
+
+
 def build_parser():
     """The parser with the stack's commands; a game adds its own (structs, ...) to the returned subparsers."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -956,6 +983,9 @@ def build_parser():
     p.add_argument("-j", "--jobs", type=int)
     p.add_argument("-v", "--verbose", action="store_true", help="list every undefined symbol")
     p.set_defaults(func=cmd_link)
+    p = sub.add_parser("decls", help="the game's Psy-Q declarations against the stack's: the register ABI must agree")
+    p.add_argument("-v", "--verbose", action="store_true", help="list every function, the agreeing ones too")
+    p.set_defaults(func=cmd_decls)
     return ap, sub
 
 

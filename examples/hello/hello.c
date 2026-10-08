@@ -1,13 +1,13 @@
 /* examples/hello: a disc-free Psy-Q program on psxstack, the stack's own smoke test (tests/hello_test.py). It needs
- * no game and no disc: the recovered Psy-Q headers under include/psyq/ (the first game's, MIT), a common.h that
- * provides the type names and the host hooks, and this file. The build renames main() to game_main (the runtime
+ * no game and no disc: the stack's own Psy-Q declarations (include/psxstack/psyq/), a common.h that provides the
+ * type names and the host hooks, and this file. The build renames main() to game_main (the runtime
  * owns main). It draws two polygons that change with the frame and the pad, double-buffered as a PS1 program would,
  * initialises the sound library and sets the master volume (a key-on needs a VAB, which the example has none of). */
 #include "common.h"
-#include "psyq/libetc.h"
-#include "psyq/libgpu.h"
-#include "psyq/libpad.h"
-#include "psyq/libsnd.h"
+#include "psxstack/psyq/libetc.h"
+#include "psxstack/psyq/libgpu.h"
+#include "psxstack/psyq/libpad.h"
+#include "psxstack/psyq/libsnd.h"
 
 #define OT_LEN 8
 

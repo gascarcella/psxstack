@@ -3,9 +3,10 @@
 What psxstack borrows and ships, and what it only uses as a tool.
 
 ## Shipped in the repository
-- **`examples/hello/include/psyq/*.h`**: the recovered Psy-Q 4.7 declarations of
+- **`include/psxstack/psyq/*.h`**: the Psy-Q 4.7 declarations recovered by
   [dw2003recomp](https://github.com/gascarcella/dw2003recomp) (`include/psyq/`, MIT, the same owner), written from
-  the game's use of the API; the Psy-Q shim compiles against them (DECISIONS "Psy-Q headers: the game's, for now").
+  the game's use of the API and public documentation, moved here as the stack's own set; the shim and `examples/hello`
+  compile against them (DECISIONS "Psy-Q declarations: the stack's").
   No Sony code or SDK file is in either repository.
 - **`runtime/`, `psyq/`, `launcher/`, `tools/`**: moved from dw2003recomp's `port/`, `launcher/` and `tools/` (MIT,
   the same owner): our own code, written from public hardware documentation (psx-spx) and the games' use of the API.

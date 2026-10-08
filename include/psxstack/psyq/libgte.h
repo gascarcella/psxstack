@@ -1,9 +1,11 @@
 #ifndef PSYQ_LIBGTE_H
 #define PSYQ_LIBGTE_H
 
-/* Our own declarations of the Psy-Q 4.7 LIBGTE interface, added as the game needs them. */
+/* psxstack's declarations of the Psy-Q 4.7 LIBGTE interface, as its games use it: written from the games' use of the
+ * API and public documentation, no Sony header (DECISIONS "Psy-Q declarations: the stack's"). The shim implements
+ * these; a game's own recovered declarations must agree with them in ABI (tools/psyq_decls.py). */
 
-#include "common.h"
+#include "psxstack/types.h"
 
 typedef struct {
     u8 r, g, b, cd;

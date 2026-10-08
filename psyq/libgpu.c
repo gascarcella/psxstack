@@ -13,7 +13,7 @@
 #include <string.h>
 
 #include "psyq_internal.h"
-#include "psyq/libgpu.h"
+#include "psxstack/psyq/libgpu.h"
 
 #ifndef PC_PORT
 #error "port/psyq is the host shim: compile it with -DPC_PORT"

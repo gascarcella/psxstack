@@ -147,9 +147,18 @@ function(psxstack_add_game target)
         file(WRITE "${G_OVERLAYS}" "")
     endif()
 
-    # ---- Flags shared by everything that includes the game's headers (the units, the runtime, the shim).
+    # ---- Flags shared by everything built here. The game's include directories go to the units (every one of them,
+    # first) and, as quote-only directories, to the adapter (its `#include "gamestate.h"`); the runtime and the shim
+    # see only the stack's own headers and the generated ones (the shim compiles against include/psxstack/psyq/, not
+    # a game's recovered headers: DECISIONS "Psy-Q declarations: the stack's"). -iquote keeps a game's own
+    # `include/stdarg.h` (a PS1 build's) from shadowing the host's <stdarg.h> inside the adapter.
     set(GAME_DEFINES PC_PORT ${G_DEFINES})
-    set(GAME_INCLUDES "${GEN}/include" "${PSXSTACK_ROOT}/include" "${PSXSTACK_ROOT}/include/psxstack" ${G_INCLUDE_DIRS})
+    set(STACK_INCLUDES "${GEN}/include" "${PSXSTACK_ROOT}/include" "${PSXSTACK_ROOT}/include/psxstack")
+    set(GAME_INCLUDES ${STACK_INCLUDES} ${G_INCLUDE_DIRS})
+    set(ADAPTER_INCLUDE_FLAGS "")
+    foreach(d IN LISTS G_INCLUDE_DIRS)
+        list(APPEND ADAPTER_INCLUDE_FLAGS "-iquote" "${d}")
+    endforeach()
     set(COMMON_FLAGS -fsigned-char -fwrapv -fno-strict-aliasing)
     if(PSXSTACK_SANITIZE)
         list(APPEND COMMON_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -276,9 +285,12 @@ function(psxstack_add_game target)
     add_dependencies(${target} ${target}_version)
     set_target_properties(${target} PROPERTIES C_STANDARD 99 C_EXTENSIONS ON C_STANDARD_REQUIRED ON)
     target_compile_definitions(${target} PRIVATE ${GAME_DEFINES})
-    target_include_directories(${target} BEFORE PRIVATE "${PSXSTACK_ROOT}/psyq" "${PSXSTACK_ROOT}/runtime" ${GAME_INCLUDES})
+    target_include_directories(${target} BEFORE PRIVATE "${PSXSTACK_ROOT}/psyq" "${PSXSTACK_ROOT}/runtime" ${STACK_INCLUDES})
     target_compile_options(${target} PRIVATE ${COMMON_FLAGS} -Wall -Wextra)
-    set_source_files_properties(${RUNTIME_SRCS} ${G_ADAPTER} ${TABLE_SRCS} PROPERTIES COMPILE_OPTIONS "-Werror")
+    set_source_files_properties(${RUNTIME_SRCS} ${TABLE_SRCS} PROPERTIES COMPILE_OPTIONS "-Werror")
+    if(G_ADAPTER)
+        set_source_files_properties(${G_ADAPTER} PROPERTIES COMPILE_OPTIONS "-Werror;${ADAPTER_INCLUDE_FLAGS}")
+    endif()
     if(PSXSTACK_PSYQ_WERROR)
         set_source_files_properties(${PSYQ_SRCS} PROPERTIES COMPILE_OPTIONS "-Werror")
     endif()

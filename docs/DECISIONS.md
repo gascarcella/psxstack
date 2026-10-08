@@ -17,10 +17,21 @@ sibling clone so worktrees build offline; CI checks the submodule out at the pin
 self-test get their constants from it. Single binaries, no file lookup at start, and the self-test fixtures carry no
 real hash of their own.
 
-## Psy-Q headers: the game's, for now (2026-10-07)
+## Psy-Q headers: the game's, for now (2026-10-07; superseded 2026-10-08, below)
 The shim compiles against the game's recovered `include/psyq/*.h` through the include path the game passes
 (`INCLUDE_DIRS`). The stack owns its own Psy-Q declarations only when the second game arrives and two sets have to
 agree; doing it first would mean a third copy with no way to test it.
+
+## Psy-Q declarations: the stack's (2026-10-08)
+The second game (Digimon Digital Card Battle) has no recovered `include/psyq/` at all: its `game.h` redeclares every
+Psy-Q type and prototype in its own names (`Rect16`, `s32 LoadImage(s16 *, s32)`), so the shim could not compile
+against that tree. Now `include/psxstack/psyq/*.h` is the one set the shim compiles against (the first game's
+recovered declarations, MIT, moved in: written from the games' use of the API and public documentation, Sony's
+names, no SDK file), and the runtime and the shim see no game include directory at all (the units get the full
+list, the adapter the game's as quote-only directories, so a game's PS1 `include/stdarg.h` cannot shadow the host's).
+A game keeps its own declarations for its matching build; the two meet only at link time, so `tools/psyq_decls.py`
+(the inventory's `decls` command) compares the function types both sides declare in the DWARF and fails on a
+register-ABI difference: a parameter's or the return's width or kind, or the count. Names and typedefs are free.
 
 ## The hooks in the game's C are the game's (2026-10-07)
 `PLATFORM_WAIT`, the pointer macros, `OVERLAY_COPY`, the slot macros and the `#ifdef PC_PORT` blocks are the per-game

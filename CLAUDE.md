@@ -19,8 +19,9 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 
 ## Rules
 - **No game code, no game data, no Psy-Q SDK.** Nothing from a game's `src/`, its disc or its extracted files comes
-  here; the Psy-Q declarations the shim compiles against are the game's recovered headers (DECISIONS "Psy-Q headers")
-  and `examples/hello` carries only the minimal copy `docs/THIRD_PARTY.md` lists. Record anything borrowed there.
+  here; the Psy-Q declarations the shim compiles against are the stack's own, `include/psxstack/psyq/` (written from
+  the games' use of the API, Sony's names, no SDK file: DECISIONS "Psy-Q declarations: the stack's"), and a game's
+  own declarations are checked against them (`tools/psyq_decls.py`). Record anything borrowed in `docs/THIRD_PARTY.md`.
 - **The contract is the source of truth.** A change to what a game must supply or to a hook macro's meaning is a
   change to `docs/GAME_CONTRACT.md` first, with `PSXSTACK_API` (`include/psxstack/game.h`) bumped when it is
   incompatible. Releases are semver tags; a game pins a tag, so a change here reaches it as a reviewable pin bump.
@@ -41,7 +42,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | Path | Contents |
 |---|---|
 | `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, `game_defaults.c` (the adapter's weak defaults) |
-| `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, the runtime's headers |
+| `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, `psyq/` (the Psy-Q declarations the shim implements: the stack's own, DECISIONS "Psy-Q declarations: the stack's"), the runtime's headers |
 | `psyq/` | The Psy-Q shim, one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/` | The one mod every game has; a game's own mods live in the game |
@@ -67,7 +68,8 @@ cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.
 SDL_VIDEO_DRIVER=offscreen build/launcher/<id>-launcher --self-test build/selftest   # <id> from game.json (dw2003 by default)
 cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" -DCMAKE_BUILD_TYPE=Release   # the toolchain path must be absolute
 python3 tools/mcp/selftest.py                     # the MCP server offline, against fake_game.py
-psyq/check.sh --compile [-I DIR]...               # the shim alone with -Werror; --game-root DIR: its coverage of a game's Psy-Q needs
+psyq/check.sh --compile [-I DIR]...               # the shim alone with -Werror, against the stack's declarations (no game); --game-root DIR: its coverage of a game's Psy-Q needs
+python3 tools/psyq_decls.py --gen-include DIR --out DIR --game-header H... [-I DIR]... [-D X]...   # a game's Psy-Q declarations vs the stack's (a game runs it as its inventory's `decls`)
 python3 -m py_compile tools/*.py tools/mcp/*.py tests/*.py
 ```
 The game-side commands (the port's build, the probe, the replays, the MCP server with a real game) are in the game's

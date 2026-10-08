@@ -273,7 +273,8 @@ another process:
 ## The Psy-Q shim
 `psyq/` implements the Psy-Q functions its games call (the first game: 123; `tools/port_inventory.py counts` lists
 a game's; `psyq/check.sh --game-root DIR` checks that each, and the SDK data symbols the C uses, is defined) against
-the prototypes in the game's recovered `psyq/*.h` headers (DECISIONS "Psy-Q headers: the game's, for now"). It is
+the stack's own declarations, `include/psxstack/psyq/*.h` (DECISIONS "Psy-Q declarations: the stack's"; a game's own
+declarations are checked against them by `tools/psyq_decls.py`). It is
 our own code, MIT, written from the games' use of the API and public hardware documentation (psx-spx). The
 libraries' internals (`_spu_*`, `_card_*`, ...) are never needed: only what a game calls. A function a new game needs
 and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and is added to the shim.

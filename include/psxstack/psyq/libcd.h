@@ -1,10 +1,11 @@
 #ifndef PSYQ_LIBCD_H
 #define PSYQ_LIBCD_H
 
-/* Our own declarations of the Psy-Q 4.7 LIBCD interface, added as the game needs them
- * (no Sony headers are used; DECISIONS "Code only: no game data, SDK or BIOS in the repo"). */
+/* psxstack's declarations of the Psy-Q 4.7 LIBCD interface, as its games use it: written from the games' use of the
+ * API and public documentation, no Sony header (DECISIONS "Psy-Q declarations: the stack's"). The shim implements
+ * these; a game's own recovered declarations must agree with them in ABI (tools/psyq_decls.py). */
 
-#include "common.h"
+#include "psxstack/types.h"
 
 /* CD position as minute/second/sector (BCD) + track. */
 typedef struct CdlLOC {
@@ -36,6 +37,6 @@ u32 StGetNext(u32 **addr, u32 **header);
 u32 StFreeRing(u32 *base);
 void StUnSetRing(void);
 void StCdInterrupt(void);
-extern u8 D_80081454; /* StCdIntrFlag (STDWTITL; unnamed: LIBCD's .bss is one block) */
+extern u8 StCdIntrFlag; /* in LIBCD's .bss (one block): a movie player polls and clears it */
 
 #endif /* PSYQ_LIBCD_H */
