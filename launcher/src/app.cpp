@@ -939,10 +939,22 @@ void App::draw_settings() {
             dirty_ = true;
         }
         ImGui::SameLine();
-        if (ImGui::RadioButton("Whole pixels (as the PS1)", s.subpixel == "off")) {
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Perspective", s.subpixel == "perspective")) {
+            s.subpixel = "perspective";
+            dirty_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("PS1 pixels", s.subpixel == "off")) {
             s.subpixel = "off";
             dirty_ = true;
         }
+        ImGui::Indent(label_w);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Sub-pixel: the 3D moves smoothly. Perspective: also textured perspective-correct (not the "
+                            "PS1's look). PS1 pixels: the 3D steps a whole PS1 pixel at a time.");
+        ImGui::PopTextWrapPos();
+        ImGui::Unindent(label_w);
     }
     if (s.renderer == "gpu") {
         draw_filter(label_w);

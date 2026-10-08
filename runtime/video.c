@@ -183,11 +183,11 @@ void port_video_set_internal_scale(int scale) {
     video_internal_scale = scale < 1 ? 1 : scale > 8 ? 8 : scale;
 }
 
-void port_video_set_subpixel(int on) {
+void port_video_set_subpixel(int mode) {
 #ifdef PSXSTACK_SDL
-    render_gpu_set_subpixel(on);
+    render_gpu_set_subpixel(mode);
 #else
-    (void)on;
+    (void)mode;
 #endif
 }
 

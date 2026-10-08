@@ -230,10 +230,11 @@ void port_settings_load(const char *path) {
         }
         settings_int(obj, "video", "internal_scale", 1, 8, &s->internal_scale);
         if ((v = settings_member(obj, "video", "subpixel", PORT_JSON_STRING)) != NULL) {
-            if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0) {
-                port_settings_fail("video.subpixel", "\"off\" or \"on\", not \"%s\"", v->string);
+            if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0 &&
+                strcmp(v->string, "perspective") != 0) {
+                port_settings_fail("video.subpixel", "\"off\", \"on\" or \"perspective\", not \"%s\"", v->string);
             }
-            s->subpixel = strcmp(v->string, "on") == 0;
+            s->subpixel = strcmp(v->string, "perspective") == 0 ? 2 : strcmp(v->string, "on") == 0;
         }
         if ((v = settings_member(obj, "video", "filter", PORT_JSON_STRING)) != NULL &&
             (s->filter = port_filter_from_name(v->string)) < 0) {
@@ -277,7 +278,7 @@ void port_settings_print(FILE *f, const PortSettings *s) {
                "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d",
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
             s->gpu ? "gpu" : "software", s->internal_scale);
-    fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel ? "on" : "off");
+    fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel == 2 ? "perspective" : s->subpixel ? "on" : "off");
     fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
     fprintf(f, ",\n    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }", s->crt_scanlines, s->crt_mask,
             s->crt_curvature);
