@@ -6,6 +6,7 @@
  *     "video":    { "window": true, "scale": 2, "fullscreen": false, "refresh": 50, "renderer": "software",
  *                   "internal_scale": 1,
  *                   "subpixel": "on" },
+ *                   "filter": "none" },
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off
@@ -144,6 +145,7 @@ void port_settings_load(const char *path) {
     static const char *const disc_keys[] = { "path", "sha1", NULL };
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
                                               "subpixel",
+                                              "filter",
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
     PortSettings *s = &port_settings;
@@ -228,6 +230,10 @@ void port_settings_load(const char *path) {
             }
             s->subpixel = strcmp(v->string, "on") == 0;
         }
+        if ((v = settings_member(obj, "video", "filter", PORT_JSON_STRING)) != NULL &&
+            (s->filter = port_filter_from_name(v->string)) < 0) {
+            port_settings_fail("video.filter", "%s, not \"%s\"", port_filter_choices(1), v->string);
+        }
     }
     if ((obj = settings_member(root, "", "audio", PORT_JSON_OBJECT)) != NULL) {
         settings_unknown(obj, "audio", audio_keys);
@@ -270,6 +276,7 @@ void port_settings_print(FILE *f, const PortSettings *s) {
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
             s->gpu ? "gpu" : "software", s->internal_scale);
     fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel ? "on" : "off");
+    fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
     fprintf(f, "\n  },\n  \"audio\": {\n    \"mute\": %s\n  },\n  \"memcard1\": ", s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);

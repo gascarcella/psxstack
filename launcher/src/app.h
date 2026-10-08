@@ -96,6 +96,7 @@ private:
     void draw_play();
     void draw_disc();
     void draw_settings();
+    void draw_filter(float label_w);
     void draw_controls();
     void draw_names_table(bool pad);
     void draw_hotkeys();

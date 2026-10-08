@@ -353,6 +353,7 @@ function(psxstack_add_game target)
         endif()
         message(STATUS "DXC: ${_dxc}")
         file(GLOB SHADERS CONFIGURE_DEPENDS "${PSXSTACK_ROOT}/shaders/*.hlsl")
+        file(GLOB SHADER_INCLUDES CONFIGURE_DEPENDS "${PSXSTACK_ROOT}/shaders/*.hlsli")   # #included by the shaders
         set(SHADER_HEADERS "")
         foreach(src IN LISTS SHADERS)
             get_filename_component(name "${src}" NAME_WLE)   # present.frag
@@ -370,7 +371,7 @@ function(psxstack_add_game target)
                                COMMAND "${CMAKE_COMMAND}" -E make_directory "${GEN}/shaders"
                                COMMAND "${_dxc}" -T ${profile} -E main -spirv -fspv-target-env=vulkan1.0 -WX
                                        -Fo "${spv}" "${src}"
-                               DEPENDS "${src}" COMMENT "dxc ${name}.hlsl -> SPIR-V" VERBATIM)
+                               DEPENDS "${src}" ${SHADER_INCLUDES} COMMENT "dxc ${name}.hlsl -> SPIR-V" VERBATIM)
             add_custom_command(OUTPUT "${header}"
                                COMMAND "${CMAKE_COMMAND}" -DIN=${spv} -DOUT=${header} -DNAME=${sid}_spv
                                        -P "${PSXSTACK_ROOT}/cmake/embed.cmake"

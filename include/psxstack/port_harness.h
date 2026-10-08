@@ -82,6 +82,12 @@ void port_pace_set(long fps);
 /* mods.c: a game mod asks for fast-forward (skip_dialogues' fast_forward_waits while a cutscene runs): on or off,
  * with fast_forward's speed and mute. */
 void port_fast_forward_request(int on);
+/* video.c: widescreen (GAME_CONTRACT.md "4. The adapter units", the mods; render_gpu_wide.c). A game mod that widens
+ * some scenes calls port_video_widescreen_enable from its start (before the window opens: with the GPU renderer a new
+ * window opens 16:9 and the rasteriser keeps a wide canvas) and port_video_widescreen every vsync: on while the
+ * scene's 3D reaches past the display's edges, off elsewhere. The software renderer stays 4:3 (logged once). */
+void port_video_widescreen_enable(void);
+void port_video_widescreen(int on);
 long port_pace_get(void);
 int port_video_available(void);
 int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malformed (or too many) */
@@ -90,6 +96,20 @@ int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malform
 int port_video_set_renderer(const char *name);
 void port_video_set_internal_scale(int scale); /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
 void port_video_set_subpixel(int on);          /* --subpixel / video.subpixel: sub-pixel vertices above scale 1 */
+/* The present's filter (`--filter NAME[:KEY=V,...]`, video.filter; video_filter.c): the hardware renderer draws the
+ * picture into the window through it (render_gpu_present.c); the software renderer shows the picture unfiltered and
+ * says so once. PORT_FILTER_NONE (the default) is the integer nearest mapping, the picture pixel for pixel. */
+enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_COUNT };
+typedef struct PortFilter {
+    int kind; /* PORT_FILTER_* */
+} PortFilter;
+extern const char *const port_filter_names[PORT_FILTER_COUNT];
+int port_filter_from_name(const char *name); /* PORT_FILTER_*; -1 for another name */
+/* The names for a message: "\"none\" or \"sharp\"" (quoted) or "none or sharp". */
+const char *port_filter_choices(int quoted);
+/* `--filter`'s argument into *f (the defaults first); 0 with the reason in `err` when it is malformed. */
+int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
+void port_video_set_filter(const PortFilter *f);
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */

@@ -820,6 +820,43 @@ static void section_title(const char *title) {
     ImGui::PopStyleColor();
 }
 
+// The hardware renderer's present filter (video.filter; under the GPU renderer only: the Software one shows the
+// picture unfiltered): a combo in FILTER_NAMES' order, a line of help for the choice.
+void App::draw_filter(float label_w) {
+    static const char *const labels[] = { "None (the PS1's pixels)", "Sharp" };
+    static const char *const help[] = {
+        "Each pixel of the picture as a block of whole window pixels, as it is.",
+        "Sharp bilinear: every pixel the same size where the window is not a whole multiple of the picture (a "
+        "Resolution that does not divide the window), with a one-pixel blend at the edges between them.",
+    };
+    static_assert(SDL_arraysize(labels) == SDL_arraysize(FILTER_NAMES) && SDL_arraysize(help) == SDL_arraysize(labels),
+                  "a label and a help line per filter");
+    Settings &s = settings_.values;
+    int current = 0;
+    for (int i = 0; i < (int)SDL_arraysize(FILTER_NAMES); i++) {
+        if (s.filter == FILTER_NAMES[i]) {
+            current = i;
+        }
+    }
+    ImGui::TextDisabled("Filter");
+    ImGui::SameLine(label_w);
+    ImGui::SetNextItemWidth(260 * ImGui::GetStyle().FontScaleDpi);
+    if (ImGui::BeginCombo("##filter", labels[current])) {
+        for (int i = 0; i < (int)SDL_arraysize(FILTER_NAMES); i++) {
+            if (ImGui::Selectable(labels[i], i == current)) {
+                s.filter = FILTER_NAMES[i];
+                dirty_ = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::Indent(label_w);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", help[current]);
+    ImGui::PopTextWrapPos();
+    ImGui::Unindent(label_w);
+}
+
 void App::draw_settings() {
     Settings &s = settings_.values;
     const float label_w = 150 * ImGui::GetStyle().FontScaleDpi;
@@ -895,6 +932,9 @@ void App::draw_settings() {
             s.subpixel = "off";
             dirty_ = true;
         }
+    }
+    if (s.renderer == "gpu") {
+        draw_filter(label_w);
     }
     if (s.refresh != GAME_RATE && GAME_RATE_NOTE[0] != '\0') {
         ImGui::Indent(label_w);
