@@ -10,7 +10,7 @@ cbuffer Present : register(b0, space3) {
     int4 dst;     // the rectangle in the output: x, y, w, h
     int4 src;     // the picture's size at the internal scale (w, h); the VRAM target's size (w, h)
     int4 cut;     // the picture's corner in the VRAM (x, y, VRAM pixels), the internal scale (0: the image), its lines
-    float4 param; // the filter's parameters
+    float4 param; // the filter's parameters; w: a stride for the VRAM source (0 or 1: every pixel; N: a 1x picture)
 };
 
 // Source pixel t (clamped to the picture), 0..255 per channel.
@@ -19,8 +19,8 @@ float3 fetch(int2 t) {
     if (cut.z == 0) {
         return floor(source.Load(int3(t, 0)).rgb * 255.0 + 0.5);
     }
-    int N = cut.z;
-    float4 c = source.Load(int3((cut.x * N + t.x) % src.z, (cut.y * N + t.y) % src.w, 0));
+    int N = cut.z, S = max(int(param.w), 1);
+    float4 c = source.Load(int3((cut.x * N + t.x * S) % src.z, (cut.y * N + t.y * S) % src.w, 0));
     float3 v = floor(c.rgb * 255.0 + 0.5);
     return min(v + floor(v / 32.0), 255.0);
 }

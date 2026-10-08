@@ -1275,8 +1275,41 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
     RenderPresentView u; /* dst, src, disp (cut) as present*.frag.hlsl read them; param for a filter */
     SDL_GPUGraphicsPipeline *filter = filtered ? render_present_pipeline(target != r.target) : NULL;
 
-    if (filter != NULL && rect[2] > 0 && rect[3] > 0) { /* the filter's first pass, if any */
-        render_present_prepare(cb, vram_xy != NULL ? r.vram_target : r.image, r.sampler, w, h);
+    memset(&u, 0, sizeof(u));
+    u.dst[0] = rect[0];
+    u.dst[1] = rect[1];
+    u.dst[2] = rect[2];
+    u.dst[3] = rect[3];
+    u.src[0] = w;
+    u.src[1] = h;
+    if (vram_xy != NULL) { /* the display at the internal scale, in the 1024 N x 512 N target */
+        int wide[2];
+        u.src[0] = w * r.scale;
+        u.src[1] = h * r.scale;
+        u.src[2] = VRAM_W * r.scale;
+        u.src[3] = VRAM_H * r.scale;
+        u.cut[0] = vram_xy[0] & 1023;
+        u.cut[1] = vram_xy[1] & 511;
+        u.cut[2] = r.scale;
+        if (render_gpu_wide_cut(vram_xy, w, h, wide)) { /* a wide picture: its canvas, right of the VRAM */
+            u.src[2] = r.cols * r.scale;
+            u.cut[0] = wide[0];
+            u.cut[1] = wide[1];
+        }
+    }
+    if (filter != NULL) {
+        u.cut[3] = h; /* the display's lines */
+        render_present_params(&u);
+        if (vram_xy != NULL && render_present_image()) {
+            /* a wide picture for a filter of the 1x image (render_gpu_present: the software image is 4:3): its canvas
+             * at 1x, every N-th target pixel (a 1x pixel's N x N block's corner) */
+            u.src[0] = w;
+            u.src[1] = h;
+            u.param[3] = (float)r.scale;
+        }
+        if (rect[2] > 0 && rect[3] > 0) { /* the filter's first pass, if any */
+            render_present_prepare(cb, vram_xy != NULL ? r.vram_target : r.image, r.sampler, &u);
+        }
     }
     memset(&ct, 0, sizeof(ct));
     ct.texture = target;
@@ -1296,32 +1329,6 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
         SDL_BindGPUFragmentSamplers(pass, 0, &bind, 1);
         if (filter != NULL) {
             render_present_bind(pass, r.sampler);
-        }
-        memset(&u, 0, sizeof(u));
-        u.dst[0] = rect[0];
-        u.dst[1] = rect[1];
-        u.dst[2] = rect[2];
-        u.dst[3] = rect[3];
-        u.src[0] = w;
-        u.src[1] = h;
-        if (vram_xy != NULL) { /* the display at the internal scale, in the 1024 N x 512 N target */
-            int wide[2];
-            u.src[0] = w * r.scale;
-            u.src[1] = h * r.scale;
-            u.src[2] = VRAM_W * r.scale;
-            u.src[3] = VRAM_H * r.scale;
-            u.cut[0] = vram_xy[0] & 1023;
-            u.cut[1] = vram_xy[1] & 511;
-            u.cut[2] = r.scale;
-            if (render_gpu_wide_cut(vram_xy, w, h, wide)) { /* a wide picture: its canvas, right of the VRAM */
-                u.src[2] = r.cols * r.scale;
-                u.cut[0] = wide[0];
-                u.cut[1] = wide[1];
-            }
-        }
-        if (filter != NULL) {
-            u.cut[3] = h; /* the display's lines */
-            render_present_params(&u);
         }
         SDL_PushGPUFragmentUniformData(cb, 0, &u,
                                        filter != NULL    ? sizeof(u)
@@ -1365,13 +1372,14 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
     SDL_GPUCommandBuffer *cb;
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
-    int rect[4] = { 0, 0, 0, 0 };
+    int rect[4] = { 0, 0, 0, 0 }, wide[2];
 
     if (r.device == NULL || r.window == NULL) {
         return 0;
     }
-    if (render_present_image()) {
-        vram_xy = NULL; /* the filter takes the 1x image (the target's units still run every vsync) */
+    if (render_present_image() && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
+        vram_xy = NULL; /* the filter takes the 1x image (the target's units still run every vsync); a wide picture
+                           keeps its canvas (render_draw) */
     }
     cb = SDL_AcquireGPUCommandBuffer(r.device);
     if (cb == NULL) {
@@ -1412,7 +1420,7 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
     SDL_GPUTextureTransferInfo info;
     SDL_GPUFence *fence;
     const void *map;
-    int rect[4] = { 0, 0, ow, oh };
+    int rect[4] = { 0, 0, ow, oh }, wide[2];
 
     if (r.device == NULL || ow <= 0 || oh <= 0) {
         return 0;
@@ -1432,7 +1440,7 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
             return 0;
         }
     }
-    if (dest != NULL && render_present_image()) {
+    if (dest != NULL && render_present_image() && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
         vram_xy = NULL; /* a filtered picture from the 1x image, as the window's */
     }
     cb = SDL_AcquireGPUCommandBuffer(r.device);

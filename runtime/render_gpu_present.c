@@ -122,8 +122,9 @@ int render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextur
     return 1;
 }
 
-void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler, int w,
-                            int h) {
+void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler,
+                            const RenderPresentView *view) {
+    int w = view->src[0], h = view->src[1];
     SDL_GPUColorTargetInfo ct;
     SDL_GPURenderPass *pass;
     SDL_GPUTextureSamplerBinding bind;
@@ -146,11 +147,11 @@ void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SD
     bind.texture = source;
     bind.sampler = sampler;
     SDL_BindGPUFragmentSamplers(pass, 0, &bind, 1);
-    memset(&v, 0, sizeof(v));
+    v = *view; /* the picture as the present reads it, into a w x h target */
+    v.dst[0] = 0;
+    v.dst[1] = 0;
     v.dst[2] = w;
     v.dst[3] = h;
-    v.src[0] = w;
-    v.src[1] = h; /* cut.z 0: the image */
     SDL_PushGPUFragmentUniformData(cb, 0, &v, sizeof(v));
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);

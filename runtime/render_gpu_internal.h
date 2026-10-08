@@ -38,10 +38,12 @@ int render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextur
                        const PortFilter *f, char *why, size_t why_size);
 /* The filter's first pass, if it has one (`smooth`: its decisions per source pixel), from `source` (the w x h
  * picture) on cb before the present's render pass; and its texture bound for the present's pass (slot 1). */
-void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler, int w, int h);
+void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler,
+                            const RenderPresentView *view);
 void render_present_bind(SDL_GPURenderPass *pass, SDL_GPUSampler *sampler);
 /* Whether the filter takes the 32-bit image (video.c's 1x software picture) in place of the display cut from the
- * VRAM target: `smooth`, a pixel-art filter, needs the 1x picture at every internal scale. */
+ * VRAM target: `smooth`, a pixel-art filter, needs the 1x picture at every internal scale. A wide picture (widescreen,
+ * render_gpu_wide.c: the image is 4:3) keeps its canvas in the target, read at 1x (param[3]: every N-th pixel). */
 int render_present_image(void);
 /* The filter's pipeline for the swapchain (swap 1) or the readback target; NULL: none (the present's own). */
 SDL_GPUGraphicsPipeline *render_present_pipeline(int swap);
