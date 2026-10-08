@@ -1,10 +1,11 @@
-/* The hardware renderer (render_gpu.h; issue #31, docs/PORT.md "Rendering"): SDL_GPU on Vulkan, only in the
- * PSXSTACK_SDL build. Two parts:
+/* The hardware renderer (render_gpu.h; issue #31, docs/PORT.md "Rendering"): SDL_GPU on Vulkan, on Windows on Direct3D
+ * 12 first (SDL's order; SDL_GPU_DRIVER=vulkan picks Vulkan there), only in the PSXSTACK_SDL build. Two parts:
  *
  * The present. A picture goes into the window's swapchain (or, read back, into a screenshot: `--gpu-screenshot`)
- * through one pair of shaders (port/shaders/present*.hlsl, compiled to SPIR-V at build time), nearest-scaled with
- * integer arithmetic into video.c's 4:3 rectangle: either video.c's 32-bit image (the software path's picture, pixel
- * for pixel the SDL_Renderer path's) or a 15-bit display cut from the rasteriser's target.
+ * through one pair of shaders (shaders/present*.hlsl, compiled to SPIR-V, for Windows also to DXIL, at build time:
+ * render_gpu_shaders.h), nearest-scaled with integer arithmetic into video.c's 4:3 rectangle: either video.c's 32-bit
+ * image (the software path's picture, pixel for pixel the SDL_Renderer path's) or a 15-bit display cut from the
+ * rasteriser's target.
  *
  * The rasteriser (phase 2: internal scale 1). gpu.c's listener reports every triangle, rectangle, line segment, fill,
  * VRAM copy and CPU-to-VRAM transfer as gpu.c decodes it (psyq/psyq_internal.h); this file records them as units
@@ -29,7 +30,12 @@
  * leaves the window usable by SDL_Renderer (so render_gpu_open comes first and releases everything on failure);
  * destroying the device before SDL_Quit exits cleanly on NVIDIA (the EGL teardown crash video.c avoids). The swapchain
  * is SDR (8-bit, not sRGB-encoded: the bytes pass through), presented in mailbox mode when the window supports it,
- * else immediate, else vsync: the SDL_Renderer path presents without vsync and pump.c paces the frames. */
+ * else immediate, else vsync: the SDL_Renderer path presents without vsync and pump.c paces the frames.
+ *
+ * Measured on D3D12 under Wine (dw2003recomp issue #67), on Wine's own vkd3d and on vkd3d-proton: the pictures are the
+ * Vulkan build's byte for byte, at internal scale 1 the software image; Wine's vkd3d checks the DXIL's signature as
+ * Windows does, but reports no display support for any swapchain format, so SDL refuses the swapchain parameters
+ * there and the window presents with the claim's own (SDR, vsync). */
 #ifdef PSXSTACK_SDL
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,11 +45,7 @@
 #include "psyq_internal.h"
 #include "render_gpu.h"
 
-#include "present_frag_spv.h"
-#include "present_vert_spv.h"
-#include "present_vram_frag_spv.h"
-#include "raster_frag_spv.h"
-#include "raster_vert_spv.h"
+#include "render_gpu_shaders.h"
 
 #define RENDER_IMAGE_W 640 /* video.c's VIDEO_MAX_W, VIDEO_MAX_H: the largest display image */
 #define RENDER_IMAGE_H 576
@@ -96,6 +98,7 @@ static struct {
     SDL_GPUDevice *device;
     SDL_Window *window;                    /* claimed; NULL headless */
     SDL_GPUTextureFormat swap_format;      /* the swapchain's (SDR: B8G8R8A8 or R8G8B8A8 UNORM) */
+    int dxil;                              /* the device takes DXIL, not SPIR-V (D3D12) */
     SDL_GPUShader *vert, *frag, *frag_vram;
     SDL_GPUGraphicsPipeline *pipe_swap, *pipe_vram_swap; /* the presents into the swapchain's format */
     SDL_GPUGraphicsPipeline *pipe_off, *pipe_vram_off;   /* into B8G8R8A8_UNORM (the readback target) */
@@ -746,14 +749,15 @@ static void render_release(void) {
     memset(&r, 0, sizeof(r));
 }
 
-static SDL_GPUShader *render_shader(const unsigned char *code, size_t size, SDL_GPUShaderStage stage, int samplers,
-                                    int uniforms) {
+/* A shader from its SPIR-V or its DXIL (render_gpu_shaders.h's RENDER_SHADER), whichever the device takes. */
+static SDL_GPUShader *render_shader(const unsigned char *spv, size_t spv_size, const unsigned char *dxil,
+                                    size_t dxil_size, SDL_GPUShaderStage stage, int samplers, int uniforms) {
     SDL_GPUShaderCreateInfo ci;
     memset(&ci, 0, sizeof(ci));
-    ci.code = code;
-    ci.code_size = size;
+    ci.code = r.dxil ? dxil : spv;
+    ci.code_size = r.dxil ? dxil_size : spv_size;
     ci.entrypoint = "main";
-    ci.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    ci.format = r.dxil ? SDL_GPU_SHADERFORMAT_DXIL : SDL_GPU_SHADERFORMAT_SPIRV;
     ci.stage = stage;
     ci.num_samplers = (Uint32)samplers;
     ci.num_uniform_buffers = (Uint32)uniforms;
@@ -807,14 +811,21 @@ static int render_fail(char *why, size_t why_size, const char *what) {
 int render_gpu_open(SDL_Window *window, char *why, size_t why_size) {
     SDL_GPUSamplerCreateInfo si;
     SDL_PropertiesID props;
+    SDL_GPUShaderFormat formats;
 
     if (r.device != NULL) {
         return 1;
     }
-    r.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, NULL);
+    r.device = SDL_CreateGPUDevice(RENDER_SHADER_FORMATS, false, NULL);
     if (r.device == NULL) {
         return render_fail(why, why_size, "SDL_CreateGPUDevice");
     }
+    formats = SDL_GetGPUShaderFormats(r.device) & RENDER_SHADER_FORMATS;
+    if (formats == 0) {
+        SDL_SetError("the device takes neither SPIR-V nor DXIL");
+        return render_fail(why, why_size, "SDL_GetGPUShaderFormats");
+    }
+    r.dxil = !(formats & SDL_GPU_SHADERFORMAT_SPIRV);
     props = SDL_GetGPUDeviceProperties(r.device);
     snprintf(r.describe, sizeof(r.describe), "%s, %s", SDL_GetGPUDeviceDriver(r.device),
              SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, "unnamed device"));
@@ -830,7 +841,9 @@ int render_gpu_open(SDL_Window *window, char *why, size_t why_size) {
             mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
         }
         if (!SDL_SetGPUSwapchainParameters(r.device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
-            return render_fail(why, why_size, "SDL_SetGPUSwapchainParameters");
+            /* Wine's own vkd3d reports no D3D12_FORMAT_SUPPORT1_DISPLAY, so SDL refuses any composition there: the
+             * claim's swapchain stays as it is (SDR, vsync), which presents. */
+            mode = SDL_GPU_PRESENTMODE_VSYNC;
         }
         r.swap_format = SDL_GetGPUSwapchainTextureFormat(r.device, window);
         snprintf(r.describe + strlen(r.describe), sizeof(r.describe) - strlen(r.describe), ", %s",
@@ -838,10 +851,9 @@ int render_gpu_open(SDL_Window *window, char *why, size_t why_size) {
                  : mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate"
                                                          : "vsync");
     }
-    r.vert = render_shader(present_vert_spv, sizeof(present_vert_spv), SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
-    r.frag = render_shader(present_frag_spv, sizeof(present_frag_spv), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
-    r.frag_vram =
-        render_shader(present_vram_frag_spv, sizeof(present_vram_frag_spv), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    r.vert = render_shader(RENDER_SHADER(present_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
+    r.frag = render_shader(RENDER_SHADER(present_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    r.frag_vram = render_shader(RENDER_SHADER(present_vram_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
     if (r.vert == NULL || r.frag == NULL || r.frag_vram == NULL) {
         return render_fail(why, why_size, "SDL_CreateGPUShader");
     }
@@ -889,8 +901,8 @@ int render_gpu_raster_start(int scale, char *why, size_t why_size) {
     if (r.raster) {
         return 1;
     }
-    r.raster_vert = render_shader(raster_vert_spv, sizeof(raster_vert_spv), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    r.raster_frag = render_shader(raster_frag_spv, sizeof(raster_frag_spv), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+    r.raster_vert = render_shader(RENDER_SHADER(raster_vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
+    r.raster_frag = render_shader(RENDER_SHADER(raster_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
     if (r.raster_vert == NULL || r.raster_frag == NULL) {
         snprintf(why, why_size, "the rasteriser's shaders: %s", SDL_GetError());
         return 0;

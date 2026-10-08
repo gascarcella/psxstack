@@ -81,3 +81,12 @@ A disc-free Psy-Q program (two polygons, a pad read, the sound library on) built
 the first game's recovered Psy-Q headers copied beside it (MIT; `docs/THIRD_PARTY.md`), run headless with a
 screenshot whose hash CI checks. It proves the generators, the sections, the shim and the runtime without any game,
 so the stack's CI needs no disc and no private data. `discs` may be empty for it (the port then takes no `--disc`).
+
+## Direct3D 12 on Windows, DXIL signed on Linux (2026-10-08)
+The Windows build embeds each shader as SPIR-V and as DXIL (the same HLSL through the pinned DXC, whose `libdxil.so`
+signs DXIL on the Linux host: D3D12 rejects an unsigned shader, so the build refuses one) and lets SDL pick the backend
+in its own order, D3D12 before Vulkan: no Vulkan driver needed on Windows, and no setting (SDL's `SDL_GPU_DRIVER`
+switches it). The HLSL needed no change: SDL builds the D3D12 root signature itself. Measured under Wine (the first
+game's issue #67): Wine's vkd3d and vkd3d-proton draw the Vulkan build's pictures byte for byte. Wine's own vkd3d
+refuses every swapchain composition, so a refused `SDL_SetGPUSwapchainParameters` keeps the claimed swapchain (SDR,
+vsync) instead of falling back to software. Linux stays SPIR-V only.

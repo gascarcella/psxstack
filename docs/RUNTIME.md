@@ -80,14 +80,15 @@ a 480-line display come out the same size), `--fullscreen` (F11 toggles). `--scr
 build, also headless) writes the image of vsync FRAME as a binary PPM: the texture's pixels, independent of the window.
 **The renderer** (docs/PORT.md "Rendering"): `--renderer software` (the default) presents through
 SDL_Renderer; `--renderer gpu` (or `video.renderer: "gpu"`) through the hardware renderer, `runtime/render_gpu.c` on SDL_GPU
-(Vulkan). It is opened before any SDL_Renderer (on Wayland a window that had an OpenGL renderer cannot be claimed by
+(Vulkan; on Windows Direct3D 12 first, `SDL_GPU_DRIVER=vulkan` or `direct3d12` picks one). It is opened before any SDL_Renderer (on Wayland a window that had an OpenGL renderer cannot be claimed by
 Vulkan); when it cannot present (no Vulkan driver, NVIDIA on the offscreen driver, a shader that does not load) the run
 logs `renderer: gpu unavailable (<why>); software` and uses SDL_Renderer. Its rasteriser draws the game itself into a
 VRAM target of its own (`runtime/render_gpu.c`'s header comment) and a 15-bit display is presented from that target; 24-bit
 displays (the movies, the title) stay the software image. At the internal scale of 1 the picture is the software
 path's, pixel for pixel; `--internal-scale N` (`video.internal_scale`, 2 to 8) draws at N times the resolution (no
 dithering, 8-bit colour; a device that cannot allocate the targets gets a lower scale, logged). Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
-configuring the SDL build without it fails with that hint. `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture
+configuring the SDL build without it fails with that hint; the Windows build also compiles them to DXIL, and fails on a
+DXC that cannot sign it (no `libdxil.so` beside it). `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture
 of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
 would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DRIVER=offscreen`), and logs the shot as
 skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
