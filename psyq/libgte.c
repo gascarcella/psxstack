@@ -379,6 +379,7 @@ s32 SquareRoot0(s32 a) {
 /* The console's reset (psyq.c psyq_reset): every GTE register zero. The sine table is a cache of a constant: kept. */
 void psyq_gte_reset(void) {
     psyq_gte_clear();
+    psyq_gte_shadow_reset();
 }
 
 /* ZSF3 = 0x155 and ZSF4 = 0x100 (1/3 and 1/4 for AVSZ3/4), H = 1000, DQA = -0x1062, DQB = 0x1400000, OFX = OFY = 0

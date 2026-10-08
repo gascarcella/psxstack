@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "port_runtime.h"
+#include "psyq.h"
 
 _Static_assert(PORT_SLOT1_OFS == 0, "the first slot starts the arena");
 _Static_assert(PORT_HEAP_OFS == PORT_HEAP_START_ADDR - PORT_SLOT1_BASE, "the heap follows the slots at the PS1's distance");
@@ -105,6 +106,11 @@ u32 port_ptr_to_u32(const void *p) {
     }
     if (((uintptr_t)q & ((1u << PORT_TAG_SHIFT) - 1)) != 0) {
         port_fatal("PTR_TO_U32(%p): not word-aligned (an ordering-table entry or a primitive always is)", p);
+    }
+    /* A primitive linked into an ordering table (addPrim's setaddr): the sub-pixel shadow resolves a polygon's vertices
+     * (psyq.h "Sub-pixel precision"; it reads up to 14 words: never past the window's end). */
+    if (psyq_gte_shadow_on && q + 56 <= port_tag_base + port_tag_span) {
+        psyq_gte_shadow_link(q);
     }
     return (u32)((uintptr_t)(q - port_tag_base) >> PORT_TAG_SHIFT);
 }

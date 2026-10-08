@@ -92,7 +92,7 @@ in the game's adapter with a weak default for each in `runtime/game_defaults.c`.
 the accepted discs (`PSXSTACK_GAME_DISCS`) and the BIOS stand-ins. The brand strings (`--version`, the window title,
 the crash report's header, the cache directory `<id>-port`, the disc error) and the environment variables
 (`<PREFIX>_PORT_TRACE`, `_FAST_FORWARD`, `_CHECKPOINT_DIR`, `_RESET_CHECK`, `_CRASH_AT`, `_PRESENT_READBACK`,
-`_GPU_VRAM_CHECK`, `_PRIM_DUMP`) read them.
+`_GPU_VRAM_CHECK`, `_PRIM_DUMP`, `_SUBPIXEL_LOG`) read them.
 
 ## Memory arena
 One static block, `port_arena`, stands for the PS1 RAM from the first slot up (`runtime/arena.c`; the sizes are the
@@ -295,6 +295,35 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
 `psyq/gte.c` is the geometry coprocessor in software: the 64 registers with their read/write rules, every
 command (RTPS/RTPT with the UNR division, NCLIP, MVMVA, the lighting and depth-cue commands, AVSZ3/4, GPF/GPL, ...),
 FLAG and the saturations, in the PS1's fixed point. A game's GTE code reaches it through the generated `gtemac.h`; LIBGTE's functions call it too.
+
+## Sub-pixel precision
+The GTE gives a game whole-pixel screen coordinates: RTPS keeps the top half of a 16.16 sum. At internal scale N
+the hardware renderer would draw the 3D at those 1x positions, and a slowly moving vertex would jump a whole 1x pixel
+(N target pixels) at a time. `psyq/gte_shadow.c` keeps what the GTE cut away and finds it again when the polygon is
+drawn, without changing anything the game reads: the command stream, the software picture and the frame hash are the
+same with it on or off.
+- **The value:** the 16.16 sum itself (gte.c's `OFX + IR * (H / SZ)`), in a FIFO beside SXY0-2, with the vertex's
+  SZ. Its floor is the integer by construction; a clamped value has none. A float re-projection would not agree with
+  the integer at the boundaries.
+- **Following it:** games store SXY into a vertex cache with `swc2` and copy the words into packets in plain C,
+  which the shim cannot see (an emulator's PGXP can: it watches every memory access). The shim sees two things:
+  every `swc2` of SXY (the generated `gtemac.h` calls `psyq_gte_swc2_`) with its address, and every primitive when it
+  is linked into an ordering table, complete (`addPrim`'s `setaddr` goes through `port_ptr_to_u32`). A run of SXY
+  stores to consecutive words is a *batch* (one mesh's vertex cache); a linked polygon whose vertex words are all in
+  the current batch gets, for each vertex word's host address, the batch's value for that word. A word two vertices of
+  the batch share with different fractions (about 5 % of the first game's battle vertices) gets their mean: still a
+  function of the word, so a vertex shared by several faces lands at the same place in each. A polygon with a word not
+  in the batch (a 2D primitive) has its addresses cleared. A direct `swc2` into a packet is found by its address too.
+- **Using it:** gpu.c notes the host address each word of a DMA'd primitive came from and, for a polygon vertex, asks
+  the shadow (`psyq_gte_shadow_find`); a value counts only when its word is the word read and its integer part the
+  integer drawn. The listener's `GpuVertex` then carries the fraction (`fx`, `fy`, 1/65536 pixel; -1 without) and SZ.
+  Entries live in two tables swapped every 4 vsyncs, so none outlives the packet buffers it described.
+- **Off by default:** `psyq_gte_shadow_enable` turns it on; off it costs a branch per RTPS vertex, per drawn polygon
+  vertex and per linked primitive. On, in the first game's battle, 98 % of the drawn polygon vertices find their value
+  (the rest are clamped ones and 2D), and the cost is within the run-to-run noise of a headless run.
+- **Measuring:** `<PREFIX>_PORT_SUBPIXEL_LOG=path` turns it on from boot and logs every RTPS vertex, the batches and
+  each frame's drawn-vertex counts (`_FROM`, `_TO`: a frame range); the format is in `gte_shadow.c`'s header. The first
+  game's `tests/port/subpixel_jitter.py` turns it into the jitter metric.
 
 ## Input
 - **Window input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad,

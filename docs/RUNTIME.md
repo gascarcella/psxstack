@@ -94,7 +94,9 @@ would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DR
 skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
 `<PREFIX>_PORT_PRESENT_READBACK=FRAME:PATH` reads SDL_Renderer's output back (a game's renderer test compares the two
 present paths). `<PREFIX>_PORT_GPU_VRAM_CHECK=N` compares the rasteriser's whole target with the software VRAM every N
-vsyncs and logs any difference (with `--renderer gpu --window`, or `--gpu-screenshot` headless). `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` picks Mesa's software Vulkan driver.
+vsyncs and logs any difference (with `--renderer gpu --window`, or `--gpu-screenshot` headless).
+`<PREFIX>_PORT_SUBPIXEL_LOG=PATH` (with `_FROM`, `_TO`: frames) turns the GTE shadow on and logs the projected vertices
+(`docs/PORT.md` "Sub-pixel precision"). `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` picks Mesa's software Vulkan driver.
 `--debug SOCKET` (any build) opens the debug channel on a Unix socket (`runtime/debug.c`'s header comment is the protocol;
 `tools/mcp/` drives it): pause, step, wait, the pad, memory by host or PS1 address, screenshots, the hash, reset, quit,
 each between two vsyncs; it turns the watchdog and the default frame cap off; `--debug-hold` starts the game paused at

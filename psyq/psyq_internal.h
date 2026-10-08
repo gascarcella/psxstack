@@ -40,6 +40,27 @@ u32 psyq_gte_cfc2(int reg);
 void psyq_gte_cmd(u32 op);
 void psyq_gte_clear(void);
 
+/* gte_shadow.c (psyq.h "Sub-pixel precision"): gte.c's precise FIFO beside SXY0-2, the 16.16 sums SX, SY were cut
+ * from and the vertex's SZ (valid 0: none, e.g. a clamped value). gte.c calls gte_shadow_rtp for every RTPS vertex and
+ * gte_shadow_write for every mtc2 to SXY0-2 or SXYP and gte_shadow_store for every swc2 of them while
+ * psyq_gte_shadow_on, gte_shadow_log_rtp while it logs, and
+ * gte_shadow_clear when its registers are zeroed; libetc.c calls psyq_gte_shadow_tick at every vsync, libgte.c
+ * psyq_gte_shadow_reset at the console's reset; gpu.c psyq_gte_shadow_find for each polygon vertex while it is on. */
+typedef struct {
+    s32 x, y;
+    u16 z;
+    u8 valid;
+} GteShadowXY;
+void gte_shadow_rtp(int valid, s64 sx, s64 sy, u32 sz);
+void gte_shadow_write(int reg);
+void gte_shadow_clear(void);
+void gte_shadow_log_rtp(const s32 v[3], s32 x, s32 y, s64 sx, s64 sy, const s64 mac[3], s32 ofx, s32 ofy, u32 h);
+void psyq_gte_shadow_tick(void);
+void psyq_gte_shadow_reset(void);
+int psyq_gte_shadow_find(const void *src, u32 word, int *fx, int *fy, int *z);
+void gte_shadow_store(void *p, u32 v, int reg);
+void psyq_gte_swc2_(void *p, int reg);
+
 /* gpu.c: the GPU. gpu_power_on zeroes the VRAM and resets the drawing state; gpu_reset_state resets the drawing state
  * only (GP1(00h)); gpu_gp0_write takes one GP0 word (a command, its parameters, a transfer's pixels), gpu_gp0_words a
  * run of them (a DMA packet); gpu_load_image is a whole CPU-to-VRAM transfer (LoadImage); gpu_vram_pixels is the
@@ -63,6 +84,9 @@ typedef struct {
     int x, y;    /* the drawing offset applied, wrapped to 11 bits */
     int r, g, b; /* 0..255 (128 for raw textures: the same pixels) */
     int u, v;    /* 0..255 */
+    int fx, fy;  /* a triangle's: the precise vertex's fraction, 0..65535 in 1/65536 pixel, the vertex being at
+                  * (x + fx / 65536, y + fy / 65536); -1 without one (gte_shadow.c; always -1 unless it is on) */
+    int z;       /* with fx, fy: the vertex's SZ (0..0xFFFF) */
 } GpuVertex;
 typedef enum {
     GPU_EV_TRIANGLE,

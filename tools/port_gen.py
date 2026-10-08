@@ -114,7 +114,8 @@ def include_guard(path):
 
 # The generated gtemac.h's prelude: the GTE's entry points (port/psyq/gte.c; psyq_internal.h declares them for the
 # shim) and the memory accesses of the macros' loads and stores (byte copies: the host is little-endian like the PS1,
-# and a struct the game passes may be only halfword-aligned, as gte_ldv0_u's SVECTORs are).
+# and a struct the game passes may be only halfword-aligned, as gte_ldv0_u's SVECTORs are). A swc2 goes through
+# psyq_gte_swc2_ (psyq/gte_shadow.c): the store, and for the screen coordinates the sub-pixel shadow's record.
 GTEMAC_PRELUDE = """#include "common.h"
 
 void psyq_gte_mtc2(int reg, u32 v);
@@ -122,6 +123,7 @@ u32 psyq_gte_mfc2(int reg);
 void psyq_gte_ctc2(int reg, u32 v);
 u32 psyq_gte_cfc2(int reg);
 void psyq_gte_cmd(u32 op);
+void psyq_gte_swc2_(void *p, int reg);
 
 static inline u32 psyq_gte_lw_(const void *p) {
     u32 v;
@@ -253,7 +255,7 @@ def gte_macro_c(name, params, body):
         elif op == "lwc2":
             out.append(f"psyq_gte_mtc2({cop2(a[0])}, psyq_gte_lw_({mem(a[1])}));")
         elif op == "swc2":
-            out.append(f"psyq_gte_sw_({mem(a[1])}, psyq_gte_mfc2({cop2(a[0])}));")
+            out.append(f"psyq_gte_swc2_({mem(a[1])}, {cop2(a[0])});")
         else:
             raise ValueError(f"{name}: instruction {insns[i]!r}")
         i += 1
