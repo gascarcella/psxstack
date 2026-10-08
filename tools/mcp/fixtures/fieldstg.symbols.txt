@@ -1,0 +1,3 @@
+// The self-test's overlay symbol file
+fieldstg_stage = 0x80099D80; // type:data size:0x40
+fieldstg_init = 0x80082CB0; // type:func

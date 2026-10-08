@@ -25,8 +25,8 @@
       "description": "Environment variables: <PREFIX>_CONFIG_DIR, <PREFIX>_GAME, <PREFIX>_MCP_GAME, ... Default: id upper-cased."
     },
     "discs": {
-      "type": "array", "minItems": 1,
-      "description": "The disc images the port accepts. The port and the launcher check the whole BIN's SHA-1 against this list; the error names the labels.",
+      "type": "array",
+      "description": "The disc images the port accepts. The port and the launcher check the whole BIN's SHA-1 against this list; the error names the labels. Empty for a disc-free program (examples/hello): the port then takes no --disc and the launcher has no disc screen to pass.",
       "items": {
         "type": "object", "additionalProperties": false,
         "required": ["label", "serial", "sha1", "size", "region"],
