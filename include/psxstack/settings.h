@@ -23,7 +23,8 @@ typedef struct PortSettings {
     int refresh;     /* video.refresh, 50 or 60 (default 50) */
     int gpu;         /* video.renderer: 0 "software" (default), 1 "gpu" (the hardware renderer; issue #31) */
     int internal_scale; /* video.internal_scale, 1..8 (default 1): the hardware renderer's resolution, x 1024x512 */
-    int subpixel;    /* video.subpixel: 0 "off", 1 "on" (default): the GTE's sub-pixel positions above internal scale 1 */
+    int subpixel;    /* video.subpixel: 0 "off", 1 "on" (default), 2 "perspective": the GTE's sub-pixel positions above
+                      * internal scale 1 (2: textured perspective-correct too) */
     int filter;      /* video.filter: PORT_FILTER_* (default 0, "none"): the hardware renderer's present filter */
     int mute;        /* audio.mute (default 0) */
     int watchdog;    /* watchdog: seconds, 0 off (default 0: a player's game is never killed by the debugging aid) */

@@ -225,6 +225,10 @@ static void test_settings_file(const std::string &root) {
         check(saved.find("video") != nullptr && saved.find("video")->find("subpixel") != nullptr &&
                   saved.find("video")->find("subpixel")->as_string() == "on",
               "video.subpixel is written");
+        write(path_join(sp, SETTINGS_FILE), R"({"schema":1,"video":{"subpixel":"perspective"}})");
+        SettingsFile h;
+        h.load(sp);
+        check(h.messages().empty() && h.values.subpixel == "perspective", "video.subpixel \"perspective\" is read");
         write(path_join(sp, SETTINGS_FILE), R"({"schema":1,"video":{"subpixel":"smooth"}})");
         SettingsFile g;
         g.load(sp);
