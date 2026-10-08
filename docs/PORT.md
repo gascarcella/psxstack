@@ -355,6 +355,15 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     the lines' blends ramping over a cell, then bilinear between cells. The window
     and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
     The software renderer shows the picture unfiltered and logs it.
+  - **Widescreen** (`runtime/render_gpu_wide.c`, its header comment; DECISIONS "Widescreen: a wide canvas beside the
+    VRAM"): a game mod asks for it (`port_video_widescreen_enable`, then `port_video_widescreen(on)` every vsync, on for
+    the scenes whose 3D the game already sends past the display's edges). The target gets a strip of 512 VRAM columns
+    right of the VRAM (1.5 times the memory), where each display buffer has a canvas 16:9 at the display's pixel
+    aspect (320 -> 428 wide); every unit drawn into a buffer is drawn there a second time, translated, with the drawing
+    area widened where it reaches the buffer's edge and full-screen untextured 2D (clears, fades) stretched to the
+    canvas's edges. The VRAM part is unchanged, so the canvas's middle is the 4:3 picture. The present shows the canvas
+    at 16:9 inside the window (a new window opens 16:9); `--gpu-screenshot` gives the wide image; the software
+    renderer, `--screenshot` and the frame hash stay 4:3.
   - The software GPU stays the reference and the default; every existing test uses it.
 
 ## GTE
