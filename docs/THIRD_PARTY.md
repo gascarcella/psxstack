@@ -10,6 +10,9 @@ What psxstack borrows and ships, and what it only uses as a tool.
   No Sony code or SDK file is in either repository.
 - **`runtime/`, `psyq/`, `launcher/`, `tools/`**: moved from dw2003recomp's `port/`, `launcher/` and `tools/` (MIT,
   the same owner): our own code, written from public hardware documentation (psx-spx) and the games' use of the API.
+  `tools/replay/` (the emulator and port replay runners, the emulator installer) moved from its `tests/replay/`,
+  `tests/port/run.py` and `scripts/setup.sh` the same way (2026-10-08), with the game's facts left behind as its probes
+  and configuration (GAME_CONTRACT.md "6. Tests").
 
 ## Tools (pinned by `scripts/setup.sh`, never shipped in the repository)
 - **SDL3** (zlib): the window, input, audio and SDL_GPU; linked statically into the binaries a game ships.

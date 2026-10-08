@@ -372,6 +372,46 @@ JSON written at exit, with the keys of the first game's emulator records (its `r
 (`{frame, stage, file}`), `map_sequence` (`{frame, map}`), and `inputs` (`{frame, buttons: [names]}`, the names sorted) once the script has called `port_framelog_input`. The sequences follow the emulator runner's vsync
 listener: an entry at every change, the first frame always (`{1, 0, 0}`, map 0).
 
+## The replay runners (`tools/replay/`)
+The emulator harness and the port's replay test a game configures (GAME_CONTRACT.md "6. Tests"; the first game's
+`tests/replay/replay.py`, `tests/replay/probes.lua` and `tests/port/run.py` are the reference). Nothing here is run
+by the stack's CI: it needs a game, its disc and its pinned emulator.
+```sh
+<game>/scripts/setup.sh redux                 # the game's setup calls tools/replay/redux.sh with its pins (below)
+<game>/tests/replay/replay.py boot            # the boot check: the disc boots until the probes' booted() holds
+<game>/tests/replay/replay.py run tests/replay/scripts/new_game.json --record   # record a script's expected file
+<game>/tests/replay/replay.py run ... --repeat 2 [--interpreter] [--prelude x.lua] [-v]   # determinism; the other core
+<game>/tests/replay/replay.py check [-j N]    # every script with an expected file, against it (the layer-2 test)
+<game>/tests/port/run.py [--m32] [--sanitize] [--exe <game>.exe --wine]   # the port replays them (the M1 test)
+```
+- **`emulator.py`** drives PCSX-Redux headless (`-no-ui -stdout -testmode -run`, fresh memory cards per run, the
+  pad script as a Lua table, `run.lua` as the `-dofile` chunk or a game's wrapper that loads its own Lua first),
+  hashes each checkpoint image (SHA-1, and the stable SHA-1 with the game's volatile ranges zeroed), and builds the
+  record: `script`, `script_sha1`, `emulator`, `bios`, `tree_commit`, `frames`, `checkpoints`, `overlay_sequence`,
+  `map_sequence`, `inputs` ("The record" above: the port writes the same shape). `check` compares a run with the
+  expected file whole; `--interpreter` and `--prelude` compare the **cross-core view** (checkpoint names, stages,
+  maps and stable hashes; the overlay and map sequences without frames), the part of a record that neither the CPU
+  core nor the port's timing changes. The emulator's environment: `PSXSTACK_REPLAY_SCRIPT`, `_OUT`, `_PROBES`,
+  `_SLOT1_BASE`, `_SPEED`, `_VERBOSE`, and the same under the game's prefix.
+- **`run.lua`** is the step engine in the emulator (`runtime/script.c` is the same engine on the port): every vsync it
+  records the (stage, file) and map transitions, applies the held buttons through the pad override, advances the
+  steps (`press` with `repeat`/`until`, `wait_stage`/`wait_map`/`wait_mem`/`wait_frames`, `walk`, `reset`,
+  `checkpoint`, `vram`), and writes `result.json`. It reads the game's state through the probes chunk
+  (`PSXSTACK_REPLAY_PROBES`), loaded with `PSXSTACK_REPLAY` (`u8`..`s32` over the emulated RAM) in scope.
+- **`boot_check.lua`** waits for the probes' `booted()` (`PSXSTACK_BOOT_FRAMES`, default 3000) and prints
+  `boot check: OK` or `FAIL`.
+- **`port_test.py`** builds the port (`cmake -S <port> -B build/port -G Ninja`, and `build/port-m32`,
+  `build/port-san` with `--m32`/`--sanitize`), runs each script twice (`--disc --script --log --record --spu-trace`,
+  the checkpoint dumps in `<PREFIX>_PORT_CHECKPOINT_DIR`) and requires the logs, records and SPU traces identical,
+  the cross-core view equal to the expected file's, the `-m32` build's view equal (and its log equal for the scripts
+  the game names), and no sanitizer report; `--exe --wine` runs a Windows build under Wine instead. Two hooks take
+  the game's own checks: `before_scripts(variants, out)` once after the build, `after_script(name, out, binary,
+  run1)` per script.
+- **`redux.sh`** installs a pinned PCSX-Redux from a release zip, an AppImage or a URL (SHA-256 checked) into a
+  directory: `app/` (the extracted AppImage), the wrapper `pcsx-redux`, and when the host's glibc is older than the
+  build's, a runtime sysroot from a list of pinned Debian packages (`--sysroot-debs FILE --mirror URL`) that the
+  wrapper runs the binary through. The pins are the game's setup script's.
+
 ## The SPU core
 `runtime/spu.c` and `runtime/spu_dsp.c` are the PS1's sound chip, our own from psx-spx (the first game's docs/SOUND.md section 6 has
 what is modelled, the readings taken where psx-spx is silent, and the checks): the register file by offset from

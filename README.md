@@ -34,7 +34,7 @@ python3 tests/game_gen_test.py           # the description generator's test
 | `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
 | `windows/` | The game's Windows resource and manifest templates |
-| `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `psyq_decls.py` (a game's Psy-Q declarations against the stack's), `mcp/` (the debug channel's MCP server, client and symbols) |
+| `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `psyq_decls.py` (a game's Psy-Q declarations against the stack's), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`), `mcp/` (the debug channel's MCP server, client and symbols) |
 | `scripts/` | `setup.sh` (SDL3, ImGui, DXC, llvm-mingw, SDL3 for Windows, cmake), `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`: the game description |
 | `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test |

@@ -176,3 +176,13 @@ than pointing at nothing. The alternative, a heap region placed before the slots
 heap larger than the PS1's cannot grow in place there, and the first game's layout (heap after the slots) stays the
 only arena shape to reason about. The description's other conventions (the override header's name, the Psy-Q
 library map, `check.sh`'s paths) became configurable at the same time (issue #28).
+
+## The replay runners live in the stack; a game keeps its probes and its pins (2026-10-08)
+The emulator harness (PCSX-Redux headless with a pad script, the record and its cross-core comparison, the boot
+check, the emulator installer) and the port's replay test (two runs byte-identical, the `-m32` and sanitizer builds,
+the cross-core view against the expected file) were the first game's `tests/replay/`, `tests/port/run.py` and
+`scripts/setup.sh redux`, and nothing in them was about the game but a dozen addresses and paths. They are now
+`tools/replay/` (#27), driven by `game.json` plus two small game-side pieces: a Lua chunk of probes (the same state
+the adapter's `game_state_*` report, read from the emulated RAM) and a configuration call per driver. A second game
+starts with them instead of copying. The emulator and the disc stay the game's pins: the stack downloads nothing by
+itself, and the record and script formats are unchanged (the first game's expected files are read as they are).
