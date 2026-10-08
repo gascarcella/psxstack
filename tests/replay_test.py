@@ -2,7 +2,7 @@
 """The replay runners' test, without a game, a disc or an emulator (tools/replay/; CI): a fake `pcsx-redux` that
 reads the environment the driver sets and writes result.json and the checkpoint images, so the driver's record,
 its stable hash, `check`'s comparison and the cross-core view are exercised end to end; plus the pure helpers
-(lua_literal, parse_ints, compare, port_test.same_output).
+(lua_literal, parse_ints, compare, port_test.same_output and asan_options).
 
   python3 tests/replay_test.py
 """
@@ -95,6 +95,9 @@ def test_helpers():
     diffs = port_test.same_output(run1, run2, "x")
     check(len(diffs) == 2 and "logs differ from line 2" in diffs[0] and "SPU trace" in diffs[1], f"same_output: {diffs}")
     check(port_test.same_output(run1, run1, "x") == [], "same_output equal")
+    check(port_test.asan_options(None) == "detect_leaks=1:detect_stack_use_after_return=0", "asan_options default")
+    check(port_test.asan_options("detect_leaks=0").endswith(":detect_leaks=0")
+          and "detect_stack_use_after_return=0" in port_test.asan_options("detect_leaks=0"), "asan_options merge")
     print("helpers: ok")
 
 

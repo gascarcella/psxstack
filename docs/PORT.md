@@ -194,9 +194,10 @@ PS1's copy into the slot:
   `instant`: no seek, up to 75 per tick).
 - **Real time** applies only with a window: vsyncs are paced to the nominal rate against `CLOCK_MONOTONIC`. Pacing
   changes only the time between vsyncs, so a window run's log and record equal the headless run's.
-- **Frame rate:** the description's `video.rate` (50 PAL, 60 NTSC). `--refresh N` (one of the description's `rates`)
-  sets the pace, audio and CD rates to match and calls the adapter's `game_apply_rate(N)` for the game's own response
-  (the first game's NTSC-patch mode).
+- **Frame rate:** the description's `video.rate` (50 PAL, 60 NTSC): the pace, the audio's samples per vsync and the
+  CD's and XA's sectors and frames per tick follow it. `--refresh N` (one of the description's `rates`) sets all of them
+  to N instead and calls the adapter's `game_apply_rate(N)` for the game's own response (the first game's NTSC-patch
+  mode).
 - **Watchdog:** `--watchdog SEC` exits when no `port_wait()` ran for that long (a loop no hook reaches).
 - **Pause:** the pump can hold the game between two vsyncs (the window's pause key; the debug channel's pause, step
   and wait). Nothing of it reaches the game, the log or the record.
@@ -338,9 +339,9 @@ and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and 
 | LIBSPU | The voice and common attributes and the reverb work area a game sets itself (`libspu.c`) |
 | LIBPAD | A digital pad on port 0; actuator calls accepted and ignored |
 | LIBMCRD | Real, over `.mcd` images (`libmcrd.c`), whose card store LIBCARD shares |
-| LIBAPI | Events, root counter 3 (the vblank: its event's handler runs inside the vsync tick and may preempt a fiber), critical sections (`libapi.c`); the BIOS's file calls on the memory cards (`bu00:`, `bu10:`) with LIBCARD (`libcard.c`). `open`, `read`, `write`, `lseek`, `close` and `EnterCriticalSection`/`ExitCriticalSection` are also the host's names: the game's units get `include/psxstack/psyq_names.h` forced in, which renames them to the shim's `psyq_api_*`, so the runtime and libc keep the host's |
+| LIBAPI | Events, root counter 3 (the vblank: its event's handler runs inside the vsync tick and may preempt a fiber), critical sections (`libapi.c`); the BIOS's file calls on the memory cards (`bu00:`, `bu10:`) with LIBCARD (`libcard.c`). `open`, `read`, `write`, `lseek`, `close` and `EnterCriticalSection`/`ExitCriticalSection` are also the host's names: the game's units get `include/psxstack/psyq_names.h` forced in, which renames them to the shim's `psyq_api_*` (and LIBC2's `rand`/`srand` to `psyq_c2_*`), so the runtime and libc keep the host's |
 | LIBCARD | `InitCARD`, `StartCARD`, `_bu_init`, `_card_info`/`_load`/`_clear`/`_format`: real over the `.mcd` images, completing on the vsync tick with SwCARD/HwCARD events (`libcard.c`) |
-| LIBC2 | Not defined: it resolves to the host libc (`rand` too: the host's sequence, not the PS1's) |
+| LIBC2 | `rand`/`srand`: the PS1's generator (`libc2.c`), its state 0 at power-on, cleared by the reset, in save states, read by a game's adapter through `port_rand_seed()`; also host names, renamed in the game's units to the shim's `psyq_c2_*` by `psyq_names.h`, as LIBAPI's. The rest is not defined: it resolves to the host libc (`psyq/README.md` "LIBC2, and LIBAPI's names the host has too") |
 
 `<PREFIX>_PORT_TRACE=1` traces every shim call. The behaviours each library still assumes (rather than checked
 against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assumed".

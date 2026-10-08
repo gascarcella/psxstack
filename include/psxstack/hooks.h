@@ -146,4 +146,9 @@ void port_fiber_exit(PortFiber *to) __attribute__((noreturn));
 void port_fiber_destroy(PortFiber *f);
 void port_fiber_preempt(PortFiber *to);
 
+/* --- LIBC2's generator (psyq/libc2.c): rand's 32-bit state, what the PS1 keeps in its LIBC2 variable (0 at power-on,
+ * srand's seed, then each draw's), for a game's adapter: its game_state_random_index when the game's random index is
+ * rand's state (GAME_CONTRACT.md "4. The adapter units"). */
+uint32_t port_rand_seed(void);
+
 #endif /* PSXSTACK_HOOKS_H */

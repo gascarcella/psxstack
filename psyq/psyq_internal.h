@@ -30,6 +30,7 @@ void psyq_press_reset(void);
 void psyq_snd_reset(void);
 void psyq_api_reset(void);
 void psyq_card_reset(void);
+void psyq_c2_reset(void);
 
 /* Each library's part of a save state (psyq_state in psyq.c; include/psxstack/savestate.h): its state the game can
  * observe, named in a fixed order; on a load, what depends on it is fixed up (gpu.c: the decoded textures, the
@@ -50,6 +51,7 @@ void snd_spu_state(PortState *s);
 void psyq_mcrd_state(PortState *s);
 void psyq_api_state(PortState *s);
 void psyq_card_state(PortState *s);
+void psyq_c2_state(PortState *s);
 
 /* The vsync tick's interrupts after the game's VSyncCallback handler (libetc.c psyq_vsync_tick, in this order):
  * LIBSND's own tick once SsStart started it (libsnd.c), the memory card's commands that complete (libcard.c: their

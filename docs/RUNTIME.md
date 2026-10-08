@@ -343,7 +343,7 @@ it. The blocks, in order:
 | `port_frames`, `audio_vsync` | The frame count; the vsyncs the audio rendered (each vsync's sample count) |
 | one per game section, `port_current`, `port_word0` | The EXE's and every overlay's `.data` and `.bss` (named by the overlay), the current overlay and the first word per tier |
 | `arena` | The PS1's RAM: the slots and the heap (when the description has one) |
-| `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command, LIBAPI's events and root counters, LIBCARD's open files and command |
+| `psyq_*`, `gpu_vram`, `gpu`, `gte_*`, `snd`, `sspu`, `mdec`, ... | The shim (`psyq_state`): LIBETC, LIBCD (with the stream ring and the XA decoder), LIBPAD, LIBGPU's display, the GPU's VRAM and drawing state, LIBGS, the GTE's registers, LIBPRESS and the MDEC, LIBSND and LIBSPU, LIBMCRD's command, LIBAPI's events and root counters, LIBCARD's open files and command, LIBC2's `rand` state |
 | `spu` | The SPU: registers, voices, its RAM |
 | `count`, `overlay_seq`, `map_seq`, `checkpoints`, `inputs`, ... | The record so far and what the next frame's log compares with |
 | `name`, `index`, `started`, `held`, ... | The script's name and progress |
@@ -417,7 +417,10 @@ by the stack's CI: it needs a game, its disc and its pinned emulator.
   `build/port-san` with `--m32`/`--sanitize`), runs each script twice (`--disc --script --log --record --spu-trace`,
   the checkpoint dumps in `<PREFIX>_PORT_CHECKPOINT_DIR`) and requires the logs, records and SPU traces identical,
   the cross-core view equal to the expected file's, the `-m32` build's view equal (and its log equal for the scripts
-  the game names), and no sanitizer report; `--exe --wine` runs a Windows build under Wine instead. Two hooks take
+  the game names), and no sanitizer report (the sanitizer run's `ASAN_OPTIONS` start with `detect_leaks=1` and
+  `detect_stack_use_after_return=0`, then the caller's, which win); `--exe --wine` runs a Windows build under Wine
+  instead. Each run's `--crash-dir` is `<out>/<script>/<run>_crash/`, so a crash report stays with the run's log and
+  the failure names it. Two hooks take
   the game's own checks: `before_scripts(variants, out)` once after the build, `after_script(name, out, binary,
   run1)` per script.
 - **`redux.sh`** installs a pinned PCSX-Redux from a release zip, an AppImage or a URL (SHA-256 checked) into a

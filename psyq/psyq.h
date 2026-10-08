@@ -26,8 +26,9 @@ int psyq_cd_tick(void);
 #define PSYQ_CD_REALISTIC 0
 #define PSYQ_CD_INSTANT 1
 void psyq_cd_set_timing(int timing);
-/* The vsyncs per second the CD's ticks come at (50, PAL, by default; 60 with the 60 Hz setting): the drive's sectors and
- * the XA audio per tick follow it. Kept by the reset, as the timing is. */
+/* The vsyncs per second the CD's ticks come at (50 until set; the runtime sets the run's nominal rate: the
+ * description's video.rate, or --refresh's): the drive's sectors and the XA audio per tick follow it. Kept by the
+ * reset, as the timing is. */
 void psyq_cd_set_vsync_hz(int hz);
 /* The console's reset (port_reset_state): every library back to its power-on state (handlers, the CD, the pad, the
  * GPU recorder, the sound stubs), the memory cards' contents kept; psyq_mcrd_reset is LIBMCRD's part (libmcrd.c),
@@ -98,11 +99,13 @@ typedef struct {
 } PsyqShadowStats;
 void psyq_gte_shadow_stats(PsyqShadowStats *out);
 
-/* LIBC2 (strlen, strcpy, memcpy, sprintf, rand, ...) is the host libc: the shim defines none of it, on purpose (a
- * definition in the executable would replace libc's for every shared library in the process, SDL included); the s32
- * returns and lengths of include/psxstack/psyq/libc2.h agree with libc's on the LP64 host ABIs. rand is the host's
- * sequence, not the PS1's. LIBAPI's open, read, write, lseek, close and EnterCriticalSection/ExitCriticalSection are
- * the shim's (libcard.c, libapi.c) under the link names psyq_api_*: include/psxstack/psyq_names.h, forced into the
- * game's units, renames them (README.md "LIBC2, and LIBAPI's names the host has too"). */
+/* LIBC2 (strlen, strcpy, memcpy, sprintf, ...) is the host libc, except rand and srand: the shim defines the rest of
+ * it nowhere, on purpose (a definition in the executable would replace libc's for every shared library in the process,
+ * SDL included); the s32 returns and lengths of include/psxstack/psyq/libc2.h agree with libc's on the LP64 host ABIs.
+ * LIBC2's rand and srand (libc2.c: the PS1's generator) are the shim's under the link names psyq_c2_*, and LIBAPI's
+ * open, read, write, lseek, close and EnterCriticalSection/ExitCriticalSection (libcard.c, libapi.c) under psyq_api_*:
+ * include/psxstack/psyq_names.h, forced into the game's units, renames them (README.md "LIBC2, and LIBAPI's names the
+ * host has too"). psyq_rand_seed: rand's 32-bit state (the runtime's port_rand_seed, for a game's adapter). */
+u32 psyq_rand_seed(void);
 
 #endif /* PORT_PSYQ_H */

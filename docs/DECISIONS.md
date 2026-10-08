@@ -210,3 +210,14 @@ the runtime's calls), and `EnterCriticalSection` clashes at the Windows link. So
 consistently instead of breaking). The shim's source keeps Sony's names (its files include the same header); only
 the link symbol differs, as `main` becomes `game_main`. Not a symbol rename in the objects: objcopy cannot touch the
 Windows build's COFF objects (port_gen.py's `rename`).
+
+## LIBC2's rand: the shim's, renamed (2026-10-08)
+LIBC2 resolved to the host libc whole, `rand` included, so a game's random draws (the second game: 87 calls, a main
+loop that spins on it) followed glibc's or the Windows CRT's generator and range instead of the PS1's. The shim now
+defines `rand`/`srand` (`psyq/libc2.c`: the PS1's linear congruential generator) and nothing else of LIBC2: the
+string functions are the same functions in libc. The names are renamed to `psyq_c2_*` in the game's units by the same
+`psyq_names.h` as LIBAPI's, since a definition named `rand` in the executable would replace libc's for the runtime
+and every shared library. The state starts at 0, not C's 1 (on the PS1 it is in the executable's `.bss`: the second
+game's emulator records are a few million draws from 0, over a billion from 1), is cleared by the console's reset and
+held by save states; a game's adapter reads it through `port_rand_seed()` (`hooks.h`), the runtime's `port_*` like
+the other calls an adapter makes.

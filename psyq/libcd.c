@@ -63,8 +63,8 @@
  * clears them; a movie starts from silence here); at most one tick's frames, already in the SPU's queue, still play.
  * The drive's own volume matrix (ATV0..3, LIBCD's CdMix) stays at its power-on 80h = unity, left to left and right to
  * right (the game never sets it); the SPU applies the CD volume (1B0h/1B2h) and SPUCNT bit 0, which CdInit sets.
- * The drive's rate is per second: psyq_cd_set_vsync_hz (the nominal rate, runtime/pump.c port_rate: 50, or 60 with
- * the 60 Hz setting) turns it into sectors and XA frames per tick (2.5 sectors and 735 frames at 60), and the seeks keep
+ * The drive's rate is per second: psyq_cd_set_vsync_hz (the nominal rate: the description's video.rate, or --refresh's;
+ * runtime/main.c) turns it into sectors and XA frames per tick (2.5 sectors and 735 frames at 60), and the seeks keep
  * their milliseconds. A --fps other than the nominal rate changes neither: the SPU's queue then fills (and drops) or
  * runs dry.
  *

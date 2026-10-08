@@ -24,13 +24,16 @@ stage, map, stable image hash) and the same overlay and map sequences, without f
               equal the 64-bit build's, and for the scripts in `m32_log_exact` its log and record byte for byte (the
               layout check: pointers are 4 bytes there, as on the PS1)
   --sanitize  also build build/port-san (-DPSXSTACK_SANITIZE=ON), run it once, and fail on any ASan/UBSan report
-              (its log and record must equal the plain build's too)
+              (its log and record must equal the plain build's too); ASAN_OPTIONS gets detect_leaks=1 and
+              detect_stack_use_after_return=0 first (ASan's fake stacks put a game's stack-allocated primitives outside
+              the tag window, and save states need them off: docs/PORT.md "Save states"), then the caller's, which win
   --cd-speed  the port's CD timing (default: the port's, realistic)
   --exe PATH  run this binary instead of building build/port; build/port is only configured (a game's own checks may
               compile against its generated headers); --m32 and --sanitize do not apply to it
   --wine      run the binary (--exe, a Windows build) through `wine`, headless (SDL's dummy video and audio drivers,
               the prefix in build/wine-prefix/); its log and record must equal the Linux build's
-  --out DIR   where the logs, records and checkpoint dumps go (default build/port-test/)
+  --out DIR   where the logs, records and checkpoint dumps go (default build/port-test/); a run that crashes writes
+              its crash report into <out>/<script>/<run>_crash/ (the port's --crash-dir), not the game's root
 The hooks: before_scripts(variants, out) -> [failure, ...] runs once after the plain build (variants: "m64", "m32",
 "san" as built; a game's LIBSND-on-the-emulator's-timeline check); after_script(name, out_dir, binary, run1) ->
 [failure, ...] runs per script (run1 = (log bytes, record bytes, record, stderr text, SPU trace bytes)).
@@ -132,14 +135,15 @@ def run_port(binary, script, out_dir, label, cd_speed, env=None):
     """One run of the script, with its SPU trace (<label>.spu.trace); returns (log bytes, record bytes, record, stderr
     text, SPU trace bytes)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    dumps = out_dir / f"{label}_checkpoints"
-    if dumps.exists():
-        shutil.rmtree(dumps)
+    dumps, crashes = out_dir / f"{label}_checkpoints", out_dir / f"{label}_crash"
+    for d in (dumps, crashes):
+        if d.exists():
+            shutil.rmtree(d)
     dumps.mkdir()
     log, record, err = out_dir / f"{label}.log", out_dir / f"{label}.json", out_dir / f"{label}.stderr"
     spu = out_dir / f"{label}.spu.trace"
     cmd = [*RUNNER, str(binary), "--disc", str(CFG.disc), "--script", str(script), "--log", str(log), "--record",
-           str(record), "--spu-trace", str(spu)]
+           str(record), "--spu-trace", str(spu), "--crash-dir", str(crashes)]
     if cd_speed:
         cmd += ["--cd-speed", cd_speed]
     run_env = dict(env or os.environ, **{f"{CFG.env_prefix}_PORT_CHECKPOINT_DIR": str(dumps)}, **RUNNER_ENV)
@@ -147,14 +151,16 @@ def run_port(binary, script, out_dir, label, cd_speed, env=None):
         proc = subprocess.run(cmd, cwd=CFG.root, env=run_env, stdout=f, stderr=subprocess.STDOUT,
                               timeout=CFG.run_timeout)
     err_text = err.read_text(errors="replace")
+    reports = sorted(crashes.glob("crash-*.txt")) if crashes.is_dir() else []
+    crash = f"; crash report {reports[-1]}" if reports else ""
     if not record.exists() or record.stat().st_size == 0:
         tail = "\n    ".join(err_text.splitlines()[-15:])
-        raise RuntimeError(f"{label}: exit {proc.returncode} without a record ({err}):\n    {tail}")
+        raise RuntimeError(f"{label}: exit {proc.returncode} without a record ({err}{crash}):\n    {tail}")
     rec = json.loads(record.read_text())
     if proc.returncode != 0 or rec.get("status") != 0:
         tail = "\n    ".join(err_text.splitlines()[-8:])
         raise RuntimeError(f"{label}: exit {proc.returncode}, status {rec.get('status')}: {rec.get('reason')} "
-                           f"({err}):\n    {tail}")
+                           f"({err}{crash}):\n    {tail}")
     return log.read_bytes(), record.read_bytes(), rec, err_text, spu.read_bytes()
 
 
@@ -240,7 +246,7 @@ def check_script(name, args, env, out):
         if args.sanitize:
             san = build("build/port-san", ["-DPSXSTACK_SANITIZE=ON"], args.jobs, env)
             ubsan = "print_stacktrace=1" + (f":suppressions={CFG.ubsan_suppressions}" if CFG.ubsan_suppressions else "")
-            san_env = dict(os.environ, UBSAN_OPTIONS=ubsan, ASAN_OPTIONS=os.environ.get("ASAN_OPTIONS", "detect_leaks=1"))
+            san_env = dict(os.environ, UBSAN_OPTIONS=ubsan, ASAN_OPTIONS=asan_options(os.environ.get("ASAN_OPTIONS")))
             run = run_port(san, script, out, "san", args.cd_speed, san_env)
             reports = [l for l in run[3].splitlines() if any(m in l for m in SANITIZER_MARKS)]
             if reports:
@@ -258,9 +264,18 @@ def check_script(name, args, env, out):
     return failures
 
 
+def asan_options(caller):
+    """The sanitizer build's ASAN_OPTIONS: leaks on and fake stacks off (frames on the heap would put a game's
+    stack-allocated primitives outside the tag window, and save states need them off: docs/PORT.md "Save states"),
+    then the caller's options, which ASan reads last and so win."""
+    base = "detect_leaks=1:detect_stack_use_after_return=0"
+    return f"{base}:{caller}" if caller else base
+
+
 def audio_renders(binary, out):
     """Whether the port's audio output renders the SPU (a build whose audio.c refuses --wav does not)."""
-    proc = subprocess.run([*RUNNER, str(binary), "--max-frames", "1", "--wav", str(out / "audio_probe.wav")],
+    proc = subprocess.run([*RUNNER, str(binary), "--max-frames", "1", "--wav", str(out / "audio_probe.wav"),
+                           "--crash-dir", str(out / "audio_probe_crash")],
                           cwd=CFG.root, env=dict(os.environ, **RUNNER_ENV), capture_output=True, text=True, timeout=120)
     return proc.returncode == 0
 
