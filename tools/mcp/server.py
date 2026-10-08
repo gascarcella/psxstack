@@ -297,6 +297,21 @@ def game_reset() -> dict:
 
 
 @mcp.tool()
+def state_save(path: str) -> dict:
+    """Save the whole machine (game memory, the stack and registers of its vsync, VRAM, SPU, CD, the shim) at the end of
+    the current vsync to `path` (relative to the repository root; written at once when paused). Only the same binary
+    can load it. Returns the frame and the path."""
+    return _call(_require().save_state, path)
+
+
+@mcp.tool()
+def state_load(path: str) -> dict:
+    """Go on from a state saved by this binary (state_save, or --save-state): the frame, stage and map are the saved
+    ones; a paused game stays paused at the loaded vsync. Returns the state's frame."""
+    return {"frame": _call(_require().load_state, path)}
+
+
+@mcp.tool()
 def game_pace(fps: int) -> dict:
     """Set the pace: `fps` vsyncs per second, 0 = unthrottled."""
     return {"pace": _call(_require().pace, fps)}

@@ -820,3 +820,45 @@ void StUnSetRing(void) {
 void StCdInterrupt(void) {
     PSYQ_TRACE("StCdInterrupt");
 }
+
+/* A save state (psyq_internal.h): the drive, the sector, the stream ring and the XA decoder. The timing model and
+ * the rate are the loading run's options (the header checks the rate); the reader is the runtime's. */
+void psyq_cd_state(PortState *s) {
+    PORT_STATE_VAR(s, StCdIntrFlag);
+    PORT_STATE_VAR(s, psyq_cd_sync_handler);
+    PORT_STATE_VAR(s, psyq_cd_ready_handler);
+    PORT_STATE_VAR(s, psyq_cd_pending);
+    PORT_STATE_VAR(s, psyq_cd_param);
+    PORT_STATE_VAR(s, psyq_cd_reading);
+    PORT_STATE_VAR(s, psyq_cd_loc);
+    PORT_STATE_VAR(s, psyq_cd_loc_new);
+    PORT_STATE_VAR(s, psyq_cd_head);
+    PORT_STATE_VAR(s, psyq_cd_next_lba);
+    PORT_STATE_VAR(s, psyq_cd_seek_ticks);
+    PORT_STATE_VAR(s, psyq_cd_rate_acc);
+    PORT_STATE_VAR(s, psyq_cd_ack_tick);
+    PORT_STATE_VAR(s, psyq_cd_mode);
+    PORT_STATE_VAR(s, psyq_cd_status);
+    PORT_STATE_VAR(s, psyq_cd_filter);
+    PORT_STATE_VAR(s, psyq_cd_raw);
+    PORT_STATE_VAR(s, psyq_cd_have_sector);
+    PORT_STATE_VAR(s, psyq_cd_view_ofs);
+    PORT_STATE_VAR(s, psyq_cd_view_len);
+    PORT_STATE_VAR(s, psyq_cd_cursor);
+    PORT_STATE_VAR(s, st_ring);
+    PORT_STATE_VAR(s, st_ring_bytes);
+    PORT_STATE_VAR(s, st_slots);
+    PORT_STATE_VAR(s, st_first);
+    PORT_STATE_VAR(s, st_count);
+    PORT_STATE_VAR(s, st_start_frame);
+    PORT_STATE_VAR(s, st_end_frame);
+    PORT_STATE_VAR(s, st_skip_frame);
+    PORT_STATE_VAR(s, st_polls);
+    PORT_STATE_VAR(s, psyq_xa);
+    PORT_STATE_VAR(s, psyq_xa_fifo);
+    PORT_STATE_VAR(s, psyq_xa_head);
+    PORT_STATE_VAR(s, psyq_xa_count);
+    PORT_STATE_VAR(s, psyq_xa_state);
+    PORT_STATE_VAR(s, psyq_xa_sectors);
+    PORT_STATE_VAR(s, psyq_xa_dropped);
+}

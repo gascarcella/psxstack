@@ -27,6 +27,7 @@
 #include "platform.h"
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 
 #define SCRIPT_STEP_BUDGET 100 /* instant steps chained in one frame (run.lua's budget) */
 
@@ -91,6 +92,7 @@ static int script_index;               /* the current step (0-based; run.lua's s
 static long script_step_started = -1;  /* the frame the current step started, -1 before it runs */
 static u16 script_held;                /* the buttons held (run.lua's `held`), applied every frame */
 static int script_reset_pending;       /* a `reset` step ran this frame: the console resets at the frame's end */
+static long script_frame0;              /* the frame the script started at: 0, or a loaded state's (max_frames) */
 
 /* ---- Loading */
 
@@ -461,6 +463,7 @@ static int script_run_step(const ScriptStep *s, int *instant) {
     case SCRIPT_CHECKPOINT:
         port_framelog_checkpoint(s->name);
         script_dump_checkpoint(s->name);
+        port_savestate_checkpoint(s->name); /* --save-state NAME:FILE */
         *instant = 1;
         return 1;
     case SCRIPT_RESET:
@@ -549,7 +552,7 @@ static int script_run_step(const ScriptStep *s, int *instant) {
 
 void port_script_frame(void) {
     int budget = SCRIPT_STEP_BUDGET;
-    if (port_frames > script_max_frames) {
+    if (port_frames - script_frame0 > script_max_frames) {
         script_fail("max_frames reached");
     }
     while (script_index < script_step_count) {
@@ -574,5 +577,43 @@ void port_script_frame(void) {
         /* the script's state (the next step, the frame count, the input trace) is outside the game: it goes on */
         script_reset_pending = 0;
         port_reset_request();
+    }
+}
+
+/* A save state (savestate.h): the script's progress. A run loading it with the same script (by name) goes on from
+ * there: the same steps, frames and record as the straight run; with another script, that script starts at the
+ * loaded frame (its max_frames counted from there); without one, the progress is ignored. */
+void port_script_state(PortState *s) {
+    char name[256];
+    int index = script_index, reset_pending = script_reset_pending;
+    long started = script_step_started, frame0 = script_frame0;
+    u16 held = script_held;
+    memset(name, 0, sizeof(name));
+    if (!port_state_loading(s) && script_name != NULL) {
+        snprintf(name, sizeof(name), "%s", script_name);
+    }
+    PORT_STATE_VAR(s, name);
+    PORT_STATE_VAR(s, index);
+    PORT_STATE_VAR(s, started);
+    PORT_STATE_VAR(s, held);
+    PORT_STATE_VAR(s, reset_pending);
+    PORT_STATE_VAR(s, frame0);
+    if (!port_state_loading(s) || !port_script_active) {
+        return;
+    }
+    if (name[0] != '\0' && strncmp(name, script_name, sizeof(name) - 1) == 0) {
+        script_index = index;
+        script_step_started = started;
+        script_held = held;
+        script_reset_pending = reset_pending;
+        script_frame0 = frame0;
+        port_log("script: %s resumed at step %d of %d", script_name, script_index + 1, script_step_count);
+    } else {
+        script_index = 0;
+        script_step_started = -1;
+        script_held = 0;
+        script_reset_pending = 0;
+        script_frame0 = port_frames;
+        port_log("script: %s starts at the loaded frame %ld", script_name, port_frames);
     }
 }

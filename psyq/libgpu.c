@@ -470,3 +470,11 @@ void ContinueDraw(u32 *insaddr, u32 *contaddr) {
         psyq_gpu_walk(contaddr, "ContinueDraw (resumed)");
     }
 }
+
+/* A save state (psyq_internal.h): the video output and the frame's primitive hash so far (gpu.c has the GPU). */
+void psyq_gpu_state(PortState *s) {
+    PORT_STATE_VAR(s, psyq_gpu_hash);
+    PORT_STATE_VAR(s, psyq_gpu_count);
+    PORT_STATE_VAR(s, psyq_gpu_terminator);
+    PORT_STATE_VAR(s, psyq_gpu_disp);
+}

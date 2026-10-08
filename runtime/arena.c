@@ -15,6 +15,7 @@
 
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 
 _Static_assert(PORT_SLOT1_OFS == 0, "the first slot starts the arena");
 _Static_assert(PORT_HEAP_OFS == PORT_HEAP_START_ADDR - PORT_SLOT1_BASE, "the heap follows the slots at the PS1's distance");
@@ -121,4 +122,9 @@ void *port_bios_ptr(u32 addr) {
                    BIOS_STANDIN_BASE + (u32)sizeof(port_bios_standin));
     }
     return port_bios_standin + (addr - BIOS_STANDIN_BASE);
+}
+
+/* A save state (savestate.h): the PS1's RAM (the stand-in BIOS is ROM). */
+void port_arena_state(PortState *s) {
+    port_state_bytes(s, "arena", port_arena, sizeof(port_arena));
 }

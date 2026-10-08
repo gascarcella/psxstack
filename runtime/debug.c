@@ -56,6 +56,11 @@
  *   pace: fps (0 = unthrottled) -> pace (port_pace_set; the headless run is never paced).
  *   reset: -> frame; answers, then the console resets (port_reset_request) from the pump; the channel survives it,
  *     and a game that was paused is paused again at its first vsync after the reset (frame + 1).
+ *   save_state: path -> frame, path. The whole state at the end of the current vsync (runtime/savestate.c): written
+ *     at once when paused, else at the end of this vsync (deferred).
+ *   load_state: path -> frame (the state's). Checked, answered, then the game goes on from the state (through main,
+ *     as the reset); a game that was paused is paused again at the loaded vsync. A state from another build, another
+ *     rate or a missing file is an error and changes nothing.
  *   quit: status (default 0); answers, then port_exit(status, "debug quit").
  * - Pause semantics: `paused` means the pump holds the game between vsyncs in its pause loop; the pause key and the
  *   channel share that state. While paused the channel keeps answering peek/poke/screenshot/status/hash; step runs
@@ -82,6 +87,8 @@ void port_debug_poll_paused(void) {
 }
 void port_debug_resumed(void) {
 }
+void port_debug_state_point(void) {
+}
 void port_debug_close(void) {
 }
 #else
@@ -100,6 +107,7 @@ void port_debug_close(void) {
 #include "port_harness.h"
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 
 int port_debug_active;
 int port_debug_pad_owned;
@@ -126,6 +134,7 @@ typedef enum DebugPending {
     DEBUG_STEP,
     DEBUG_WAIT,
     DEBUG_PAD_SYNC,
+    DEBUG_SAVE, /* save_state asked for while the game runs: written at this vsync's end (port_debug_state_point) */
 } DebugPending;
 static DebugPending debug_pending;
 static DebugReq debug_pending_req;
@@ -155,6 +164,9 @@ static int debug_pad_repause; /* the sync pad op found the game paused: pause it
 static long debug_pad_applied_frame = -1;
 
 static int debug_reset_pending, debug_reset_repause; /* a reset asked for; it was asked for while paused */
+static int debug_load_pending, debug_load_repause;   /* a load_state asked for; it was asked for while paused */
+static int debug_in_pause;                            /* the requests come from the pump's pause loop */
+static char debug_save_path[4096];                    /* DEBUG_SAVE's file */
 
 /* ---- The socket */
 
@@ -728,6 +740,90 @@ static void debug_reset(void) {
     port_reset_request();
 }
 
+/* A state op's path: a non-empty string without characters the reply would have to escape. */
+static const char *debug_state_path(const DebugReq *req, const PortJson *obj) {
+    const PortJson *path = port_json_get(obj, "path");
+    if (path == NULL || path->type != PORT_JSON_STRING || path->string[0] == '\0') {
+        debug_error(req, "path (a string) missing");
+        return NULL;
+    }
+    if (strpbrk(path->string, "\"\\\n\r\t") != NULL || strlen(path->string) >= sizeof(debug_save_path)) {
+        debug_error(req, "path: no quotes, backslashes or control characters");
+        return NULL;
+    }
+    return path->string;
+}
+
+static void debug_state_error(const DebugReq *req, char *err) {
+    char *c;
+    for (c = err; *c != '\0'; c++) {
+        if (*c == '"' || *c == '\\' || (unsigned char)*c < 0x20) {
+            *c = '\'';
+        }
+    }
+    debug_error(req, "%s", err);
+}
+
+static void debug_save(const DebugReq *req, const char *path) {
+    char err[512];
+    if (port_savestate_save_now(path, err, sizeof(err))) {
+        debug_ok(req, "\"frame\": %ld, \"path\": \"%s\"", port_frames, path);
+    } else {
+        debug_state_error(req, err);
+    }
+}
+
+/* save_state: the state at the end of the current vsync: now when paused (the pause follows that end), else deferred
+ * to the end of this vsync. */
+static void debug_op_save_state(const DebugReq *req, const PortJson *obj) {
+    const char *path = debug_state_path(req, obj);
+    if (path == NULL) {
+        return;
+    }
+    if (debug_in_pause) {
+        debug_save(req, path);
+        return;
+    }
+    snprintf(debug_save_path, sizeof(debug_save_path), "%s", path);
+    debug_pending = DEBUG_SAVE;
+    debug_pending_req = *req;
+}
+
+/* The capture point (savestate.c, every vsync's end): a deferred save_state. */
+void port_debug_state_point(void) {
+    if (debug_pending == DEBUG_SAVE) {
+        debug_pending = DEBUG_NONE;
+        debug_save(&debug_pending_req, debug_save_path);
+    }
+}
+
+/* load_state: read and checked now (the answer says what is wrong), applied once the answer went out, as the reset:
+ * the game goes on from the state's vsync; a game that was paused is paused again right there. */
+static void debug_op_load_state(const DebugReq *req, const PortJson *obj) {
+    const char *path = debug_state_path(req, obj);
+    char err[512];
+    long frame;
+    if (path == NULL) {
+        return;
+    }
+    if (!port_savestate_load_prepare(path, &frame, err, sizeof(err))) {
+        debug_state_error(req, err);
+        return;
+    }
+    debug_ok(req, "\"frame\": %ld", frame);
+    debug_load_pending = 1;
+    debug_load_repause = port_pump_paused();
+    port_pump_resume_request(); /* out of the pause loop first, if paused */
+}
+
+static void debug_load(void) {
+    debug_load_pending = 0;
+    if (debug_load_repause) {
+        port_pump_pause_request();
+    }
+    port_savestate_load_request();
+}
+
 static void debug_op_quit(const DebugReq *req, const PortJson *obj) {
     long long status;
     if (!debug_int_opt(req, obj, "status", 0, 0, 255, &status)) {
@@ -787,6 +883,10 @@ static void debug_handle(const char *line, size_t n) {
         debug_op_pace(&req, root);
     } else if (strcmp(op->string, "reset") == 0) {
         debug_op_reset(&req);
+    } else if (strcmp(op->string, "save_state") == 0) {
+        debug_op_save_state(&req, root);
+    } else if (strcmp(op->string, "load_state") == 0) {
+        debug_op_load_state(&req, root);
     } else if (strcmp(op->string, "quit") == 0) {
         debug_op_quit(&req, root);
     } else {
@@ -863,15 +963,23 @@ void port_debug_frame(void) {
     if (debug_reset_pending) {
         debug_reset();
     }
+    if (debug_load_pending) {
+        debug_load();
+    }
 }
 
 void port_debug_poll_paused(void) {
+    debug_in_pause = 1;
     debug_poll();
+    debug_in_pause = 0;
 }
 
 void port_debug_resumed(void) {
     if (debug_reset_pending) {
         debug_reset();
+    }
+    if (debug_load_pending) {
+        debug_load();
     }
 }
 #endif /* _WIN32 */

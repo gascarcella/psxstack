@@ -42,6 +42,7 @@
 
 #include "port_harness.h"
 #include "port_runtime.h"
+#include "savestate.h"
 #include "spu.h"
 
 #ifdef PSXSTACK_SDL
@@ -352,4 +353,9 @@ void port_audio_close(void) {
         port_log("audio: --wav %s: %lld vsyncs, %llu frames (%.2f s)", audio_wav_path, audio_vsync,
                  audio_wav_bytes / 4, (double)audio_wav_bytes / 4 / SPU_RATE);
     }
+}
+
+/* A save state (savestate.h): the vsyncs rendered, which set each vsync's sample count. */
+void port_audio_state(PortState *s) {
+    PORT_STATE_VAR(s, audio_vsync);
 }

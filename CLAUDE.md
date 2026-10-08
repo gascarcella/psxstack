@@ -40,7 +40,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 ## Layout
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, `game_defaults.c` (the adapter's weak defaults) |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, `game_defaults.c` (the adapter's weak defaults) |
 | `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, the runtime's headers |
 | `psyq/` | The Psy-Q shim, one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |

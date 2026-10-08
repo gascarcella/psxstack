@@ -196,6 +196,8 @@ PS1's copy into the slot:
 - **Console reset** (`runtime/reset.c`): a script's `reset` step longjmps from the vsync tick back to `main()`,
   restores every game section from the startup snapshot, zeroes the arena and resets the shim, then runs the game's
   `main()` again. `<PREFIX>_PORT_RESET_CHECK=1` verifies the restore.
+- **Save states** (`runtime/savestate.c`, "Save states" below): the end of a vsync saved to a file, and a later run
+  going on from it.
 
 ## Debug channel and the MCP server
 `--debug SOCKET` (`runtime/debug.c`, whose header comment is the protocol, v1) opens a Unix stream socket of
@@ -211,6 +213,9 @@ bare binary, the replays and the goldens are unchanged. The ops:
   `peek_ps1` / `poke_ps1`: a PS1 address, the arena (from the first slot's base) directly at any length, anything
   else through the adapter's state map (`game_state_read`, 1/2/4 bytes).
 - `screenshot path` (the display image as a binary PPM), `hash` (the game-state image, as a checkpoint hashes it), `pace fps`, `reset` (the console reset, after the answer), `quit status`.
+- `save_state path`: the whole state at the end of the current vsync (at once when paused, else at this vsync's
+  end). `load_state path`: checked and answered, then the game goes on from it (through `main`, as the reset); a game
+  that was paused is paused again at the loaded vsync ("Save states").
 
 The game thread polls the socket itself: once per vsync from `port_frame` (after the script's step, before the video)
 and 50 times a second while the pump holds it paused. So every command runs between two vsyncs, reads and writes are
@@ -227,6 +232,43 @@ symbol files, the disc): `game.py` is the plain client (no MCP dependency; `Game
 `mem_read("ps1:gamestate_data+8")`), `server.py` the tools (`game_start`, `pad_press`, `wait_stage`, `mem_read`,
 `screenshot` as a PNG image, `state_hash`, ...). `fake_game.py` is the protocol double for `selftest.py`, which runs
 with fixture symbol files and no game.
+
+## Save states
+A state is the whole machine at the end of a vsync; a later run of the same binary goes on from it
+(`--save-state WHEN:FILE`, `--load-state FILE`, the debug channel's `save_state`/`load_state`; the options and the file
+format are in docs/RUNTIME.md "Save states"). An emulator saves its emulated CPU; here the game is native code, so the
+state is the game's memory plus its own C stack and registers, and the design is about making those portable to
+another process:
+- **The game on a stack of its own.** At a vsync the game is deep in its call chain (its main loop, a `VSync` or a
+  `PLATFORM_WAIT`, `psyq_vsync_tick`, `port_frame`), and those frames hold return addresses, frame pointers and
+  pointers to its globals, the arena and the stack itself. When states may be used (a state option, `--debug`) the
+  game runs on a static 8 MB array of `savestate.c` (a three-instruction stack switch per architecture: x86-64 SysV and
+  Win64, i386, AArch64), so the stack's address is fixed with the image.
+- **Fixed addresses.** Everything a state holds points into the image: code (return addresses, the function pointers in
+  the game's objects, the callbacks the shim keeps), the game's sections, the arena, the shim's statics, the game
+  stack. ELF builds are linked non-PIE, so every run of a binary has the same addresses; the header names the binary
+  (its SHA-1) and the addresses, and a load checks them. The heap is never in a state: the one heap buffer the
+  game-visible state reaches, the memory cards' images, is media, like the disc.
+- **The context.** `port_frame` ends with `PORT_SAVESTATE_POINT()`: `__builtin_setjmp` keeps the frame and stack
+  pointers and the resume address (glibc's `jmp_buf` is mangled with a per-process key, so not `setjmp`), and the
+  function saves every callee-saved register in its own frame; the stack above that point and that buffer are the
+  context. A load writes the stack back from `main`'s stack and `__builtin_longjmp`s into it: `port_frame` returns into
+  the saved vsync. A stack protector's canary (glibc on x86: the thread pointer's word) is the saving process's, so
+  the loader sets it before the jump; AddressSanitizer is told about the stack as a fiber, and its fake stacks (frames
+  on the heap) must be off.
+- **The modules.** Each module with state the game can observe has one sync function at the end of its file
+  (`savestate.h`): the game's sections (overlay.c), the arena, every library of the shim (`psyq_state`: LIBCD's drive,
+  sector, stream ring and XA decoder, the VRAM and the drawing state, the GTE, LIBSND, ...), the SPU, the audio's vsync
+  count, the run's record and the script's progress, and the adapter's (`game_savestate`: its mods). The same function
+  saves and loads, in one order. Host state stays the loading run's: the window, the audio device, files, options,
+  the debug channel, and the caches that are rebuilt: gpu.c's decoded textures are stamped stale, the GTE's sub-pixel
+  shadow starts empty (as at the reset), the hardware renderer gets the power-on event and reloads its VRAM from the
+  software VRAM (a state loaded at an internal scale
+  above 1 starts from the 1x VRAM: what was drawn before the save is upscaled until redrawn).
+- **What is proved** (the first game's `tests/port/savestate.py`): a run resumed from its first battle's state ends
+  with the straight run's record, the straight log's lines after the saved frame and the same audio, in the `-m64`,
+  `-m32` and sanitizer builds and the Windows build under Wine; the debug channel's save, step, load, step gives the
+  same game state and picture.
 
 ## The Psy-Q shim
 `psyq/` implements the Psy-Q functions its games call (the first game: 123; `tools/port_inventory.py counts` lists
@@ -420,7 +462,8 @@ stack overflow gets the text (the filter runs on what the guard page leaves) and
   monotonic clock and a high-resolution sleep for the pace, the watchdog as a thread); the frame log, the record and
   the SPU trace are written in binary mode (the same bytes on both); stderr is unbuffered on Windows (UCRT has no
   line buffering); the console reset's `setjmp` takes no SEH frame on mingw (`port_setjmp`); `--debug` is refused
-  there (the channel is a Unix socket). The executable is a GUI-subsystem program (no console window behind it when
+  there (the channel is a Unix socket). Save states work under Wine, which loads the image at its preferred base;
+  Windows' ASLR may move a PE image between boots, and a state saved at another base is refused. The executable is a GUI-subsystem program (no console window behind it when
   the launcher starts it; stderr still reaches the launcher's pipe) with a manifest (`windows/`: the UTF-8 code page,
   long paths, per-monitor DPI). A crash writes the same report as on Linux plus a minidump ("Crash report"). The SDL
   window is 64-bit only; macOS is not planned.

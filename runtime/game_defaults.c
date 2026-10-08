@@ -72,3 +72,7 @@ WEAK int game_mod_count(void) {
 WEAK PortMod *game_mods(void) {
     return NULL;
 }
+
+WEAK void game_savestate(struct PortState *s) {
+    (void)s;
+}

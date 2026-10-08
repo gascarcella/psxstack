@@ -161,3 +161,12 @@ int PadSetMainMode(int socket, int offs, int lock) {
     PSYQ_TRACE("PadSetMainMode %x offs %d lock %d", socket, offs, lock);
     return 0;
 }
+
+/* A save state (psyq_internal.h): the game's buffers, the ports, the latched buttons. */
+void psyq_pad_state(PortState *s) {
+    PORT_STATE_VAR(s, psyq_pad_buffer);
+    PORT_STATE_VAR(s, psyq_pad_connected);
+    PORT_STATE_VAR(s, psyq_pad_buttons);
+    PORT_STATE_VAR(s, psyq_pad_started);
+    PORT_STATE_VAR(s, psyq_pad_fresh);
+}

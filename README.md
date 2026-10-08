@@ -1,9 +1,9 @@
 # psxstack
 
 A reusable stack for PC ports of decompiled PlayStation games: the host runtime (memory arena, overlay manager,
-interrupt pump, software and hardware rendering, SPU, input, memory cards, settings, crash reports, debug channel),
-a Psy-Q shim, a launcher (SDL3, Dear ImGui) with mod manifests, and the build and packaging scripts. A game repo
-(a matching decompilation) adds a small adapter and gets a Linux and Windows port, a launcher and a release.
+interrupt pump, software and hardware rendering, SPU, input, memory cards, settings, crash reports, debug channel,
+save states), a Psy-Q shim, a launcher (SDL3, Dear ImGui) with mod manifests, and the build and packaging scripts. A
+game repo (a matching decompilation) adds a small adapter and gets a Linux and Windows port, a launcher and a release.
 
 It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
 `launcher/`, which consume it as a git submodule since `v0.1.0`.
@@ -25,7 +25,7 @@ python3 tests/game_gen_test.py           # the description generator's test
 
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states |
 | `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the runtime's headers |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |

@@ -22,6 +22,8 @@ int port_make_dirs(const char *dir);
 /* Renames `tmp` onto `path`, replacing an existing file (rename / MoveFileExW); 0 or -1 with errno set. */
 int port_file_replace(const char *tmp, const char *path);
 long port_process_id(void);
+/* The running executable's path (/proc/self/exe; GetModuleFileNameW) into out; 0 when unknown or too long. */
+int port_exe_path(char *out, size_t out_size);
 
 /* ---- Files read by position (the disc image): a descriptor opened read-only in binary mode, not inherited. */
 typedef struct PortFileInfo {

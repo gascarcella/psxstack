@@ -15,6 +15,7 @@
 #include "port_harness.h"
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 #include "sha1.h"
 
 typedef struct PortOverlayStep {
@@ -309,4 +310,55 @@ void port_framelog_close(int status, const char *reason) {
     if (port_record_path != NULL) {
         port_write_record(status, reason);
     }
+}
+
+/* ---- A save state (savestate.h): the record so far (the sequences, the checkpoints, the input trace) and what the
+ * next frame compares with, so that a run resumed from a state ends with the straight run's record. The log is the
+ * loading run's own file: it goes on from the next frame. */
+static void port_state_array(PortState *s, const char *tag, void *data_ptr, size_t *n, size_t *cap, size_t size) {
+    void **data = data_ptr;
+    uint64_t count = *n;
+    PORT_STATE_VAR(s, count);
+    if (port_state_loading(s)) {
+        free(*data);
+        *data = count ? malloc((size_t)count * size) : NULL;
+        if (count && *data == NULL) {
+            port_fatal("framelog: out of memory");
+        }
+        *n = *cap = (size_t)count;
+    }
+    port_state_bytes(s, tag, *data, (size_t)count * size);
+}
+
+void port_framelog_state(PortState *s) {
+    size_t i;
+    if (port_state_loading(s)) {
+        for (i = 0; i < port_checkpoint_n; i++) {
+            free(port_checkpoints[i].name);
+        }
+    }
+    port_state_array(s, "overlay_seq", &port_overlay_seq, &port_overlay_n, &port_overlay_cap, sizeof(*port_overlay_seq));
+    port_state_array(s, "map_seq", &port_map_seq, &port_map_n, &port_map_cap, sizeof(*port_map_seq));
+    port_state_array(s, "checkpoints", &port_checkpoints, &port_checkpoint_n, &port_checkpoint_cap,
+                     sizeof(*port_checkpoints));
+    for (i = 0; i < port_checkpoint_n; i++) {
+        PortCheckpoint *c = &port_checkpoints[i];
+        uint64_t len = port_state_loading(s) ? 0 : strlen(c->name);
+        PORT_STATE_VAR(s, len);
+        if (port_state_loading(s)) {
+            c->name = malloc((size_t)len + 1);
+            if (c->name == NULL) {
+                port_fatal("framelog: out of memory");
+            }
+            c->name[len] = '\0';
+        }
+        port_state_bytes(s, "checkpoint_name", c->name, (size_t)len);
+    }
+    port_state_array(s, "inputs", &port_inputs, &port_input_n, &port_input_cap, sizeof(*port_inputs));
+    PORT_STATE_VAR(s, port_sampled);
+    PORT_STATE_VAR(s, port_inputs_used);
+    PORT_STATE_VAR(s, port_last_stage);
+    PORT_STATE_VAR(s, port_last_file);
+    PORT_STATE_VAR(s, port_last_map);
+    PORT_STATE_VAR(s, port_last_buttons);
 }

@@ -33,6 +33,7 @@ class Model:
         self.pad_frames = 0
         self.pad_release = 0
         self.want_reset = False
+        self.want_load = None
         self.want_quit = None
 
     @property
@@ -168,6 +169,14 @@ def handle(m: Model, req: dict) -> dict:
     if op == "reset":
         m.want_reset = True
         return {"frame": m.frame}
+    if op == "save_state":
+        with open(req["path"], "w") as f:
+            json.dump({"frame": m.frame, "arena": m.arena.hex(), "state_word": m.state_word.hex()}, f)
+        return {"frame": m.frame, "path": req["path"]}
+    if op == "load_state":
+        with open(req["path"]) as f:
+            m.want_load = json.load(f)
+        return {"frame": m.want_load["frame"]}
     if op == "quit":
         m.want_quit = num(req.get("status", 0))
         return {}
@@ -216,6 +225,11 @@ def serve(path: str):
                         m.frame = 0
                         m.state_word[:] = b"\0\0\0\0"
                         m.arena[:] = bytes(ARENA_SIZE)
+                    if m.want_load is not None:
+                        st, m.want_load = m.want_load, None
+                        m.frame = st["frame"]
+                        m.arena[:] = bytes.fromhex(st["arena"])
+                        m.state_word[:] = bytes.fromhex(st["state_word"])
     try:
         os.unlink(path)
     except FileNotFoundError:

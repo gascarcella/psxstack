@@ -1704,3 +1704,24 @@ void gpu_load_image(int x, int y, int w, int h, const u16 *pixels) {
         gpu_load_pixel(pixels[i]);
     }
 }
+
+/* A save state (psyq_internal.h): the VRAM and the drawing state (a command or transfer in progress included). On a
+ * load every block is stamped as written (no decoded segment survives) and the listener reloads its VRAM, as at the
+ * power-on. */
+void gpu_state(PortState *s) {
+    int y;
+
+    port_state_bytes(s, "gpu_vram", gpu_vram, sizeof(gpu_vram));
+    port_state_bytes(s, "gpu", &g, sizeof(g));
+    if (port_state_loading(s)) {
+        for (y = 0; y < VRAM_H; y++) {
+            gpu_touch(y, 0, VRAM_W);
+        }
+        if (gpu_listener != NULL) {
+            GpuEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.kind = GPU_EV_POWER_ON;
+            gpu_listener(&ev);
+        }
+    }
+}
