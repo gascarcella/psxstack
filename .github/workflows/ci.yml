@@ -84,10 +84,15 @@ jobs:
         run: |
           scripts/setup.sh cmake llvm-mingw sdl3-windows imgui
           echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
+      # wine64 alone has no `wine` command on Ubuntu 24.04: that launcher script is in the `wine` package. The prefix
+      # once, headless (no display on the runner; the self-test needs none).
       - name: Wine
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends wine64
+          sudo apt-get install -y -q --no-install-recommends wine wine64
+          mkdir -p build/wine-prefix
+          WINEPREFIX="$PWD/build/wine-prefix" wineboot --init
+          wine --version
       - name: Cross-build
         run: |
           cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" \
@@ -95,6 +100,6 @@ jobs:
           cmake --build build/launcher-win
       - name: Self-test under Wine
         run: |
-          mkdir -p build/selftest-win build/wine-prefix
+          mkdir -p build/selftest-win
           WINEPREFIX="$PWD/build/wine-prefix" WINEDEBUG=-all DW3_SELFTEST_VIDEO_DRIVER=offscreen \
             timeout 600 wine build/launcher-win/dw2003-launcher.exe --self-test "Z:$PWD/build/selftest-win"
