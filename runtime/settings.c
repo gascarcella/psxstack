@@ -5,8 +5,9 @@
  *     "disc":     { "path": "dw2003.cue", "sha1": "457cb233..." },          none / none
  *     "video":    { "window": true, "scale": 2, "fullscreen": false, "refresh": 50, "renderer": "software",
  *                   "internal_scale": 1,
- *                   "subpixel": "on" },
- *                   "filter": "none" },
+ *                   "subpixel": "on",
+ *                   "filter": "none",
+ *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 } },
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off
@@ -146,8 +147,10 @@ void port_settings_load(const char *path) {
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
                                               "subpixel",
                                               "filter",
+                                              "crt",
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
+    static const char *const crt_keys[] = { "scanlines", "mask", "curvature", NULL };
     PortSettings *s = &port_settings;
     const PortJson *root, *v, *obj;
     char err[256], *slash;
@@ -167,6 +170,8 @@ void port_settings_load(const char *path) {
     s->refresh = 50;
     s->internal_scale = 1;
     s->subpixel = 1;
+    s->crt_scanlines = 50;
+    s->crt_mask = 30;
     s->memcard[0] = settings_join(s->dir, "card1.mcd");
     s->memcard[1] = settings_join(s->dir, "card2.mcd");
 
@@ -235,6 +240,12 @@ void port_settings_load(const char *path) {
             (s->filter = port_filter_from_name(v->string)) < 0) {
             port_settings_fail("video.filter", "%s, not \"%s\"", port_filter_choices(1), v->string);
         }
+        if ((v = settings_member(obj, "video", "crt", PORT_JSON_OBJECT)) != NULL) {
+            settings_unknown(v, "video.crt", crt_keys);
+            settings_int(v, "video.crt", "scanlines", 0, 100, &s->crt_scanlines);
+            settings_int(v, "video.crt", "mask", 0, 100, &s->crt_mask);
+            settings_int(v, "video.crt", "curvature", 0, 100, &s->crt_curvature);
+        }
     }
     if ((obj = settings_member(root, "", "audio", PORT_JSON_OBJECT)) != NULL) {
         settings_unknown(obj, "audio", audio_keys);
@@ -269,6 +280,8 @@ void port_settings_print(FILE *f, const PortSettings *s) {
             s->gpu ? "gpu" : "software", s->internal_scale);
     fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel == 2 ? "perspective" : s->subpixel ? "on" : "off");
     fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
+    fprintf(f, ",\n    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }", s->crt_scanlines, s->crt_mask,
+            s->crt_curvature);
     fprintf(f, "\n  },\n  \"audio\": {\n    \"mute\": %s\n  },\n  \"memcard1\": ", s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);

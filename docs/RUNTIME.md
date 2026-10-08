@@ -98,9 +98,11 @@ DXC that cannot sign it (no `libdxil.so` beside it). `--gpu-screenshot FRAME[@Wx
 of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
 would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DRIVER=offscreen`), and logs the shot as
 skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
-`--filter NAME` (`video.filter`) is the hardware renderer's present filter: `none` (the default: the picture's pixels as
-whole blocks) or `sharp` (sharp bilinear); it applies to the window and to `--gpu-screenshot`'s `@WxH` pictures, and a
-software-renderer run logs that its picture stays unfiltered (docs/PORT.md "Rendering").
+`--filter NAME[:KEY=V,...]` (`video.filter`, `video.crt`) is the hardware renderer's present filter: `none` (the
+default: the picture's pixels as whole blocks), `sharp` (sharp bilinear), `scanlines[:scanlines=0..100]` or
+`crt[:scanlines=,mask=,curvature=]` (a parameter not named keeps `video.crt`'s value; defaults 50, 30, 0); it applies to
+the window and to `--gpu-screenshot`'s `@WxH` pictures, and a software-renderer run logs that its picture stays
+unfiltered (docs/PORT.md "Rendering").
 **Widescreen** (docs/PORT.md "Rendering"): when a game mod calls `port_video_widescreen_enable` (from its start) and
 `port_video_widescreen(1)` (every vsync of the scenes that widen), the hardware renderer presents those scenes 16:9
 inside the window, the rest 4:3; the window opens 16:9 when the mod is on and `video.renderer` is `gpu`. With the

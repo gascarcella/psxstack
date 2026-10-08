@@ -252,6 +252,24 @@ static void test_settings_file(const std::string &root) {
     write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"filter":"blur"}})");
     fl.load(filtered);
     check(fl.messages().size() == 1 && fl.values.filter == "none", "a bad filter: a warning, \"none\"");
+    // video.crt (the scanlines and crt filters' parameters): read, written once set, bad values warned about.
+    write(path_join(filtered, SETTINGS_FILE),
+          R"({"schema":1,"video":{"filter":"crt","crt":{"scanlines":80,"mask":10,"curvature":25}}})");
+    fl.load(filtered);
+    check(fl.messages().empty() && fl.values.filter == "crt" && fl.values.crt_scanlines == 80 &&
+              fl.values.crt_mask == 10 && fl.values.crt_curvature == 25,
+          "video.crt is read");
+    fl.values.crt_mask = 60;
+    check(fl.save(&err), "saving video.crt: " + err);
+    const Json crt_written = Json::parse(read(fl.path()), nullptr);
+    const Json *crt = crt_written.find("video") != nullptr ? crt_written.find("video")->find("crt") : nullptr;
+    check(crt != nullptr && crt->find("mask") != nullptr && crt->find("mask")->as_int(0, 0, 100) == 60 &&
+              crt->find("scanlines")->as_int(0, 0, 100) == 80,
+          "video.crt is written back");
+    write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"crt":{"scanlines":101,"mask":-1}}})");
+    fl.load(filtered);
+    check(fl.messages().size() == 2 && fl.values.crt_scanlines == 50 && fl.values.crt_mask == 30,
+          "bad video.crt values: a warning each, the defaults");
 
     // Not JSON: the defaults; the first save keeps the old file aside.
     const std::string broken = path_join(root, "broken");
@@ -1048,6 +1066,12 @@ static void test_play(SDL_Window *window, const std::string &root) {
     pump(app, 2);
     png = path_join(shots, "9b-Settings-gpu.png");
     app.frame(png.c_str());
+    // The CRT filter shows its sliders (a picture).
+    app.settings().values.filter = "crt";
+    pump(app, 2);
+    png = path_join(shots, "9c-Settings-crt.png");
+    app.frame(png.c_str());
+    app.settings().values.filter = "none";
     app.settings().values.renderer = "software";
     app.settings().values.internal_scale = 1;
     pump(app, 2);
