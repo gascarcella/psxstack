@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "hello",
+  "title": "psxstack hello",
+  "discs": [],
+  "video": { "rate": 60 },
+  "memory": {
+    "ram": { "base": "0x80000000", "size": "0x200000" },
+    "slots": [{ "name": "main", "base": "0x80100000", "size": "0x10000" }],
+    "heap": { "start": "0x80110000", "end": "0x801F0000" }
+  },
+  "launcher": { "about": "psxstack's disc-free example: two polygons, a pad read, the SPU on." }
+}

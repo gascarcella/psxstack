@@ -128,24 +128,41 @@ starts with an empty adapter and adds probes as its tests need them. They are fu
 the weak defaults also work on COFF (Windows).
 
 ### 5. The build inputs
-Passed to `psxstack_add_game()` (`cmake/psxstack.cmake`, phase 2):
+Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which documents every argument):
 - `GAME_JSON`: the description.
-- `UNITS`: the game's C units, each tagged with its overlay (`<path>;<overlay or MAIN>`), from the game's own
-  generator (dw2003: the tier list, `config/wstag_c.txt` and the stage tables, which stay in the game's tooling).
+- `UNITS`: a file of `<absolute source path>\t<OVERLAY>` lines, every C unit and its overlay (`MAIN` for the
+  executable's), from the game's own tool (dw2003recomp: `tools/port_inputs.py`, which knows the tier list,
+  `config/wstag_c.txt` and the stage tables).
 - `MAIN_UNIT`: the unit whose `main` becomes `game_main`.
-- `SYMBOLS`: the `type:func` symbol files per overlay (`config/<ovl>.symbols.txt`, …) and the EXE's
-  (`config/symbol_addrs.txt`), for the overlay address tables and the state tables.
-- `OVERLAY_FILES`: overlay name → file ID (the game's cdload IDs), one line each; the game generates it.
+- `OVERLAYS`: a file of `<NAME>\t<tier>\t<file id>\t<symbols file or ->` lines: every overlay, its slot (1-based), the
+  file ID the game loads it by, and the `name = 0xADDR; // type:func` file of its PS1 functions (the overlay address
+  tables). Optional for a program without overlays.
+- `TAG_SITES` (optional): `<file:line>\t<tier>\t<OVERLAY | file:<id> | ->\t<0xADDR>` lines, the tag sites whose
+  overlay the game knows, checked against that overlay's table; the stack finds `SLOT_FUNC`/`LATE_FUNC` sites itself
+  and checks them against every table of their tier.
+- `EXE_SYMBOLS` (optional): the EXE's symbol file (`type:func` and `size:` lines): the state tables for the probes.
+- `VOLATILE` (optional): `<lo> <hi>` lines, the game-state image ranges the stable hash zeroes.
+- `GTEMAC` (optional): the game's `gtemac.h`, translated onto the software GTE; `INCLUDE_ASM_GUARD`: its
+  `include_asm.h`'s guard.
 - `INCLUDE_DIRS`: the game's `include/` and root (its `common.h`, its recovered `psyq/*.h`: DECISIONS "Psy-Q headers").
-- `ADAPTER`: the adapter units; `MODS_DIR`: the manifests.
-- `DEFINES`, `COMMON_FLAGS`, per-unit overrides as today.
-Everything comes from tracked files: a port configures from a fresh clone with no disc.
+- `ADAPTER`: the adapter units; `MODS_DIRS`: directories of `<id>/mod.json` manifests (the stack's `mods/` is added).
+- `DEFINES`, `UNIT_COMPILE_OPTIONS`, `CONFIGURE_DEPENDS` (the inputs' sources, so a change reruns the configure), `RC`.
+Everything comes from tracked files: a port configures from a fresh clone with no disc. Options are cache variables
+(`PSXSTACK_SDL`, `PSXSTACK_SANITIZE`, `PSXSTACK_M32`, `PSXSTACK_TOOLS_DIR`, `PSXSTACK_VERSION_ROOT`, ...).
+
+**The generated header** (`psxstack_game_gen.h`, `tools/game_gen.py`): `PSXSTACK_GAME_ID` (and `_ID_UPPER`,
+`_ID_IDENT`, the id as a bare token), `_TITLE`, `_ENV_PREFIX`, `_RATE`, `_RATE_COUNT`, `_RATES`, `_RATE_NOTE`,
+`_RAM_BASE`, `_RAM_SIZE`; `PORT_SLOT_COUNT`, `PORT_SLOT<n>_BASE/SIZE/NAME/OFS`, `port_slot<n>`, `PORT_HEAP_START_ADDR`,
+`PORT_HEAP_END_ADDR`, `PORT_HEAP_OFS`, `PORT_HEAP_SIZE`, `PORT_ARENA_SIZE`; `PsxstackGameDisc`, `PSXSTACK_GAME_DISC_COUNT`,
+`PSXSTACK_GAME_DISCS`; `PsxstackGameBiosStandin`, `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS`;
+`PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`. The runtime's environment variables are `<PREFIX>_PORT_<NAME>`.
 
 ### 6. Tests
 The game owns its oracles: goldens, replays, the emulator harness, the M1 test. The stack provides the formats and the
 runners it can without a game: the layer-2 script grammar and the per-frame log and record shapes (`script.c`,
 `framelog.c`), the debug-channel gate, the renderer comparison, the settings round trip, the launcher self-test. A
-game's test that needs the stack's internals talks to the debug channel, not to the C.
+game's test that needs the stack's internals talks to the debug channel, not to the C. The stack's own smoke test
+is `examples/hello` (`tests/hello_test.py`): a Psy-Q program with no game and no disc.
 
 ## What the stack provides
 

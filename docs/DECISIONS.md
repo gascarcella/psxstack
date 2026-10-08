@@ -46,3 +46,38 @@ the description's are tied by `_Static_assert`s in the adapter.
 The four test manifests live as files under `tests/fixtures/mods/` (readable, diffable), and the launcher's CMake
 compiles them into the binary as string constants. The self-test keeps needing no file beside the executable, which
 is what lets it run inside a release package and under Wine.
+
+## One generator for the game description: tools/game_gen.py (2026-10-08)
+Phase 1 had the first game generate the same header with its own names (`PortGameDisc`, `PSXSTACK_GAME_LAUNCHER_ABOUT`).
+One header, one generator, the stack's names: `PsxstackGameDisc`, `PSXSTACK_GAME_ABOUT`; the arena's derived numbers
+(`PORT_SLOT<n>_OFS`, `port_slot<n>`, `PORT_HEAP_OFS`, `PORT_ARENA_SIZE`) and the id's token form
+(`PSXSTACK_GAME_ID_IDENT`, for pasted symbol names) come from it too, so nothing in the runtime computes a game fact.
+
+## Sections named by the game's id on ELF, fixed on PE (2026-10-08)
+The overlay sections are `<id>_data_<ovl>`/`<id>_bss_<ovl>` on ELF (the bracket symbols `__start_<id>_...`). On PE
+they are the chunk groups of two fixed output sections, `.psxdata`/`.psxbss`: a PE image section name is eight
+characters, which an id-prefixed name would not fit; the symbols still carry the id.
+
+## Environment variables derive from the game's prefix (2026-10-08)
+`<PREFIX>_PORT_TRACE`, `_FAST_FORWARD`, `_CHECKPOINT_DIR`, `_RESET_CHECK`, `_CRASH_AT`, `_PRESENT_READBACK`,
+`_GPU_VRAM_CHECK`, `_PRIM_DUMP`, `_MCP_GAME`: `PSXSTACK_GAME_ENV_PREFIX` pasted at compile time, so the first game's
+names (`DW3_PORT_TRACE`) and tests stay as they were, and two games on one machine never share a variable.
+
+## The build's inputs are files the game writes (2026-10-08)
+`tools/port_gen.py` reads no game C: the units, the overlays (slot, file ID, symbol file), the tag sites whose overlay
+the game knows and the volatile ranges come as tab-separated files from the game's own tool
+(dw2003recomp: `tools/port_inputs.py`), named in `psxstack_add_game()`. The stack checks what it can on its own
+(`SLOT_FUNC`/`LATE_FUNC` sites against every table of their tier); a game adds precision, never knowledge the stack
+would have to carry.
+
+## The MCP server and the inventory are configured, not forked (2026-10-08)
+`tools/mcp/server.py` takes the game on its command line (the game's `.mcp.json`: root, description, binaries,
+symbol files, disc) and its self-test runs on fixture symbol files; `tools/port_inventory.py` is a module a game's
+wrapper configures (`configure()`: sources, headers, include directories, symbol files, regions from the
+description) and extends with its own commands (the first game: `structs`, `object-sizes`).
+
+## examples/hello is the stack's smoke test (2026-10-08)
+A disc-free Psy-Q program (two polygons, a pad read, the sound library on) built through `psxstack_add_game()` with
+the first game's recovered Psy-Q headers copied beside it (MIT; `docs/THIRD_PARTY.md`), run headless with a
+screenshot whose hash CI checks. It proves the generators, the sections, the shim and the runtime without any game,
+so the stack's CI needs no disc and no private data. `discs` may be empty for it (the port then takes no `--disc`).

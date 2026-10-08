@@ -1,0 +1,3 @@
+// The self-test's EXE symbol file (the first game's gamestate_data; fake_game.py maps the same word)
+gamestate_data = 0x80048D34; // type:data size:0x275C
+main = 0x80010000; // type:func

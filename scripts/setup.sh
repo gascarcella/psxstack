@@ -13,6 +13,7 @@
 #   llvm-mingw: the pinned llvm-mingw release (clang + lld, UCRT) into tools/llvm-mingw: the Windows cross toolchain
 #           (cmake/windows-x86_64.cmake)
 #   sdl3-windows: SDL3 cross-built static for Windows into tools/sdl3-windows (needs llvm-mingw)
+#   dxc:    the pinned DirectX Shader Compiler into tools/dxc: the hardware renderer's shaders (PSXSTACK_SDL)
 #   cmake:  CMake and Ninja pip-installed into tools/venv, only when either is missing from PATH
 #   link:   in a git worktree, symlink the main checkout's tools into this one
 #
@@ -217,6 +218,48 @@ step_sdl3-windows() {
     [[ -f "$prefix/lib/libSDL3.a" && -f "$prefix/lib/cmake/SDL3/SDL3Config.cmake" ]] || die "$name: install incomplete"
     echo "$SDL3_SHA256" > "$prefix/.sha256"
     log "$name: installed $SDL3_VER to $prefix"
+}
+
+# The DirectX Shader Compiler (LLVM Release License and the University of Illinois/NCSA licence; Microsoft's parts MIT)
+# for the hardware renderer's shaders (runtime/render_gpu.c): HLSL compiled at build time to SPIR-V for SDL_GPU's Vulkan backend,
+# and to DXIL for its D3D12 one (libdxil.so signs DXIL on Linux too, so the Windows cross-build can compile them here).
+# Chosen over glslang/shaderc (SPIR-V only) and SDL_shadercross (no releases or tags: a commit built against DXC
+# anyway). One pinned release tarball for Linux x86_64, SHA-256 checked (GitHub's published digest), unpacked into
+# tools/dxc; its binaries need glibc 2.38 (Ubuntu 24.04, as CI and the release's Docker image). A tool, not shipped:
+# the SPIR-V it writes is ours. Optional (not in the default steps): scripts/setup.sh dxc
+DXC_VER=v1.9.2602.24
+DXC_TARBALL=linux_dxc_2026_05_26.x86_64.tar.gz
+DXC_SHA256=928b3e9986d11dc4279050e02340950c29bcbd1e5efb9d3ded9669dade37639d
+step_dxc() {
+    local dir="$INSTALL/dxc" tarball="$SRC/dxc-$DXC_VER.tar.gz" unpack="$SRC/dxc-$DXC_VER" probe
+    if [[ -x "$dir/bin/dxc" && -f "$dir/.sha256" && "$(cat "$dir/.sha256")" == "$DXC_SHA256" ]]; then
+        log "dxc: $DXC_VER already installed ($dir)"
+        return
+    fi
+    [[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || die "dxc: the pinned tarball is a Linux x86_64 build"
+    mkdir -p "$SRC"
+    if [[ ! -f "$tarball" ]] || ! echo "$DXC_SHA256  $tarball" | sha256sum -c --quiet - 2>/dev/null; then
+        log "dxc: downloading $DXC_VER (~13 MB)"
+        fetch "https://github.com/microsoft/DirectXShaderCompiler/releases/download/$DXC_VER/$DXC_TARBALL" "$tarball.part"
+        mv "$tarball.part" "$tarball"
+    fi
+    echo "$DXC_SHA256  $tarball" | sha256sum -c --quiet - || die "dxc: checksum mismatch"
+    rm -rf "$dir" "$unpack"
+    mkdir -p "$unpack"
+    tar -C "$unpack" -xzf "$tarball"
+    [[ -x "$unpack/bin/dxc" && -f "$unpack/lib/libdxcompiler.so" && -f "$unpack/lib/libdxil.so" ]] ||
+        die "dxc: bin/dxc, lib/libdxcompiler.so or lib/libdxil.so missing from the tarball"
+    # The smoke test: a pixel shader in SDL_GPU's binding layout (fragment textures in space2) to SPIR-V and to DXIL.
+    probe="$unpack/probe.hlsl"
+    printf 'Texture2D<uint> t : register(t0, space2);\nfloat4 main(float4 p : SV_Position) : SV_Target0 {\n    return float4(t.Load(int3(int2(p.xy), 0)) / 65535.0, 0, 0, 1);\n}\n' > "$probe"
+    "$unpack/bin/dxc" -T ps_6_0 -E main -spirv -fspv-target-env=vulkan1.0 -Fo "$unpack/probe.spv" "$probe" >/dev/null ||
+        die "dxc: cannot compile to SPIR-V (glibc older than 2.38?)"
+    "$unpack/bin/dxc" -T ps_6_0 -E main -Fo "$unpack/probe.dxil" "$probe" >/dev/null || die "dxc: cannot compile to DXIL"
+    [[ "$(head -c 4 "$unpack/probe.spv" | od -An -tx4 | tr -d ' ')" == 07230203 ]] || die "dxc: the SPIR-V has no magic number"
+    rm -f "$probe" "$unpack/probe.spv" "$unpack/probe.dxil"
+    mv "$unpack" "$dir"
+    echo "$DXC_SHA256" > "$dir/.sha256"
+    log "dxc: installed $DXC_VER to $dir ($("$dir/bin/dxc" --version 2>&1 | head -1))"
 }
 
 step_link() {
