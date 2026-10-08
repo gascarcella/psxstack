@@ -1,8 +1,9 @@
-/* tests/psyq/psyq_test.c: the shim's LIBGTE and LIBGPU functions on their own (tests/psyq_test.py builds this with the
- * shim's sources and the flags of psyq/check.sh, and runs it). Documented cases and properties, no game and no disc:
- * the values a function must give by its definition (Sony's descriptions, psx-spx), a function against the commands it
- * is made of, and the packets' bytes. What only the PS1 can settle (the exact rounding of the CORDICs, FLAG in corner
- * cases) is the consumers' goldens' (psyq/README.md "Behaviour assumed"). Prints one line per failure; exit 1 on any. */
+/* tests/psyq/psyq_test.c: the shim's LIBGTE, LIBGPU and LIBGS functions on their own (tests/psyq_test.py builds this
+ * with the shim's sources and the flags of psyq/check.sh, and runs it). Documented cases and properties, no game and no
+ * disc: the values a function must give by its definition (Sony's descriptions, psx-spx), a function against the
+ * commands it is made of, and the packets' bytes. What only the PS1 can settle (the exact rounding of the CORDICs, FLAG
+ * in corner cases) is the consumers' goldens' (psyq/README.md "Behaviour assumed"). Prints one line per failure; exit 1
+ * on any. */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,6 +14,8 @@
 #include "psxstack/spu.h"
 #include "psxstack/psyq/libgpu.h"
 #include "psxstack/psyq/libgte.h"
+#include "psxstack/psyq/libgs.h"
+#include "libgs_internal.h"
 
 /* ---- what the runtime gives the shim: the tag window (a static arena here), the rest unused ---- */
 
@@ -708,6 +711,431 @@ static void test_tim(void) {
     CHECK(ReadTIM(&ti) == NULL, "ReadTIM past the last TIM");
 }
 
+
+/* ---- LIBGS ---- */
+
+static const MATRIX gs_identity = { { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } }, { 0, 0, 0 } };
+
+static int gs_matrix_is(const MATRIX *m, const s16 r[9], s32 tx, s32 ty, s32 tz) {
+    int i;
+
+    for (i = 0; i < 9; i++) {
+        if (m->m[i / 3][i % 3] != r[i]) {
+            return 0;
+        }
+    }
+    return m->t[0] == tx && m->t[1] == ty && m->t[2] == tz;
+}
+
+static void gs_print(const char *what, const MATRIX *m) {
+    printf("  %s: %d %d %d / %d %d %d / %d %d %d t %d %d %d\n", what, m->m[0][0], m->m[0][1], m->m[0][2], m->m[1][0],
+           m->m[1][1], m->m[1][2], m->m[2][0], m->m[2][1], m->m[2][2], (int)m->t[0], (int)m->t[1], (int)m->t[2]);
+}
+
+/* GsSetRefView2 against views worked out by hand (GsInitGraph(320, 240): the aspect is 1, the base the identity). The
+ * distances are powers of two, where LIBGTE's SquareRoot0 (a table: sqrt(1000 * 1000) is 999) is exact. */
+static void test_gs_view(void) {
+    static const struct {
+        s32 vp[3], vr[3], rz;
+        s16 m[9];
+        s32 t[3];
+    } views[] = {
+        /* along +z from 1024 behind the origin: the identity, the origin 1024 ahead */
+        { { 0, 0, -1024 }, { 0, 0, 0 }, 0, { 4096, 0, 0, 0, 4096, 0, 0, 0, 4096 }, { 0, 0, 1024 } },
+        /* from +x towards the origin: a quarter turn about y (sin 4096, cos 0) */
+        { { 1024, 0, 0 }, { 0, 0, 0 }, 0, { 0, 0, 4096, 0, 4096, 0, -4096, 0, 0 }, { 0, 0, 1024 } },
+        /* from above (-y: the PS1's y is down) straight down: a quarter turn about x, no y turn (rxz = 0) */
+        { { 0, -1024, 0 }, { 0, 0, 0 }, 0, { 4096, 0, 0, 0, 0, -4096, 0, 4096, 0 }, { 0, 0, 1024 } },
+        /* along +z with a 90 degree twist (rz = 90 << 12): Rz(-90) */
+        { { 0, 0, -1024 }, { 0, 0, 0 }, 90 << 12, { 0, 4096, 0, -4096, 0, 0, 0, 0, 4096 }, { 0, 0, 1024 } },
+        /* translated: from (100, 200, -724) along +z */
+        { { 100, 200, -724 }, { 100, 200, 300 }, 0, { 4096, 0, 0, 0, 4096, 0, 0, 0, 4096 }, { -100, -200, 724 } },
+    };
+    size_t i;
+
+    psyq_gs_reset();
+    GsInitGraph(320, 240, 0, 0, 0);
+    for (i = 0; i < sizeof(views) / sizeof(views[0]); i++) {
+        GsRVIEW2 v;
+        s32 r;
+
+        memset(&v, 0, sizeof(v));
+        v.vpx = views[i].vp[0];
+        v.vpy = views[i].vp[1];
+        v.vpz = views[i].vp[2];
+        v.vrx = views[i].vr[0];
+        v.vry = views[i].vr[1];
+        v.vrz = views[i].vr[2];
+        v.rz = views[i].rz;
+        r = GsSetRefView2(&v);
+        CHECK(r == 0 && gs_matrix_is(&GsWSMATRIX, views[i].m, views[i].t[0], views[i].t[1], views[i].t[2]),
+              "GsSetRefView2 view %d: returned %d", (int)i, r);
+        if (!gs_matrix_is(&GsWSMATRIX, views[i].m, views[i].t[0], views[i].t[1], views[i].t[2])) {
+            gs_print("GsWSMATRIX", &GsWSMATRIX);
+        }
+    }
+}
+
+/* GsGetLw/GsGetLs/GsGetLws through a root, a middle and a leaf system; flg's cache; GsInitCoordinate2. */
+static void test_gs_coords(void) {
+    static GsCOORDINATE2 root, mid, leaf;
+    static const s16 rz90[9] = { 0, -4096, 0, 4096, 0, 0, 0, 0, 4096 };
+    MATRIX lw, ls, m;
+    GsRVIEW2 v;
+
+    psyq_gs_reset();
+    GsInitGraph(320, 240, 0, 0, 0);
+    memset(&v, 0, sizeof(v));
+    v.vpz = -1024;
+    GsSetRefView2(&v); /* the identity, t (0, 0, 1024) */
+    memset(&root, 0x55, sizeof(root));
+    memset(&mid, 0x55, sizeof(mid));
+    memset(&leaf, 0x55, sizeof(leaf));
+    GsInitCoordinate2(NULL, &root);
+    GsInitCoordinate2(&root, &mid);
+    GsInitCoordinate2(&mid, &leaf);
+    CHECK(memcmp(&root.coord, &gs_identity, sizeof(MATRIX)) == 0 && root.flg == 0 && root.super == NULL,
+          "GsInitCoordinate2: the identity, flg 0, no parent");
+    CHECK(mid.super == &root && root.sub == &mid && leaf.super == &mid && mid.sub == &leaf,
+          "GsInitCoordinate2: the parent and its sub");
+    root.coord.t[0] = 100;
+    mid.coord.m[0][0] = 0;
+    mid.coord.m[0][1] = -4096;
+    mid.coord.m[1][0] = 4096;
+    mid.coord.m[1][1] = 0;
+    mid.coord.t[1] = 50;
+    leaf.coord.t[0] = 10;
+    /* lw = root * mid * leaf: Rz(90), t = root.t + mid.t + Rz(90) * leaf.t = (100, 60, 0); ls adds the view's z */
+    GsGetLws(&leaf, &lw, &ls);
+    CHECK(gs_matrix_is(&lw, rz90, 100, 60, 0), "GsGetLws: the local-world matrix");
+    CHECK(gs_matrix_is(&ls, rz90, 100, 60, 1024), "GsGetLws: the local-screen matrix");
+    if (!gs_matrix_is(&lw, rz90, 100, 60, 0) || !gs_matrix_is(&ls, rz90, 100, 60, 1024)) {
+        gs_print("lw", &lw);
+        gs_print("ls", &ls);
+    }
+    CHECK(root.flg == 1 && mid.flg == 1 && leaf.flg == 1 && gs_matrix_is(&leaf.workm, rz90, 100, 60, 0) &&
+          gs_matrix_is(&mid.workm, rz90, 100, 50, 0), "GsGetLws: each workm and flg = PSDCNT");
+    GsGetLs(&leaf, &m);
+    CHECK(memcmp(&m, &ls, sizeof(m)) == 0, "GsGetLs differs from GsGetLws's ls");
+    GsGetLw(&leaf, &m);
+    CHECK(memcmp(&m, &lw, sizeof(m)) == 0, "GsGetLw differs from GsGetLws's lw");
+    /* the cache: a change without flg 0 is not seen; flg 0 on the leaf recomputes from the middle's cached workm */
+    mid.coord.t[1] = 70;
+    GsGetLw(&leaf, &m);
+    CHECK(gs_matrix_is(&m, rz90, 100, 60, 0), "GsGetLw used the cache");
+    leaf.coord.t[0] = 20;
+    leaf.flg = 0;
+    GsGetLw(&leaf, &m);
+    CHECK(gs_matrix_is(&m, rz90, 100, 70, 0), "GsGetLw after the leaf's flg 0: t %d %d %d", (int)m.t[0],
+          (int)m.t[1], (int)m.t[2]);
+    mid.flg = 0; /* not seen while the leaf's own workm is current */
+    GsGetLw(&leaf, &m);
+    CHECK(gs_matrix_is(&m, rz90, 100, 70, 0), "GsGetLw with the middle's flg 0 alone: t %d %d %d", (int)m.t[0],
+          (int)m.t[1], (int)m.t[2]);
+    mid.flg = 0;
+    leaf.flg = 0;
+    GsGetLw(&leaf, &m);
+    CHECK(gs_matrix_is(&m, rz90, 100, 90, 0), "GsGetLw after the middle's and the leaf's flg 0: t %d %d %d",
+          (int)m.t[0], (int)m.t[1], (int)m.t[2]);
+    /* GsMulCoord3: m1 = m1 * m2, the translation too */
+    m = gs_identity;
+    m.m[0][0] = 0;
+    m.m[0][1] = -4096;
+    m.m[1][0] = 4096;
+    m.m[1][1] = 0;
+    m.t[2] = 7;
+    lw = gs_identity;
+    lw.t[0] = 3;
+    GsMulCoord3(&m, &lw);
+    CHECK(gs_matrix_is(&m, rz90, 0, 3, 7), "GsMulCoord3: t %d %d %d", (int)m.t[0], (int)m.t[1], (int)m.t[2]);
+}
+
+/* GsSetLsMatrix, GsSetLightMatrix, GsSetAmbient, GsSetLightMode, the work base, GsSwapDispBuff. */
+static void test_gs_setup(void) {
+    MATRIX m = gs_identity, lt;
+    DISPENV d;
+    u8 buf[16];
+
+    psyq_gs_reset();
+    GsInitGraph(320, 240, 0, 0, 0);
+    GsInit3D();
+    CHECK(psyq_gte_cfc2(24) == 160u << 16 && psyq_gte_cfc2(25) == 120u << 16, "GsInit3D: the GTE's offset %08x %08x",
+          psyq_gte_cfc2(24), psyq_gte_cfc2(25));
+    m.m[0][1] = 123;
+    m.t[0] = -5;
+    m.t[2] = 900;
+    GsSetLsMatrix(&m);
+    CHECK(psyq_gte_cfc2(0) == ((123u << 16) | 4096) && psyq_gte_cfc2(5) == (u32)-5 && psyq_gte_cfc2(7) == 900,
+          "GsSetLsMatrix: RT and TR");
+    /* the light matrix is GsLIGHTWSMATRIX * m; the GTE's rotation is kept */
+    GsLIGHTWSMATRIX = gs_identity;
+    GsLIGHTWSMATRIX.m[0][0] = 2048;
+    lt = gs_identity;
+    lt.m[0][1] = 4096;
+    GsSetLightMatrix(&lt);
+    CHECK(psyq_gte_cfc2(8) == ((2048u << 16) | 2048) && psyq_gte_cfc2(0) == ((123u << 16) | 4096),
+          "GsSetLightMatrix: L11/L12 %08x, RT %08x", psyq_gte_cfc2(8), psyq_gte_cfc2(0));
+    GsSetAmbient(0x80, 0x40, 0x1F);
+    CHECK(psyq_gte_cfc2(13) == 0x80 && psyq_gte_cfc2(14) == 0x40 && psyq_gte_cfc2(15) == 0x10,
+          "GsSetAmbient: RBK %x %x %x", psyq_gte_cfc2(13), psyq_gte_cfc2(14), psyq_gte_cfc2(15));
+    GsSetLightMode(3);
+    GsSetLightMode(7);
+    CHECK(psyq_gs.light_mode == 3, "GsSetLightMode(7) is ignored: %d", psyq_gs.light_mode);
+    GsSetLightMode(0);
+    GsSetWorkBase(buf);
+    CHECK(GsGetWorkBase() == buf && GsOUT_PACKET_P == buf, "GsSetWorkBase/GsGetWorkBase");
+
+    /* GsSwapDispBuff: the display shown, PSDCNT counted (0 skipped), the buffers alternate, the offset put again */
+    CHECK(D_800812D8 == 1 && psyq_gs.idx == 0, "after GsInitGraph: PSDCNT %u buffer %d", D_800812D8, psyq_gs.idx);
+    SetGeomOffset(0, 0);
+    GsSwapDispBuff();
+    GetDispEnv(&d);
+    CHECK(D_800812D8 == 2 && psyq_gs.idx == 1, "GsSwapDispBuff once: PSDCNT %u buffer %d", D_800812D8, psyq_gs.idx);
+    CHECK(d.disp.x == 0 && d.disp.y == 0 && d.disp.w == 320 && d.disp.h == 240, "GsSwapDispBuff's display %d,%d %dx%d",
+          d.disp.x, d.disp.y, d.disp.w, d.disp.h);
+    CHECK(psyq_gte_cfc2(24) == 160u << 16 && psyq_gte_cfc2(25) == 120u << 16, "GsSwapDispBuff: the GTE's offset");
+    CHECK(psyq_gs.draw.clip.w == 320 && psyq_gs.draw.clip.h == 240, "GsSwapDispBuff: the drawing clip");
+    GsSwapDispBuff();
+    CHECK(D_800812D8 == 3 && psyq_gs.idx == 0, "GsSwapDispBuff twice: PSDCNT %u buffer %d", D_800812D8, psyq_gs.idx);
+    GsSwapDispBuff();
+    CHECK(psyq_gs.idx == 1, "GsSwapDispBuff three times: buffer %d", psyq_gs.idx);
+    D_800812D8 = 0xFFFFFFFFu;
+    GsSwapDispBuff();
+    CHECK(D_800812D8 == 1 && psyq_gs.idx == 0, "GsSwapDispBuff: PSDCNT wraps to 1, not 0 (%u)", D_800812D8);
+    /* GsOFSGPU (intl bit 2): the offset goes to the drawing environment, the GTE's is 0 */
+    GsInitGraph(320, 240, 4, 0, 0);
+    GsInit3D();
+    CHECK(psyq_gs.draw.ofs[0] == 160 && psyq_gs.draw.ofs[1] == 120 && psyq_gte_cfc2(24) == 0,
+          "GsInit3D with GsOFSGPU: the drawing offset %d,%d", psyq_gs.draw.ofs[0], psyq_gs.draw.ofs[1]);
+}
+
+/* A synthetic TMD (no game data): two objects. Object 0: four vertices, one normal, a run of two F3 (the first front-
+ * facing, the second wound the other way) and one G4; object 1: one vertex and one NF4-less F3 (only its table entry
+ * matters). Returns the TMD's address; *obj0 its first entry. */
+static u32 *gs_make_tmd(u32 *t) {
+    u32 n = 0, verts0, norms0, prims0, verts1;
+    SVECTOR *v;
+    u8 *pr;
+
+    t[n++] = 0x41;
+    t[n++] = 0; /* flags: offsets */
+    t[n++] = 2; /* nobj */
+    n += 14;    /* the two entries, filled below */
+    verts0 = n;
+    v = (SVECTOR *)&t[n];
+    /* the F3: on z 0; the G4 on z 500 */
+    v[0] = (SVECTOR){ 0, 0, 0, 0 };
+    v[1] = (SVECTOR){ 100, 0, 0, 0 };
+    v[2] = (SVECTOR){ 0, 100, 0, 0 };
+    v[3] = (SVECTOR){ -50, -50, 500, 0 };
+    v[4] = (SVECTOR){ 50, -50, 500, 0 };
+    v[5] = (SVECTOR){ -50, 50, 500, 0 };
+    v[6] = (SVECTOR){ 50, 50, 500, 0 };
+    n += 7 * 2;
+    norms0 = n;
+    ((SVECTOR *)&t[n])[0] = (SVECTOR){ 0, 0, -4096, 0 };
+    n += 2;
+    prims0 = n;
+    pr = (u8 *)&t[n];
+    {
+        TMD_P_F3 f3 = { 4, 3, 0, 0x20, 200, 100, 50, 0x20, 0, 0, 1, 2 };
+        TMD_P_F3 back = { 4, 3, 0, 0x20, 1, 2, 3, 0x20, 0, 0, 2, 1 };
+        TMD_P_G4 g4 = { 6, 4, 0, 0x38, 10, 20, 30, 0x38, 0, 3, 0, 4, 0, 5, 0, 6 };
+
+        memcpy(pr, &f3, sizeof(f3));
+        memcpy(pr + 16, &back, sizeof(back));
+        memcpy(pr + 32, &g4, sizeof(g4));
+    }
+    n += (16 + 16 + 24) / 4;
+    verts1 = n;
+    t[n++] = 0;
+    t[n++] = 0;
+    /* the entries: offsets from the object table (t + 3) */
+    t[3] = (verts0 - 3) * 4;
+    t[4] = 7;
+    t[5] = (norms0 - 3) * 4;
+    t[6] = 1;
+    t[7] = (prims0 - 3) * 4;
+    t[8] = 3;
+    t[9] = 0;
+    t[10] = (verts1 - 3) * 4;
+    t[11] = 1;
+    t[12] = (norms0 - 3) * 4;
+    t[13] = 1;
+    t[14] = (prims0 - 3) * 4;
+    t[15] = 0;
+    t[16] = 0;
+    return t;
+}
+
+static PACKET *gs_test_handler_called;
+static s32 gs_test_handler_args[3];
+
+/* A program's own handler in a GsFCALL4 entry (the parameters libgs.h documents). */
+static PACKET *gs_test_handler(TMD_P_F3 *op, SVECTOR *vp, SVECTOR *np, PACKET *pk, s32 n, s32 shift, GsOT *ot,
+                               u32 *scratch) {
+    (void)vp;
+    (void)np;
+    (void)ot;
+    (void)scratch;
+    gs_test_handler_called = pk;
+    gs_test_handler_args[0] = n;
+    gs_test_handler_args[1] = shift;
+    gs_test_handler_args[2] = op->cd;
+    return pk + 4;
+}
+
+/* GsMapModelingData, GsLinkObject4 and GsSortObject4 with GsTMDfastF3L and GsTMDfastG4L: the packets in the OT. */
+static void test_gs_sort(void) {
+    u32 *t = gs_make_tmd(&arena[20000]);
+    u32 *org = &arena[22000];
+    PACKET *pk = (PACKET *)&arena[24000];
+    u32 entry0_before[3] = { t[3], t[5], t[7] }, entry1_before[3] = { t[10], t[12], t[14] };
+    GsDOBJ2 obj, obj1;
+    GsOT ot;
+    MATRIX ls = gs_identity;
+    SVECTOR *v;
+    s32 sxy[7], p, flag;
+    u32 *f3, *g4;
+    int i;
+
+    psyq_gs_reset();
+    GsInitGraph(320, 240, 0, 0, 0);
+    GsInit3D();
+    GsSetProjection(1000);
+    GsMapModelingData(t + 1);
+    CHECK(t[1] == 1, "GsMapModelingData: flags bit 0");
+    CHECK(t[3] == entry0_before[0] && t[5] == entry0_before[1] && t[7] == entry0_before[2],
+          "GsMapModelingData: object 0's offsets changed");
+    CHECK(t[10] == entry1_before[0] - 28 && t[12] == entry1_before[1] - 28 && t[14] == entry1_before[2] - 28,
+          "GsMapModelingData: object 1's offsets from its own entry");
+    GsMapModelingData(t + 1);
+    CHECK(t[10] == entry1_before[0] - 28, "GsMapModelingData twice changed the table");
+    memset(&obj, 0, sizeof(obj));
+    memset(&obj1, 0, sizeof(obj1));
+    GsLinkObject4((uintptr_t)(t + 3), &obj1, 1);
+    CHECK(obj1.tmd == t + 10 && (u8 *)obj1.tmd + (s32)obj1.tmd[0] == (u8 *)(t + 3) + entry1_before[0],
+          "GsLinkObject4: object 1's entry and its vertices");
+    GsLinkObject4((uintptr_t)(t + 3), &obj, 0);
+    {
+        u8 *pr = (u8 *)(t + 3) + t[7];
+        u16 run0, run1;
+
+        memcpy(&run0, pr, 2);
+        memcpy(&run1, pr + 32, 2);
+        CHECK(obj.tmd == t + 3 && run0 == 2 && run1 == 1, "GsLinkObject4: the runs %u %u", run0, run1);
+    }
+
+    /* the view: the identity, 1000 ahead; ambient 1.0 and no light, so a lit colour is the primitive's own */
+    GsSetLsMatrix(&ls);
+    ls.t[2] = 1000;
+    GsSetLsMatrix(&ls);
+    GsSetLightMatrix(&ls); /* GsLIGHTWSMATRIX is GsInitGraph's zero: LLM = 0 */
+    GsSetAmbient(4096, 4096, 4096);
+    ClearOTag(org, 128);
+    memset(&ot, 0, sizeof(ot));
+    ot.length = 7;
+    ot.org = (GsOT_TAG *)org;
+    ot.offset = 0;
+    GsFCALL4.f3[0][0] = GsTMDfastF3L;
+    GsFCALL4.g4[0][0] = GsTMDfastG4L;
+    GsSetWorkBase(pk);
+    obj.attribute = 0;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(GsGetWorkBase() == pk + 0x14 + 0x24, "GsSortObject4: the packet area advanced by %d bytes (want 0x38)",
+          (int)(GsGetWorkBase() - pk));
+
+    /* the expected screen coordinates, by RotTransPers of each vertex */
+    v = (SVECTOR *)((u8 *)(t + 3) + t[3]);
+    for (i = 0; i < 7; i++) {
+        RotTransPers(&v[i], &sxy[i], &p, &flag);
+    }
+    CHECK((sxy[1] & 0xFFFF) >= 259 && (sxy[1] & 0xFFFF) <= 260 && (sxy[0] >> 16) == 120, "RotTransPers: %08x %08x",
+          (u32)sxy[0], (u32)sxy[1]);
+    /* F3: SZ 1000, OTZ = 0x155 * 3000 >> 12 = 249: entry 249 >> 2 = 62 */
+    f3 = (u32 *)pk;
+    CHECK((org[62] & 0xFFFFFF) == port_ptr_to_u32(f3) && f3[0] == (4u << 24 | port_ptr_to_u32(&org[63])),
+          "the F3 in entry 62: entry %06x tag %08x", org[62] & 0xFFFFFF, f3[0]);
+    CHECK(f3[1] == 0x203264C8u, "the F3's colour %08x (want its own, code 0x20)", f3[1]);
+    CHECK(f3[2] == (u32)sxy[0] && f3[3] == (u32)sxy[1] && f3[4] == (u32)sxy[2], "the F3's vertices");
+    /* G4: SZ 1500, OTZ = 0x100 * 6000 >> 12 = 375: entry 93 */
+    g4 = (u32 *)(pk + 0x14);
+    CHECK((org[93] & 0xFFFFFF) == port_ptr_to_u32(g4) && g4[0] == (8u << 24 | port_ptr_to_u32(&org[94])),
+          "the G4 in entry 93: entry %06x tag %08x", org[93] & 0xFFFFFF, g4[0]);
+    CHECK(g4[1] == 0x381E140Au && g4[3] == 0x381E140Au && g4[5] == 0x381E140Au && g4[7] == 0x381E140Au,
+          "the G4's colours %08x %08x %08x %08x", g4[1], g4[3], g4[5], g4[7]);
+    CHECK(g4[2] == (u32)sxy[3] && g4[4] == (u32)sxy[4] && g4[6] == (u32)sxy[5] && g4[8] == (u32)sxy[6],
+          "the G4's vertices");
+    for (i = 0; i < 127; i++) {
+        CHECK(i == 62 || i == 93 || (org[i] & 0xFFFFFF) == port_ptr_to_u32(&org[i + 1]), "entry %d changed", i);
+    }
+    /* drawn: the F3 at (160, 120) (260, 120) (160, 220), the G4 33 around the centre (entry 93, after the F3); the
+     * F3's back-facing twin drew nothing */
+    {
+        const u16 *vram = psyq_gpu_vram();
+        DRAWENV env;
+
+        ResetGraph(0);
+        SetDefDrawEnv(&env, 0, 0, 320, 240);
+        env.dtd = 0;
+        env.isbg = 1;
+        PutDrawEnv(&env);
+        DrawOTag(org);
+        CHECK(vram[125 * 1024 + 240] == ((50 >> 3) << 10 | (100 >> 3) << 5 | (200 >> 3)), "the F3 drawn: %04x",
+              vram[125 * 1024 + 240]);
+        CHECK(vram[100 * 1024 + 150] == ((30 >> 3) << 10 | (20 >> 3) << 5 | (10 >> 3)), "the G4 drawn: %04x",
+              vram[100 * 1024 + 150]);
+        CHECK(vram[118 * 1024 + 240] == 0 && vram[200 * 1024 + 200] == 0, "drawn outside the polygons");
+    }
+
+    /* GsDOFF: nothing; a semi-transparent object: the code's bit 1 */
+    GsSetWorkBase(pk);
+    obj.attribute = 0x80000000u;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(GsGetWorkBase() == pk, "GsSortObject4 drew a GsDOFF object");
+    obj.attribute = 1u << 30;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(((u32 *)pk)[1] == 0x223264C8u, "GsALON: the F3's code %08x", ((u32 *)pk)[1]);
+
+    /* the table's choice: lighting off (GsLOFF) takes [0][2]; GsDIV takes [1][...] and fills scratch; the program's
+     * own handler gets the run (n 2), shift and the primitive */
+    memset(&GsFCALL4, 0, sizeof(GsFCALL4));
+    GsFCALL4.f3[0][2] = gs_test_handler;
+    GsFCALL4.f3[1][0] = gs_test_handler;
+    GsFCALL4.g4[0][2] = GsTMDfastG4L;
+    GsFCALL4.g4[1][0] = GsTMDfastG4L;
+    GsSetWorkBase(pk);
+    gs_test_handler_called = NULL;
+    obj.attribute = 1u << 6;
+    GsSortObject4(&obj, &ot, 3, &arena[26000]);
+    CHECK(gs_test_handler_called == pk && gs_test_handler_args[0] == 2 && gs_test_handler_args[1] == 3 &&
+          gs_test_handler_args[2] == 0x20, "GsLOFF: the handler in f3[0][2] (n %d shift %d)", gs_test_handler_args[0],
+          gs_test_handler_args[1]);
+    gs_test_handler_called = NULL;
+    arena[26000] = arena[26001] = arena[26002] = 0;
+    obj.attribute = 3u << 9;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(gs_test_handler_called != NULL && arena[26000] == 3 && arena[26001] == 320 && arena[26002] == 240,
+          "GsDIV: f3[1][0] and scratch %u %u %u", arena[26000], arena[26001], arena[26002]);
+    /* GsSetLightMode(1) (fog) takes [..][1]; with GsLLMOD the attribute's mode decides */
+    GsFCALL4.f3[0][1] = gs_test_handler;
+    GsFCALL4.f3[0][0] = NULL;
+    GsFCALL4.g4[0][1] = GsTMDfastG4L;
+    GsSetLightMode(1);
+    gs_test_handler_called = NULL;
+    obj.attribute = 0;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(gs_test_handler_called != NULL, "GsSetLightMode(1): f3[0][1]");
+    GsFCALL4.f3[0][0] = gs_test_handler;
+    GsFCALL4.f3[0][1] = NULL;
+    GsFCALL4.g4[0][0] = GsTMDfastG4L;
+    gs_test_handler_called = NULL;
+    obj.attribute = 1u << 5;
+    GsSortObject4(&obj, &ot, 2, &arena[26000]);
+    CHECK(gs_test_handler_called != NULL, "GsLLMOD with mode 0: f3[0][0] despite GsSetLightMode(1)");
+    GsSetLightMode(0);
+}
+
 int main(void) {
     psyq_reset();
     test_scalar();
@@ -718,6 +1146,10 @@ int main(void) {
     test_images();
     test_envs();
     test_tim();
+    test_gs_view();
+    test_gs_coords();
+    test_gs_setup();
+    test_gs_sort();
     printf("psyq_test: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

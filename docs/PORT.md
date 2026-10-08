@@ -330,7 +330,7 @@ and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and 
 |---|---|
 | LIBGPU | Real; drives the software GPU (`libgpu.c`, `gpu.c`): environments, ordering tables, the primitives' function forms, the drawing-mode packets, VRAM transfers both ways, TIMs |
 | LIBGTE | Real, on the software GTE (`libgte.c`, `gte.c`): the perspective transforms, the matrix stack and helpers, normalisation, lighting, `csqrt`/`catan`/`ratan2`, each with LIBGTE's command sequence |
-| LIBGS | TIM info, the GTE set-up, the world-screen and light matrices (`libgs.c`); `GsInitGraph`/`GsInit3D` do the PS1's GTE and matrix set-up and skip its draw environments |
+| LIBGS | TIM info, the GTE set-up, the world-screen and light matrices, the coordinate systems (`libgs.c`); the double buffer, TMD objects (`GsMapModelingData`, `GsLinkObject4`) and `GsSortObject4` with the 18 fast primitive handlers (`libgs_sort.c`; a mapped TMD keeps offsets on the host: `include/psxstack/psyq/libgs.h`); `GsInitGraph` skips the PS1's draw environments; the subdividing `GsTMDdiv*` handlers are not in yet |
 | LIBETC | `VSync`, `VSyncCallback`, `SetVideoMode`, `ResetCallback`: real, on the pump. The vsync tick runs the `VSyncCallback` handler, then LIBSND's own tick, the memory card's command and the root counter 3's events, then `port_frame` |
 | LIBCD | A real command model over the disc image, timed in ticks; interrupt-driven sector reads, whole reads (`CdRead`, `CdReadSync`, `CdSync`), `CdSearchFile` over the disc's ISO 9660 directories, streaming (`St*`, `CdRead2`); XA sectors to the XA decoder, through `CdMix`'s matrix (`libcd.c`, `xa.c`) |
 | LIBPRESS | MDEC movie decoding (`libpress.c`, `mdec.c`) |

@@ -8,57 +8,51 @@
  * Real: GsGetTimInfo (it parses a TIM header, docs/FORMATS.md "TIM"), GsSetProjection (the GTE's H), GsSetFlatLight
  * (the light and light colour matrices, the GTE's LCM), GsSetRefView2 and GsGetLw (with the PS1's LIBGTE calls through
  * the software GTE, so the matrices are the PS1's to the bit: the layer-1 family tests/golden/families/libgs_view.py,
- * replayed by tests/host/libgs_replay.py); GsInitGraph and GsInit3D do the GTE and matrix set-up of the PS1's and
- * record the rest (the game draws with its own environments). */
+ * replayed by tests/host/libgs_replay.py); GsInitGraph does the GTE and matrix set-up of the PS1's and records the rest
+ * (the game draws with its own environments). For the second game (each with the calls and the order of the PS1's
+ * LIBGS 4.x objects, not yet checked against its emulator): GsGetLs and GsGetLws (GsGetLw's walk, then the
+ * world-screen matrix), GsInitCoordinate2, GsMulCoord3, GsSetLsMatrix, GsSetLightMatrix, GsSetAmbient, GsSetLightMode,
+ * GsSetWorkBase/GsGetWorkBase and GsMapModelingData (the host's form of a mapped TMD: libgs.h). The double buffer,
+ * GsInit3D and the object sort are libgs_sort.c's: this file calls only LIBGTE and the GTE (libgs_internal.h). */
 #include <string.h>
 #include "psyq_internal.h"
-#include "psxstack/psyq/libgs.h"
-#include "psxstack/psyq/libgpu.h"
+#include "libgs_internal.h"
 
-MATRIX GsWSMATRIX; /* GsSetRefView2's world-screen matrix */
+MATRIX GsIDMATRIX;      /* GsInitGraph's identity */
+MATRIX GsWSMATRIX;      /* GsSetRefView2's world-screen matrix */
 MATRIX GsLIGHTWSMATRIX; /* GsSetFlatLight's light matrix */
+PACKET *GsOUT_PACKET_P; /* GsSetWorkBase's packet area; GsSortObject4 advances it */
+_GsFCALL GsFCALL4;      /* GsSortObject4's handlers: zero until the program stores its own (libgs.h) */
 /* LIBGS's view and light state (the PS1's .bss; the game does not read it, tests/host/libgs_harness.c does): */
 MATRIX D_80081318; /* GsSetFlatLight's light colour matrix (the GTE's LCM): light `id`'s colour is column id */
 MATRIX D_80081338; /* GsSetRefView2's result again (GsGetLs and the like read it on the PS1) */
 MATRIX D_80081398; /* GsSetRefView2's start: GsInitGraph's identity with m[1][1] the screen's aspect */
-u32 D_800812D8;    /* PSDCNT: 1 after GsInitGraph (GsSwapDispBuff counts it; the EXE has none): GsGetLw's "current" */
-
-/* libgte.c: the LIBGTE functions LIBGS calls (not the game: our libgte.h does not declare them). */
-void InitGeom(void);
-void SetGeomOffset(s32 ofx, s32 ofy);
-void SetGeomScreen(s32 h);
-void SetFarColor(s32 rfc, s32 gfc, s32 bfc);
-void SetColorMatrix(MATRIX *m);
-MATRIX *MulMatrix(MATRIX *m0, MATRIX *m1);
-MATRIX *MulMatrix2(MATRIX *m0, MATRIX *m1);
-VECTOR *ApplyMatrixLV(MATRIX *m, VECTOR *v0, VECTOR *v1);
-MATRIX *TransposeMatrix(MATRIX *m0, MATRIX *m1);
-s32 SquareRoot0(s32 a);
-s32 rcos(s32 a);
+u32 D_800812D8;    /* PSDCNT: 1 after GsInitGraph, counted by GsSwapDispBuff (0 skipped): GsGetLw's "current" */
 
 static const MATRIX psyq_gs_identity = { { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } }, { 0, 0, 0 } };
 
-static struct {
-    s32 projection;        /* GsSetProjection: the distance to the screen (h) */
-    s32 light_mode;        /* GsSetLightMode (D_800812EC on the PS1; only LIBGS's own object drawing reads it) */
-    u16 w, h, intl, dither, vram; /* GsInitGraph */
-    GsCOORDINATE2 *lw_stack[100]; /* D_800813B8: GsGetLw's walk up the hierarchy */
-} psyq_gs;
+PsyqGs psyq_gs; /* libgs_internal.h */
 
-/* The console's reset (psyq.c psyq_reset): LIBGS's .bss (the matrices) and the recorded settings zero. */
+/* The console's reset (psyq.c psyq_reset): LIBGS's .bss (the matrices, the packet area, the jump table) and the
+ * recorded settings zero. */
 void psyq_gs_reset(void) {
+    memset(&GsIDMATRIX, 0, sizeof(GsIDMATRIX));
     memset(&GsWSMATRIX, 0, sizeof(GsWSMATRIX));
     memset(&GsLIGHTWSMATRIX, 0, sizeof(GsLIGHTWSMATRIX));
     memset(&D_80081318, 0, sizeof(D_80081318));
     memset(&D_80081338, 0, sizeof(D_80081338));
     memset(&D_80081398, 0, sizeof(D_80081398));
     D_800812D8 = 0;
+    GsOUT_PACKET_P = NULL;
+    memset(&GsFCALL4, 0, sizeof(GsFCALL4));
     memset(&psyq_gs, 0, sizeof(psyq_gs));
 }
 
 /* Real where the game can see it (gs_001.s): the GTE and the matrices as the PS1 leaves them. Left out: the GPU
- * reset and LIBGS's draw/display environments (PutDrawEnv/PutDispEnv), which the game never reads back: it draws
- * with its own gfx module's. */
+ * reset and the PutDrawEnv/PutDispEnv of LIBGS's draw/display environments, which the games never read back: they
+ * draw with their own. The environments are recorded as the PS1 sets them up (the display {0, 0, w, h}, interlace
+ * intl & 1, 24-bit vram; the drawing environment all zero but dither and its clip {0, 0, w, h}; buffer 0 drawn;
+ * GsOFSGPU = intl & 4), for GsSwapDispBuff (libgs_sort.c), which does put them. */
 void GsInitGraph(u16 w, u16 h, u16 intl, u16 dither, u16 vram) {
     PSYQ_TRACE("GsInitGraph %ux%u intl %u dither %u vram %u", w, h, intl, dither, vram);
     psyq_gs.w = w;
@@ -74,9 +68,31 @@ void GsInitGraph(u16 w, u16 h, u16 intl, u16 dither, u16 vram) {
      * the game's); the light matrix and the light colour matrix are zero; PSDCNT starts at 1 */
     D_80081398 = psyq_gs_identity;
     D_80081398.m[1][1] = (s16)(((s32)h << 14) / (s32)w / 3);
+    GsIDMATRIX = psyq_gs_identity;
     memset(&GsLIGHTWSMATRIX, 0, sizeof(GsLIGHTWSMATRIX));
     memset(&D_80081318, 0, sizeof(D_80081318));
     D_800812D8 = 1;
+    memset(&psyq_gs.disp, 0, sizeof(psyq_gs.disp));
+    psyq_gs.disp.disp.w = (s16)w;
+    psyq_gs.disp.disp.h = (s16)h;
+    psyq_gs.disp.isinter = (u8)(intl & 1);
+    psyq_gs.disp.isrgb24 = (u8)vram;
+    memset(&psyq_gs.draw, 0, sizeof(psyq_gs.draw));
+    psyq_gs.draw.dtd = (u8)dither;
+    psyq_gs.ofsgpu = (s16)(intl & 4);
+    psyq_gs.idx = 0;
+    psyq_gs.clip.x = 0;
+    psyq_gs.clip.y = 0;
+    psyq_gs.clip.w = (s16)w;
+    psyq_gs.clip.h = (s16)h;
+    psyq_gs.draw_ofs[0] = psyq_gs.draw_ofs[1] = 0;
+    psyq_gs.gte_ofs[0] = psyq_gs.gte_ofs[1] = 0;
+    /* GsSetDrawBuffClip's clip (its PutDrawEnv left out, as above); GsSetDrawBuffOffset's GTE offset is gte_init's
+     * 0, 0 again (with GsOFSGPU, its PutDrawEnv's offset is 0, 0: the environment's already) */
+    psyq_gs.draw.clip.x = (s16)(psyq_gs.clip.x + psyq_gs.buf_x[0]);
+    psyq_gs.draw.clip.y = (s16)(psyq_gs.clip.y + psyq_gs.buf_y[0]);
+    psyq_gs.draw.clip.w = psyq_gs.clip.w;
+    psyq_gs.draw.clip.h = psyq_gs.clip.h;
 }
 
 /* Real. `tim` points at the TIM's flag word (the caller skips the 0x10 magic: main.c passes main_file_base + 1).
@@ -123,19 +139,6 @@ void GsSetProjection(s32 h) {
     SetGeomScreen(h);
 }
 
-/* Real where the game can see it (gs_104.s): LIBGS's draw offset becomes the screen's centre and GsSetDrawBuffOffset
- * (gs_0022.s) loads it into the GTE, SetGeomOffset(w / 2 + the draw buffer's x, h / 2 + its y) with the buffer at
- * 0,0 (the game's intl has no GsOFSGPU bit, so the GTE gets the offset; the game sets it back to 0,0 right after,
- * main.c's InitGeom and gfx.c's SetGeomOffset). Then the light mode is 0 and LIBGS's Z range 10..0x3FFF (only its
- * own object sorting reads it). No matrix is touched: the light matrix stays GsInitGraph's zero and the world-screen
- * matrix zero until GsSetRefView2. Left out: the PutDrawEnv of LIBGS's draw environment (the game draws with its
- * own). */
-void GsInit3D(void) {
-    PSYQ_TRACE("GsInit3D");
-    SetGeomOffset(psyq_gs.w / 2, psyq_gs.h / 2);
-    psyq_gs.light_mode = 0;
-}
-
 /* Real (gs_107.s): light `id`'s direction, normalised to 4096 and negated (the direction light travels becomes the
  * direction to the light, which the GTE's lighting wants), is row id of the light matrix GsLIGHTWSMATRIX, and its
  * colour, (c << 12) / 255, column id of the light colour matrix D_80081318, which is then loaded as the GTE's LCM. A zero
@@ -162,9 +165,20 @@ s32 GsSetFlatLight(s32 id, GsF_LIGHT *lt) {
     return 0;
 }
 
+/* Real: modes 0..3 are kept (GsSortObject4 reads bit 0: fog); another changes nothing (the PS1 prints an error). */
 void GsSetLightMode(s32 mode) {
     PSYQ_TRACE("GsSetLightMode %d", mode);
+    if (mode < 0 || mode > 3) {
+        PSYQ_TRACE("GsSetLightMode: mode %d is not 0..3, ignored", mode);
+        return;
+    }
     psyq_gs.light_mode = mode;
+}
+
+/* Real: the ambient colour, 0..255 per component, as the GTE's back colour (SetBackColor of each >> 4). */
+void GsSetAmbient(s32 r, s32 g, s32 b) {
+    PSYQ_TRACE("GsSetAmbient %d,%d,%d", r, g, b);
+    SetBackColor(r >> 4, g >> 4, b >> 4);
 }
 
 /* gs_123.s Gssub_make_matrix: m = the identity with the rotation about `axis` ('x'/'X', 'y'/'Y', 'z'/'Z') whose
@@ -225,7 +239,7 @@ static void psyq_gs_mul_coord2(MATRIX *m0, MATRIX *m1) {
 }
 
 /* matrix9.s GsMulCoord3: m0 = m0 * m1 (m0.t = m0 * m1.t + m0.t). */
-static void psyq_gs_mul_coord3(MATRIX *m0, MATRIX *m1) {
+void GsMulCoord3(MATRIX *m0, MATRIX *m1) {
     VECTOR t;
 
     ApplyMatrixLV(m0, (VECTOR *)m1->t, &t);
@@ -237,8 +251,9 @@ static void psyq_gs_mul_coord3(MATRIX *m0, MATRIX *m1) {
 
 /* Real (gs_133.s): m = coord's local-world matrix, the product of the coordinate systems from the root down to coord.
  * A node whose flg is PSDCNT has its workm up to date; flg 0 marks it changed. The walk goes up until the root or an
- * up-to-date node, then multiplies down again, storing each node's workm and setting its flg to PSDCNT. */
-void GsGetLw(GsCOORDINATE2 *coord, MATRIX *m) {
+ * up-to-date node, then multiplies down again, storing each node's workm and setting its flg to PSDCNT. GsGetLs and
+ * GsGetLws make the same walk. */
+static void psyq_gs_get_lw(GsCOORDINATE2 *coord, MATRIX *m) {
     GsCOORDINATE2 **stack = psyq_gs.lw_stack;
     s32 n = 0;
     s32 changed = 100;
@@ -272,9 +287,87 @@ void GsGetLw(GsCOORDINATE2 *coord, MATRIX *m) {
     for (; n > 0; n--) {
         GsCOORDINATE2 *c = stack[n - 1];
 
-        psyq_gs_mul_coord3(m, &c->coord);
+        GsMulCoord3(m, &c->coord);
         c->workm = *m;
         c->flg = D_800812D8;
+    }
+}
+
+void GsGetLw(GsCOORDINATE2 *coord, MATRIX *m) {
+    psyq_gs_get_lw(coord, m);
+}
+
+/* Real: m = coord's local-screen matrix, GsWSMATRIX * its local-world matrix (the walk updates the workm caches). */
+void GsGetLs(GsCOORDINATE2 *coord, MATRIX *m) {
+    psyq_gs_get_lw(coord, m);
+    psyq_gs_mul_coord2(&GsWSMATRIX, m);
+}
+
+/* Real: both, lw the local-world matrix and ls = GsWSMATRIX * lw. */
+void GsGetLws(GsCOORDINATE2 *coord, MATRIX *lw, MATRIX *ls) {
+    psyq_gs_get_lw(coord, lw);
+    *ls = *lw;
+    psyq_gs_mul_coord2(&GsWSMATRIX, ls);
+}
+
+/* Real: base's matrix = GsIDMATRIX (its translation too), its parent super, flg 0 (changed); super's sub = base unless
+ * super is NULL or 1 (the PS1 tests the address < 2). workm, param and base's own sub are left as they are. */
+void GsInitCoordinate2(GsCOORDINATE2 *super, GsCOORDINATE2 *base) {
+    PSYQ_TRACE("GsInitCoordinate2 super %u base %u", PSYQ_PTR(super), PSYQ_PTR(base));
+    base->coord = GsIDMATRIX;
+    base->super = super;
+    base->flg = 0;
+    if ((uintptr_t)super >= 2) {
+        super->sub = base;
+    }
+}
+
+/* Real: the GTE's rotation and translation = m (a local-screen matrix). */
+void GsSetLsMatrix(MATRIX *m) {
+    SetRotMatrix(m);
+    SetTransMatrix(m);
+}
+
+/* Real: the GTE's light matrix = GsLIGHTWSMATRIX * m's rotation (m a local-world matrix: the lights in the object's
+ * own coordinates). MulMatrix runs on the GTE's rotation, which the PS1 saves and restores around it. */
+void GsSetLightMatrix(MATRIX *m) {
+    MATRIX lt = GsLIGHTWSMATRIX;
+
+    PushMatrix();
+    MulMatrix(&lt, m);
+    PopMatrix();
+    SetLightMatrix(&lt);
+}
+
+/* Real: GsSortObject4's packet area. */
+void GsSetWorkBase(PACKET *base) {
+    GsOUT_PACKET_P = base;
+}
+
+PACKET *GsGetWorkBase(void) {
+    return GsOUT_PACKET_P;
+}
+
+/* Real, in the host's form (libgs.h): p points at a TMD's flags word. Unless bit 0 is set (mapped already), it is set
+ * and each of the nobj objects' vert_top, normal_top and primitive_top, an offset from the object table on the disc,
+ * becomes an offset from the object's own entry (minus 28 * its index); the PS1 adds the table's address instead. */
+void GsMapModelingData(u32 *p) {
+    u32 flags = p[0];
+    s32 nobj, i;
+    u32 *entry;
+
+    PSYQ_TRACE("GsMapModelingData %u flags %x nobj %d", PSYQ_PTR(p), flags, (s32)p[1]);
+    if (flags & 1) {
+        return;
+    }
+    p[0] = flags | 1;
+    nobj = (s32)p[1];
+    for (i = 0, entry = p + 2; i < nobj; i++, entry += 7) {
+        u32 back = (u32)i * 28u;
+
+        entry[0] -= back;
+        entry[2] -= back;
+        entry[4] -= back;
     }
 }
 
@@ -351,13 +444,17 @@ s32 GsSetRefView2(GsRVIEW2 *pv) {
     return 0;
 }
 
-/* A save state (psyq_internal.h): LIBGS's matrices and settings. */
+/* A save state (psyq_internal.h): LIBGS's matrices, settings, packet area and jump table (host pointers: a state is
+ * for its own binary). */
 void psyq_gs_state(PortState *s) {
+    PORT_STATE_VAR(s, GsIDMATRIX);
     PORT_STATE_VAR(s, GsWSMATRIX);
     PORT_STATE_VAR(s, GsLIGHTWSMATRIX);
     PORT_STATE_VAR(s, D_80081318);
     PORT_STATE_VAR(s, D_80081338);
     PORT_STATE_VAR(s, D_80081398);
     PORT_STATE_VAR(s, D_800812D8);
+    PORT_STATE_VAR(s, GsOUT_PACKET_P);
+    PORT_STATE_VAR(s, GsFCALL4);
     PORT_STATE_VAR(s, psyq_gs);
 }
