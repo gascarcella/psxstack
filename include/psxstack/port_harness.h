@@ -121,6 +121,12 @@ int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */
 void port_video_gpu_headless(void);
+/* --dump-textures DIR (SDL build): every texture a primitive samples, the first time, as a PNG named by its key
+ * (docs/RUNTIME.md "Texture dump"); 0 when DIR cannot be made or the build has no SDL. */
+int port_video_dump_textures(const char *dir);
+/* --texture-pack DIR (SDL build): a texture pack (docs/RUNTIME.md "Texture packs"), drawn by the hardware renderer;
+ * packs added first win. 0 (logged) when DIR is not one or the build has no SDL. */
+int port_video_texture_pack(const char *dir);
 /* The hardware renderer's picture now (the display at its internal scale) as a PPM: the debug channel's screenshot
  * with "renderer": "gpu". 1 written, 0 the file cannot be written, -1 no GPU renderer in this run. */
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h);
@@ -186,6 +192,14 @@ void port_mods_start(int active);
 void port_mods_frame(void);
 void port_mods_print(FILE *f, int level);
 void port_mods_print_registry(FILE *f);
+/* The data mods (mods_data.c; docs/LAUNCHER.md "Data mods", SDL build): port_mods_data_scan reads DIR/<id>/mod.json
+ * (--mods-dir, before port_mods_settings, which then knows their ids); port_mods_data_settings their `enabled` (a bad
+ * value fails the settings) and the settings' `mod_order`; port_mods_data_start loads the enabled ones in that order
+ * (`active` 0: none). */
+int port_mods_data_scan(const char *dir);
+int port_mods_data_known(const char *id);
+void port_mods_data_settings(const struct PortJson *mods, const struct PortJson *order);
+void port_mods_data_start(int active);
 
 /* ---- debug.c: the debug channel (`--debug SOCKET`; the protocol is the file's header comment) ----
  * port_debug_open: the Unix socket at `path` (fatal when it cannot listen); sets port_debug_active. port_debug_frame

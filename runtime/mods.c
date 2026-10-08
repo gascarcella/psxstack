@@ -222,7 +222,7 @@ void port_mods_settings(const PortJson *settings) {
     for (i = 0; settings != NULL && i < settings->count; i++) {
         for (m = 0; m < mods_count && strcmp(mods_all[m]->id, settings->keys[i]) != 0; m++) {
         }
-        if (m == mods_count) {
+        if (m == mods_count && !port_mods_data_known(settings->keys[i])) {
             port_log("settings: mods.%s: no such mod in this build, ignored", settings->keys[i]);
         }
     }

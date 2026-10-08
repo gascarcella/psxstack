@@ -485,8 +485,54 @@ static void test_mods(const std::string &root) {
     check(find("broken") != nullptr && !find("broken")->error.empty(), "a manifest that is not JSON is listed, unusable");
     check(find("elsewhere") != nullptr && find("elsewhere")->error.find("directory") != std::string::npos,
           "an id that is not its directory's name");
-    check(find("textures") != nullptr && find("textures")->error.find("built-in") != std::string::npos,
-          "a data mod: not yet");
+    check(find("textures") != nullptr && find("textures")->error.find("textures") != std::string::npos,
+          "a data mod without \"textures\": unusable");
+
+    // The settings directory's mods/ (docs/LAUNCHER.md "Data mods"): data mods only; their order (mod_order).
+    const std::string user = path_join(root, "usermods");
+    path_make_dir(user, nullptr);
+    write_mod(user, "pack_b", R"({"schema": 1, "id": "pack_b", "name": "Pack B", "kind": "data",
+                                 "textures": {"dir": "png", "filter": "nearest"}})");
+    write_mod(user, "pack_a", R"({"schema": 1, "id": "pack_a", "name": "Pack A", "kind": "data", "textures": {}})");
+    write_mod(user, "pack_c", R"({"schema": 1, "id": "pack_c", "name": "Pack C", "kind": "data", "textures": {}})");
+    write_mod(user, "code", R"({"schema": 1, "id": "code", "name": "Code", "kind": "builtin"})");
+    write_mod(user, "filter", R"({"schema": 1, "id": "filter", "name": "Bad filter", "kind": "data",
+                                 "textures": {"filter": "cubic"}})");
+    write_mod(user, "opts", R"({"schema": 1, "id": "opts", "name": "Options", "kind": "data", "textures": {},
+                               "options": [{"id": "x", "name": "X", "type": "bool", "default": false}]})");
+    std::vector<ModManifest> um = mods_scan(user, true);
+    auto ufind = [&](const std::string &id) -> const ModManifest * {
+        for (const ModManifest &m : um) {
+            if (m.id == id) {
+                return &m;
+            }
+        }
+        return nullptr;
+    };
+    check(um.size() == 6 && ufind("pack_b") != nullptr && ufind("pack_b")->error.empty() && ufind("pack_b")->user &&
+              ufind("pack_b")->textures && ufind("pack_b")->textures_dir == "png" &&
+              ufind("pack_b")->textures_filter == "nearest" && ufind("pack_a")->textures_dir == "textures" &&
+              ufind("pack_a")->textures_filter == "linear",
+          "the user's data mods read, with their textures' directory and filter");
+    check(ufind("code") != nullptr && ufind("code")->error.find("comes with the game") != std::string::npos,
+          "a built-in mod in the user's mods/: unusable");
+    check(ufind("filter") != nullptr && ufind("filter")->error.find("filter") != std::string::npos &&
+              ufind("opts") != nullptr && ufind("opts")->error.find("no options") != std::string::npos,
+          "a data mod with a bad filter or with options: unusable");
+    Json odoc = Json::parse(R"({"mod_order": ["gone", "pack_c"]})", nullptr);
+    ModValues ov(&odoc);
+    const std::vector<std::string> ids = { "pack_b", "pack_a", "pack_c" };
+    check(ov.data_order(ids) == std::vector<std::string>({ "pack_c", "pack_a", "pack_b" }),
+          "the data mods' order: mod_order's first, then by id");
+    ov.move(ids, "pack_b", -1);
+    check(ov.data_order(ids) == std::vector<std::string>({ "pack_c", "pack_b", "pack_a" }) &&
+              *odoc.find("mod_order") ==
+                  Json::parse(R"(["pack_c", "pack_b", "pack_a", "gone"])", nullptr),
+          "a move writes the whole order, an id not installed kept at its end");
+    ov.move(ids, "pack_c", -1);
+    ov.move(ids, "pack_a", 1);
+    check(ov.data_order(ids) == std::vector<std::string>({ "pack_c", "pack_b", "pack_a" }),
+          "the first cannot go earlier, the last not later");
     std::string err;
     check(!mod_manifest_load(path_join(root, "nowhere")).error.empty(), "a missing manifest");
 
@@ -650,6 +696,14 @@ int self_test_fake_game(const char *mode, int argc, char **argv) {
         }
         return 0;
     }
+    if (std::strcmp(mode, "nomodsdir") == 0) { // a game with --config and --crash-dir, before --mods-dir
+        for (int i = 1; i < argc; i++) {
+            if (std::strcmp(argv[i], "--mods-dir") == 0) {
+                std::fprintf(stderr, "usage: %s [--config FILE] [--crash-dir DIR] ...\n", argv[0]);
+                return 64;
+            }
+        }
+    }
     if (std::strcmp(mode, "invalid") == 0 && print) {
         std::fprintf(stderr, "port: settings %s: video.scale: an integer from 1 to 16, not 17\n", argv[2]);
         return 64;
@@ -734,6 +788,8 @@ static void test_game(const std::string &root) {
     check(game_probe(exe, settings).result == GameProbe::Result::Valid, "the probe: a game with --config");
     set_fake_mode("old");
     check(game_probe(exe, settings).result == GameProbe::Result::NoConfig, "the probe: a game without --config");
+    set_fake_mode("nomodsdir");
+    check(game_probe(exe, settings).result == GameProbe::Result::NoConfig, "the probe: a game without --mods-dir");
     set_fake_mode("invalid");
     GameProbe p = game_probe(exe, settings);
     check(p.result == GameProbe::Result::Invalid && p.message.find("video.scale") != std::string::npos,
@@ -793,8 +849,9 @@ static void test_game(const std::string &root) {
     SettingsFile f;
     f.load(path_join(root, "command"));
     check(game_args("g", f) == std::vector<std::string>({ "g", "--config", f.path(), "--crash-dir",
-                                                          path_join(f.dir(), "crashes") }),
-          "the --config --crash-dir command");
+                                                          path_join(f.dir(), "crashes"), "--mods-dir",
+                                                          path_join(f.dir(), "mods") }),
+          "the --config --crash-dir --mods-dir command");
     SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), SELF_TEST_GAME_ENV);
 
     // The real game, when the environment names it (<PREFIX>_SELFTEST_GAME: an SDL build of the game): the probe must
@@ -869,6 +926,10 @@ static void test_game(const std::string &root) {
     if (beside) {
         check(mods_found > 0, "the mods' manifests beside the game: " + path_join(path_dir(real), "mods"));
     }
+    // A data mod (an empty texture pack) in the settings directory's mods/, switched on: the game finds it there.
+    write_mod(path_join(real_dir, "mods"), "selftest_pack",
+              R"({"schema": 1, "id": "selftest_pack", "name": "Self-test pack", "kind": "data", "textures": {}})");
+    mv.set_enabled("selftest_pack", true);
     check(r.save(&err), "the real game's settings: " + err);
     p = game_probe(real, r.path());
     check(p.result == GameProbe::Result::Valid, "the real game accepts the launcher's file: " + p.message);
@@ -888,8 +949,9 @@ static void test_game(const std::string &root) {
     }
     // The game's own disc line: "disc: PATH: N sectors, SHA-1 <hash> (<the disc's label>)"; the label comes from the
     // game description, so the check keys on the hash of one of its discs.
-    bool disc_ok = false;
+    bool disc_ok = false, data_mod = false;
     for (const std::string &l : game.lines()) {
+        data_mod |= l.find("mods: ") != std::string::npos && l.find(": 1 data mod") != std::string::npos;
         if (l.find("disc: ") == std::string::npos) {
             continue;
         }
@@ -901,6 +963,7 @@ static void test_game(const std::string &root) {
           "the real game runs 300 frames from the launcher's command: it " + game_exit_text(game.exit_code()) +
               (game.lines().empty() ? std::string() : "; last line: " + game.lines().back()));
     check(path_is_file(path_join(real_dir, "card1.mcd")), "the game made memory card 1 in the settings directory");
+    check(data_mod, "the game found the data mod in the settings directory's mods/ (--mods-dir)");
 }
 
 // ---- the window
@@ -1111,9 +1174,15 @@ static void test_mods_window(SDL_Window *window, const std::string &root) {
     location.source = DirSource::Argument;
     AppOptions options;
     options.game = make_game_dir(path_join(root, "modsui-game"));
+    write_mod(path_join(location.dir, "mods"), "hd_pack",
+              R"({"schema": 1, "id": "hd_pack", "name": "HD pack", "version": "1.0", "kind": "data",
+                  "description": "A texture pack in the settings directory.", "textures": {}})");
+    write_mod(path_join(location.dir, "mods"), "hd_pack_2",
+              R"({"schema": 1, "id": "hd_pack_2", "name": "Second pack", "kind": "data", "textures": {}})");
     App app(window, SDL_GetRenderer(window), location, options);
-    check(app.mods().size() == 7 && app.mods_dir() == path_join(path_dir(options.game), "mods"),
-          "the launcher finds the mods beside the game");
+    check(app.mods().size() == 9 && app.mods_dir() == path_join(path_dir(options.game), "mods") &&
+              app.user_mods_dir() == path_join(location.dir, "mods") && app.data_mod_ids().size() == 2,
+          "the launcher finds the mods beside the game and the data mods in the settings directory");
     app.set_screen(Screen::Mods);
     app.select_mod("fast_forward");
     pump(app, 3);
@@ -1154,6 +1223,10 @@ static void test_mods_window(SDL_Window *window, const std::string &root) {
     }
     pump(app, 3);
     png = path_join(shots, "15-Mods-presets-typed.png");
+    app.frame(png.c_str());
+    app.select_mod("hd_pack_2");
+    pump(app, 3);
+    png = path_join(shots, "16-Mods-data.png");
     app.frame(png.c_str());
     check(app.last_error().empty(), "no error in the status bar: " + app.last_error());
 }

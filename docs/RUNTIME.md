@@ -151,6 +151,55 @@ fast-forward that ends never makes the game wait for the vsyncs it ran ahead).
 toggle binding) runs the game at the nominal rate times its speed (default `4x`), presents at most 60 images a second
 and mutes the audio device; the game, its log and its record are unchanged.
 
+## Texture dump
+`--dump-textures DIR` (the SDL build, either renderer, headless too; docs/PORT.md "Texture replacement") writes every
+texture a primitive samples, the first time it samples it, under DIR:
+- `<overlay>/<image>-<clut>-<4|8>bpp-<w>x<h>.png`: an indexed PNG whose palette is the CLUT, or
+  `<overlay>/<image>-15bpp-<w>x<h>.png` (RGBA). `<image>` and `<clut>` are the key's two 16-digit hashes; w x h is the
+  whole transfer in texels at that depth (an atlas: the image of a whole page, recoloured by one CLUT). `<overlay>` is
+  the tier-1 overlay that first sampled it (`main` without one); directories are only for people.
+- Colours are 5-bit channels widened as `(c << 3) | (c >> 2)`; alpha is 0 for the texel `0x0000` (transparent), 128 for
+  a texel with bit 15 set (semi-transparent where the primitive is) and 255 otherwise.
+- `index.json`: `{"schema": 1, "textures": [...]}`, one entry per key: `file`, `image`, `clut` (not for 15-bit),
+  `depth`, `size` [w, h], `first_vsync`, `overlays` (where it was sampled, at most 8), `vram` [x, y, w, h] (the
+  transfer's place when first sampled, in VRAM words), `clut_xy`, `uv` [u0, v0, u1, v1] (the texels primitives
+  sampled, inclusive, in the image's own texels: the part of an atlas that is this key's), `draws` (primitives),
+  `semi` (a semi-transparent primitive sampled it). It is rewritten at the end of every vsync that added a key and at
+  exit.
+- **A dump continues:** an existing `index.json` is read back at the start, existing files are never rewritten, and
+  the counts and ranges add up over the runs.
+
+## Texture packs
+`--texture-pack DIR` (repeatable; the SDL build) loads a texture pack, which the hardware renderer's rasteriser draws
+instead of the game's textures (`--renderer gpu`, at any internal scale; docs/PORT.md "Texture replacement"). A pack
+is a data mod:
+```
+DIR/mod.json
+DIR/textures/**/<image>-<clut>-<4|8>bpp-<w>x<h>.png                   replaces the whole image (under that CLUT)
+DIR/textures/**/<image>-<clut>-<4|8>bpp-<w>x<h>@<u>,<v>,<uw>x<vh>.png  only that sub-rectangle (in its texels)
+DIR/textures/**/<image>-15bpp-<w>x<h>.png
+```
+```json
+{ "schema": 1, "id": "hd_field", "name": "HD field sprites", "version": "1.0", "kind": "data", "requires_port": 1,
+  "description": "...", "textures": { "dir": "textures", "filter": "linear" } }
+```
+- **The file name is the key**, as the dump names it ("Texture dump"); directories under `textures/` (`dir`, default
+  `textures`) are free, and other PNGs are ignored (logged). A file named like a dump replaces it: an unedited dump is
+  a pack that changes nothing at internal scale 1.
+- **Any size**: a file is stretched over the whole image or its sub-rectangle; integer multiples of the original are
+  best. PNG, RGBA or indexed.
+- **Alpha**: below 64 transparent (as the texel `0x0000`), 64 to 191 semi-transparent (bit 15: blended where the
+  primitive is), 192 and above opaque. The colour is used in 8 bits above internal scale 1, in 5 bits at it.
+- **Which file**: a primitive takes a sub-rectangle file whose rectangle holds all its texels before the whole image's
+  file, and the first pack given before later ones; with none it samples the VRAM as before (also under a texture
+  window, and for render-to-texture and copies, which have no key).
+- **`filter`**: `linear` (the default; with mipmaps) or `nearest`.
+- Files are decoded on first use (a decode over 4 ms is logged: a hitch) and kept up to 1 GB of textures, then the
+  ones unused for longest are released. Without `--renderer gpu` a pack is loaded but nothing draws it (logged).
+- **As a player installs them:** a pack is a data mod in the settings directory's `mods/`, switched on and ordered in
+  the launcher, which passes `--mods-dir` (docs/LAUNCHER.md "Data mods"); `--texture-pack` is the direct way (an
+  artist's, a test's), its packs before the data mods.
+
 ## What the build generates (`build/port/gen/`, by `tools/port_gen.py`)
 At configure time (the inputs are the files the game's tooling writes: `units.txt`, `overlays.txt`, `tag_sites.txt`,
 `volatile.txt`; GAME_CONTRACT.md "5"):

@@ -367,6 +367,32 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     renderer, `--screenshot` and the frame hash stay 4:3.
   - The software GPU stays the reference and the default; every existing test uses it.
 
+## Texture replacement
+`runtime/render_gpu_textures.c` (the first game's issue #70; its research comment has the measurements). Only in the
+SDL build, and nothing of it runs unless it is switched on.
+- **The key** names what a textured primitive samples by what the game loaded, not by where it landed: games move one
+  image around the VRAM and reuse a place for many images. It is the SHA-1 (first 8 bytes) of the CPU-to-VRAM transfer
+  the texels came from, taken when the transfer finished, with the transfer's size; the SHA-1 of the 16 or 256 CLUT
+  entries the primitive reads, taken at the draw (CLUT rows come from transfers of many rows and from reused slots);
+  and the depth (4, 8 or 15: one transfer may hold images of two depths).
+- **Which transfer** comes from an owner map: each VRAM word holds the transfer that wrote it, every other write (a
+  draw's bounding box in its drawing area, a fill, a copy) clears its words, and a primitive has a key only when all
+  the words under its texel rectangle are one transfer's. Per word because games load small images into part of an
+  earlier page and keep drawing from the rest. Render-to-texture and copies have no key: they keep the VRAM's texels.
+  16x16 tiles record whether they hold transfer words, so drawing into the display buffer costs a check per tile.
+- **The dump** (`--dump-textures DIR`, docs/RUNTIME.md "Texture dump") writes each key the first time a primitive
+  samples it. The first game's new_game replay has 134 keys, first_battle_save 1,728 (18 MB of PNGs; its run takes
+  26 s instead of 17 s with the dump on). The game's log and record are unchanged by it.
+- **Packs** (`runtime/render_gpu_packs.c`, `--texture-pack DIR`, docs/RUNTIME.md "Texture packs") are data mods whose
+  PNGs are named by key. The rasteriser looks a textured triangle's or rectangle's key up when it records the unit
+  (before the unit's own writes change the owner map); a unit with a replacement binds it in the pixel shader's third
+  texture slot and samples it instead of the VRAM (`F_REPLACED` in `shaders/raster.frag.hlsl`): at the sample point's
+  texture coordinates (gpu.c's integers at internal scale 1, the planes' exact values above it) mapped onto the
+  replacement's rectangle, filtered, before any discard (the mipmap level needs defined derivatives). Its alpha decides
+  transparency and bit 15; modulation, blending, dithering and the mask then run as for a VRAM texel. At internal scale 1
+  a texel's colour is rounded back to 5 bits, so a pack made of the unedited dump keeps the target equal to the
+  software VRAM (the first game's replays, every 10 vsyncs).
+
 ## GTE
 `psyq/gte.c` is the geometry coprocessor in software: the 64 registers with their read/write rules, every
 command (RTPS/RTPT with the UNR division, NCLIP, MVMVA, the lighting and depth-cue commands, AVSZ3/4, GPF/GPL, ...),

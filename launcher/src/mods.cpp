@@ -305,8 +305,23 @@ ModManifest mod_manifest_load(const std::string &dir) {
         }
         m.presets.push_back(p);
     }
-    if (m.kind != "builtin") {
-        m.error = "kind \"" + m.kind + "\": only built-in mods are supported for now";
+    if (m.kind == "data") {
+        // A data mod (docs/LAUNCHER.md "Data mods"): files, no options; "textures" is the only kind of data so far.
+        const Json *tex = j.find("textures");
+        if (!m.options.empty() || !m.presets.empty()) {
+            m.error = "mod.json: a data mod has no options or presets";
+        } else if (tex == nullptr || !tex->is_object()) {
+            m.error = "mod.json: textures: expected an object (a data mod is a texture pack so far)";
+        } else if (!get_string(*tex, "dir", false, &m.textures_dir, &err, "textures.") ||
+                   !get_string(*tex, "filter", false, &m.textures_filter, &err, "textures.")) {
+            m.error = "mod.json: " + err;
+        } else if (m.textures_filter != "linear" && m.textures_filter != "nearest") {
+            m.error = "mod.json: textures.filter: \"linear\" or \"nearest\"";
+        } else {
+            m.textures = true;
+        }
+    } else if (m.kind != "builtin") {
+        m.error = "kind \"" + m.kind + "\": not a kind this launcher knows (builtin, data)";
     }
     return m;
 }
@@ -319,7 +334,7 @@ static SDL_EnumerationResult SDLCALL collect(void *list, const char *dir, const 
     return SDL_ENUM_CONTINUE;
 }
 
-std::vector<ModManifest> mods_scan(const std::string &mods_dir) {
+std::vector<ModManifest> mods_scan(const std::string &mods_dir, bool user) {
     std::vector<std::string> dirs;
     std::vector<ModManifest> mods;
     if (!path_is_dir(mods_dir)) {
@@ -328,6 +343,10 @@ std::vector<ModManifest> mods_scan(const std::string &mods_dir) {
     SDL_EnumerateDirectory(mods_dir.c_str(), collect, &dirs);
     for (const std::string &d : dirs) {
         mods.push_back(mod_manifest_load(d));
+        mods.back().user = user;
+        if (user && mods.back().error.empty() && mods.back().kind != "data") {
+            mods.back().error = "a built-in mod comes with the game; this directory holds data mods";
+        }
     }
     std::sort(mods.begin(), mods.end(), [](const ModManifest &a, const ModManifest &b) {
         return SDL_strcasecmp(a.name.c_str(), b.name.c_str()) < 0;
@@ -477,6 +496,56 @@ Binding mod_binding(const ModValues &v, const ModManifest &m, const ModOption &o
         binding_from_json(o.def, &b, &err);
     }
     return b;
+}
+
+// ---- the data mods' order
+
+std::vector<std::string> ModValues::data_order(const std::vector<std::string> &ids) const {
+    std::vector<std::string> out;
+    const Json *order = doc_->find("mod_order");
+    if (order != nullptr && order->is_array()) {
+        for (const Json &v : order->items()) {
+            if (v.is_string() && std::find(ids.begin(), ids.end(), v.as_string()) != ids.end() &&
+                std::find(out.begin(), out.end(), v.as_string()) == out.end()) {
+                out.push_back(v.as_string());
+            }
+        }
+    }
+    std::vector<std::string> rest;
+    for (const std::string &id : ids) {
+        if (std::find(out.begin(), out.end(), id) == out.end()) {
+            rest.push_back(id);
+        }
+    }
+    std::sort(rest.begin(), rest.end());
+    out.insert(out.end(), rest.begin(), rest.end());
+    return out;
+}
+
+void ModValues::move(const std::vector<std::string> &ids, const std::string &id, int delta) {
+    std::vector<std::string> order = data_order(ids);
+    auto it = std::find(order.begin(), order.end(), id);
+    if (it == order.end()) {
+        return;
+    }
+    const long i = it - order.begin(), j = i + (delta < 0 ? -1 : 1);
+    if (j < 0 || j >= (long)order.size()) {
+        return;
+    }
+    std::swap(order[(size_t)i], order[(size_t)j]);
+    Json list = Json::array();
+    for (const std::string &o : order) {
+        list.push(Json::string(o));
+    }
+    const Json *old = doc_->find("mod_order");
+    if (old != nullptr && old->is_array()) {
+        for (const Json &v : old->items()) {
+            if (v.is_string() && std::find(ids.begin(), ids.end(), v.as_string()) == ids.end()) {
+                list.push(v); // a data mod that is not installed now keeps its place at the end
+            }
+        }
+    }
+    doc_->set("mod_order", list);
 }
 
 } // namespace psxstack

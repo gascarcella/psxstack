@@ -64,15 +64,18 @@ GameProbe game_probe(const std::string &game, const std::string &settings_path) 
     GameProbe probe;
     std::string out;
     int code = -255;
-    if (!run_to_end({ game, "--config", settings_path, "--print-settings" }, &out, &code, &probe.message)) {
+    if (!run_to_end({ game, "--config", settings_path, "--mods-dir", game_mods_dir(path_dir(settings_path)),
+                      "--print-settings" },
+                    &out, &code, &probe.message)) {
         probe.result = GameProbe::Result::Failed;
         return probe;
     }
     if (code == 0) {
         probe.result = GameProbe::Result::Valid;
     } else if (code == 64 && out.compare(0, 6, "usage:") == 0 &&
-               (out.find("--config") == std::string::npos || out.find("--crash-dir") == std::string::npos)) {
-        probe.result = GameProbe::Result::NoConfig; // before --config, or before --crash-dir: too old for this launcher
+               (out.find("--config") == std::string::npos || out.find("--crash-dir") == std::string::npos ||
+                out.find("--mods-dir") == std::string::npos)) {
+        probe.result = GameProbe::Result::NoConfig; // before --config, --crash-dir or --mods-dir: too old for this launcher
     } else if (code == 64) {
         probe.result = GameProbe::Result::Invalid;
         probe.message = out;
@@ -87,7 +90,12 @@ GameProbe game_probe(const std::string &game, const std::string &settings_path) 
 }
 
 std::vector<std::string> game_args(const std::string &game, const SettingsFile &settings) {
-    return { game, "--config", settings.path(), "--crash-dir", game_crash_dir(settings.dir()) };
+    return { game, "--config", settings.path(), "--crash-dir", game_crash_dir(settings.dir()), "--mods-dir",
+             game_mods_dir(settings.dir()) };
+}
+
+std::string game_mods_dir(const std::string &settings_dir) {
+    return path_join(settings_dir, "mods");
 }
 
 std::string game_crash_dir(const std::string &settings_dir) {

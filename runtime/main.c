@@ -102,6 +102,12 @@ static void usage(const char *argv0) {
             "                   or smooth (xBR on the 1x software image, at any internal scale);\n"
             "                   the window and --gpu-screenshot's @WxH pictures; the software renderer shows the\n"
             "                   picture unfiltered (overrides video.filter and video.crt)\n"
+            "  --dump-textures DIR  every texture the game samples, the first time, as a PNG named by its key, and\n"
+            "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
+            "  --texture-pack DIR  a texture pack (DIR/mod.json, PNGs named by key) for the hardware renderer;\n"
+            "                   repeatable, the first given wins\n"
+            "  --mods-dir DIR   the data mods (DIR/<id>/mod.json: texture packs), switched on and ordered by the\n"
+            "                   settings (mods.<id>.enabled, mod_order); a build with -DPSXSTACK_SDL=ON\n"
             "  --spu-trace FILE every SPU write and DMA block, per vsync (tests/sound's trace format)\n"
             "  --wav FILE       the audio output as a 44.1 kHz stereo WAV (any build, headless too)\n"
             "  --mute           no audio device in window mode\n"
@@ -137,6 +143,10 @@ int main(int argc, char **argv) {
     const char *disc = NULL, *script = NULL, *log = NULL, *record = NULL, *speed = NULL;
     const char *memcard[2] = { NULL, NULL };
     const char *spu_trace = NULL, *wav = NULL, *debug = NULL, *crash_dir = NULL;
+    const char *dump_textures = NULL;
+    const char *packs[32];
+    int npacks = 0;
+    const char *mods_dir = NULL;
     int mute = 0, debug_hold = 0;
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
@@ -297,6 +307,16 @@ int main(int argc, char **argv) {
                 return 64;
             }
             gpu_shots = 1;
+        } else if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
+            dump_textures = argv[++i];
+        } else if (strcmp(argv[i], "--texture-pack") == 0 && i + 1 < argc) {
+            if (npacks == (int)(sizeof(packs) / sizeof(packs[0]))) {
+                fprintf(stderr, "port: --texture-pack: at most %d\n", npacks);
+                return 64;
+            }
+            packs[npacks++] = argv[++i];
+        } else if (strcmp(argv[i], "--mods-dir") == 0 && i + 1 < argc) {
+            mods_dir = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -320,7 +340,15 @@ int main(int argc, char **argv) {
         port_pace_set(fps);
     }
     port_input_settings(config != NULL ? port_settings.input : NULL);
+    if (mods_dir != NULL && !port_video_available()) {
+        fprintf(stderr, "port: --mods-dir: this build has no data mods: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (mods_dir != NULL) {
+        port_mods_data_scan(mods_dir); /* before the settings' mods, which then know the data mods' ids */
+    }
     port_mods_settings(config != NULL ? port_settings.mods : NULL);
+    port_mods_data_settings(config != NULL ? port_settings.mods : NULL, config != NULL ? port_settings.mod_order : NULL);
     if (print_mods) {
         port_mods_print_registry(stdout);
         return 0;
@@ -353,6 +381,14 @@ int main(int argc, char **argv) {
     }
     if (gpu_shots && !port_video_available()) {
         fprintf(stderr, "port: --gpu-screenshot: this build has no GPU renderer: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (dump_textures != NULL && !port_video_available()) {
+        fprintf(stderr, "port: --dump-textures: this build has no texture dump: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (npacks > 0 && !port_video_available()) {
+        fprintf(stderr, "port: --texture-pack: this build has no hardware renderer: configure with -DPSXSTACK_SDL=ON\n");
         return 64;
     }
     port_video_set_renderer(gpu ? "gpu" : "software");
@@ -414,6 +450,15 @@ int main(int argc, char **argv) {
     } else {
         port_video_gpu_headless(); /* --gpu-screenshot: the rasteriser draws from the first frame */
     }
+    if (dump_textures != NULL && !port_video_dump_textures(dump_textures)) {
+        port_exit(1, "--dump-textures: the directory cannot be made");
+    }
+    for (i = 0; i < npacks; i++) {
+        if (!port_video_texture_pack(packs[i])) {
+            port_exit(1, "--texture-pack: not a texture pack");
+        }
+    }
+    port_mods_data_start(script == NULL || script_mods); /* after --texture-pack's: those win */
     if (debug != NULL) {
         /* a driven run: the tool decides when it ends, and may hold the game paused for as long as it likes */
         port_watchdog_sec = 0;
