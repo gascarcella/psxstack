@@ -195,6 +195,9 @@ DIR/textures/**/<image>-15bpp-<w>x<h>.png
 - **`filter`**: `linear` (the default; with mipmaps) or `nearest`.
 - Files are decoded on first use (a decode over 4 ms is logged: a hitch) and kept up to 1 GB of textures, then the
   ones unused for longest are released. Without `--renderer gpu` a pack is loaded but nothing draws it (logged).
+- **As a player installs them:** a pack is a data mod in the settings directory's `mods/`, switched on and ordered in
+  the launcher, which passes `--mods-dir` (docs/LAUNCHER.md "Data mods"); `--texture-pack` is the direct way (an
+  artist's, a test's), its packs before the data mods.
 
 ## What the build generates (`build/port/gen/`, by `tools/port_gen.py`)
 At configure time (the inputs are the files the game's tooling writes: `units.txt`, `overlays.txt`, `tag_sites.txt`,

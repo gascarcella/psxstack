@@ -207,9 +207,19 @@ App::App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location
     if (!game_.empty()) {
         mods_dir_ = path_join(path_dir(game_), "mods");
         mods_ = mods_scan(mods_dir_);
-        if (!mods_.empty()) {
-            mod_selected_ = mods_[0].id;
+    }
+    // The user's data mods: the settings directory's mods/ (docs/LAUNCHER.md "Data mods"; the game gets --mods-dir).
+    if (!location_.dir.empty()) {
+        user_mods_dir_ = game_mods_dir(location_.dir);
+        for (ModManifest &m : mods_scan(user_mods_dir_, true)) {
+            if (m.error.empty() && find_mod(m.id) != nullptr) {
+                m.error = "the game has a mod with this id";
+            }
+            mods_.push_back(m);
         }
+    }
+    if (!mods_.empty()) {
+        mod_selected_ = mods_[0].id;
     }
     SDL_strlcpy(disc_input_, settings_.values.disc_path.c_str(), sizeof(disc_input_));
     // First run, or the disc went away: start on the disc screen (docs/LAUNCHER.md "Launcher"). A disc set by hand (no
@@ -1056,18 +1066,51 @@ void App::capture_for_mod(const std::string &mod, const std::string &option) {
     capture_option_ = option;
 }
 
+std::vector<std::string> App::data_mod_ids() const {
+    std::vector<std::string> ids;
+    for (const ModManifest &m : mods_) {
+        if (m.kind == "data" && m.error.empty()) {
+            ids.push_back(m.id);
+        }
+    }
+    return ids;
+}
+
 void App::draw_mods() {
     if (mods_.empty()) {
-        ImGui::TextWrapped("%s", game_.empty() ? "The game was not found, so neither were its mods (the Play screen "
-                                                 "says where the launcher looked)."
-                                               : ("No mods were found in " + mods_dir_ + ".").c_str());
+        ImGui::TextWrapped("%s", game_.empty() && user_mods_dir_.empty()
+                                     ? "The game was not found, so neither were its mods (the Play screen says where "
+                                       "the launcher looked)."
+                                     : ("No mods were found" + (game_.empty() ? "" : " in " + mods_dir_) +
+                                        (user_mods_dir_.empty() ? "" : "; data mods (texture packs) go in " +
+                                                                           user_mods_dir_) + ".")
+                                           .c_str());
         return;
     }
     ModValues values(&settings_.doc);
+    // The list: the mods that are not usable data mods (built-in ones, broken ones) as found, then the data mods in
+    // their priority order.
+    std::vector<const ModManifest *> list;
+    for (const ModManifest &m : mods_) {
+        if (m.kind != "data" || !m.error.empty()) {
+            list.push_back(&m);
+        }
+    }
+    const std::vector<std::string> order = values.data_order(data_mod_ids());
+    for (const std::string &id : order) {
+        list.push_back(find_mod(id));
+    }
     const float list_w = 230 * ImGui::GetStyle().FontScaleDpi;
     ImGui::BeginChild("modlist", ImVec2(list_w, 0), ImGuiChildFlags_Borders);
     ImGui::BeginDisabled(!settings_.writable());
-    for (const ModManifest &m : mods_) {
+    for (const ModManifest *mp : list) {
+        const ModManifest &m = *mp;
+        if (!order.empty() && &m == find_mod(order[0])) {
+            ImGui::SeparatorText("Data mods");
+            ImGui::SetItemTooltip("Texture packs, the first in this list winning where two replace the same "
+                                  "texture (Earlier/Later on a mod's page). In %s",
+                                  user_mods_dir_.c_str());
+        }
         ImGui::PushID(m.id.c_str());
         bool on = values.enabled(m.id);
         ImGui::BeginDisabled(!m.error.empty());
@@ -1098,6 +1141,39 @@ void App::draw_mods() {
     draw_capture_popup();
 }
 
+// A data mod's page below its name and switch: what it holds, its priority among the data mods, where it is.
+void App::draw_data_mod(const ModManifest &m, ModValues &values) {
+    const std::vector<std::string> ids = data_mod_ids();
+    const std::vector<std::string> order = values.data_order(ids);
+    const size_t at = (size_t)(std::find(order.begin(), order.end(), m.id) - order.begin());
+    ImGui::Spacing();
+    ImGui::TextWrapped("A texture pack: the PNGs in %s/ replace the game's textures (%s filtering). Only the GPU "
+                       "renderer (Video) draws them.",
+                       m.textures_dir.c_str(), m.textures_filter.c_str());
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Priority %zu of %zu", at + 1, order.size());
+    ImGui::SetItemTooltip("Where two data mods replace the same texture, the earlier one wins.");
+    ImGui::BeginDisabled(!settings_.writable());
+    ImGui::SameLine();
+    ImGui::BeginDisabled(at == 0);
+    if (ImGui::Button("Earlier")) {
+        values.move(ids, m.id, -1);
+        dirty_ = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(at + 1 >= order.size());
+    if (ImGui::Button("Later")) {
+        values.move(ids, m.id, 1);
+        dirty_ = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("%s", m.dir.c_str());
+    ImGui::PopStyleColor();
+}
+
 void App::draw_mod(const ModManifest &m) {
     ModValues values(&settings_.doc);
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
@@ -1124,6 +1200,10 @@ void App::draw_mod(const ModManifest &m) {
         dirty_ = true;
     }
     ImGui::EndDisabled();
+    if (m.kind == "data") {
+        draw_data_mod(m, values);
+        return;
+    }
     if (m.options.empty()) {
         return;
     }

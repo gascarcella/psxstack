@@ -27,13 +27,16 @@ struct GameProbe {
     } result = Result::Failed;
     std::string message;
 };
+// The check runs with --mods-dir as the game will (the data mods' ids are then known); a game without --mods-dir is too
+// old (NoConfig).
 GameProbe game_probe(const std::string &game, const std::string &settings_path);
 
-// The command line: `game --config FILE --crash-dir <dir>/crashes`.
+// The command line: `game --config FILE --crash-dir <dir>/crashes --mods-dir <dir>/mods`.
 std::vector<std::string> game_args(const std::string &game, const SettingsFile &settings);
 // The game's crash directory and the launcher's log directory under the settings directory (docs/LAUNCHER.md
 // "Crash report").
 std::string game_crash_dir(const std::string &settings_dir);
+std::string game_mods_dir(const std::string &settings_dir); // the user's data mods (docs/LAUNCHER.md "Data mods")
 std::string game_log_dir(const std::string &settings_dir);
 constexpr const char *GAME_LOG_FILE = "last-run.log";
 constexpr const char *GAME_LOG_FILE_PREVIOUS = "last-run.1.log";

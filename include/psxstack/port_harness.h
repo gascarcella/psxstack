@@ -192,6 +192,14 @@ void port_mods_start(int active);
 void port_mods_frame(void);
 void port_mods_print(FILE *f, int level);
 void port_mods_print_registry(FILE *f);
+/* The data mods (mods_data.c; docs/LAUNCHER.md "Data mods", SDL build): port_mods_data_scan reads DIR/<id>/mod.json
+ * (--mods-dir, before port_mods_settings, which then knows their ids); port_mods_data_settings their `enabled` (a bad
+ * value fails the settings) and the settings' `mod_order`; port_mods_data_start loads the enabled ones in that order
+ * (`active` 0: none). */
+int port_mods_data_scan(const char *dir);
+int port_mods_data_known(const char *id);
+void port_mods_data_settings(const struct PortJson *mods, const struct PortJson *order);
+void port_mods_data_start(int active);
 
 /* ---- debug.c: the debug channel (`--debug SOCKET`; the protocol is the file's header comment) ----
  * port_debug_open: the Unix socket at `path` (fatal when it cannot listen); sets port_debug_active. port_debug_frame

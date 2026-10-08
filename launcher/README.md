@@ -48,7 +48,7 @@ The first of these that applies:
    set), `%APPDATA%\<id>\` on Windows.
 
 The status bar and the Settings screen show the directory and which rule chose it. The directory holds
-`settings.json`, the memory cards and, later, `mods/`.
+`settings.json`, the memory cards and `mods/` (data mods: texture packs; docs/LAUNCHER.md "Data mods").
 
 ## settings.json
 
@@ -130,8 +130,13 @@ description, then its options, the ungrouped ones first and then each `group` un
 `bool` a checkbox; `int` and `float` a slider between `min` and `max` (a number field with `step` when either is
 missing; floats are rounded to `step`); `enum` a list of the values' labels; `binding` the chips and the prompt of the
 hotkeys (any key, gamepad input or chord). An option's `description` is its tooltip; `applies: restart` is marked. A
-manifest that cannot be used (not JSON, another schema, an `id` that is not its directory's name, a bad option, a
-`kind` other than `builtin` until data mods exist) is listed with the reason and cannot be switched on.
+manifest that cannot be used (not JSON, another schema, an `id` that is not its directory's name, a bad option, an
+unknown `kind`) is listed with the reason and cannot be switched on.
+
+The settings directory's `mods/` holds the user's data mods (docs/LAUNCHER.md "Data mods": texture packs). They are
+listed after the built-in mods under "Data mods", in their priority order; a data mod's page shows what it is, its
+priority with **Earlier** and **Later** (which write `mod_order`, the whole list) and its directory. The game gets
+`--mods-dir <settings dir>/mods`.
 
 In `settings.json` (`mods.<mod id>`, docs/LAUNCHER.md "Mods section"): `"enabled": true` when on; an option is written
 only when it differs from the manifest's default (setting it back, or **Default**, removes it); a mod turned off keeps

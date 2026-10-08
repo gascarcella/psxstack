@@ -46,6 +46,10 @@ struct ModPreset {
 struct ModManifest {
     std::string dir;   // its directory
     std::string id, name, version, description, kind;
+    bool user = false; // from the settings directory's mods/ (docs/LAUNCHER.md "Data mods"), not beside the game
+    // A data mod's "textures" (a texture pack): its directory and filter.
+    bool textures = false;
+    std::string textures_dir = "textures", textures_filter = "linear";
     int requires_port = 0;
     std::vector<ModOption> options;
     std::vector<ModPreset> presets;
@@ -56,8 +60,8 @@ struct ModManifest {
 
 // Reads <dir>/mod.json. Never fails: problems go to `error`.
 ModManifest mod_manifest_load(const std::string &dir);
-// Every <mods_dir>/<id>/mod.json, sorted by name.
-std::vector<ModManifest> mods_scan(const std::string &mods_dir);
+// Every <mods_dir>/<id>/mod.json, sorted by name. `user`: the settings directory's mods/, where only data mods belong.
+std::vector<ModManifest> mods_scan(const std::string &mods_dir, bool user = false);
 
 // The user's values in the settings document (`doc` = the whole settings file).
 class ModValues {
@@ -81,6 +85,11 @@ public:
     // A preset's values: whether every one is the effective value, and setting them all.
     bool preset_active(const ModManifest &m, const ModPreset &p) const;
     void apply_preset(const ModManifest &m, const ModPreset &p);
+    // The data mods' priority (the settings' mod_order, docs/LAUNCHER.md "Data mods"): `ids` in the order the game
+    // loads them, those mod_order names first, the others after by id. move() shifts one up (delta < 0) or down and
+    // writes the whole order, keeping ids mod_order names that are not in `ids` at its end.
+    std::vector<std::string> data_order(const std::vector<std::string> &ids) const;
+    void move(const std::vector<std::string> &ids, const std::string &id, int delta);
 
 private:
     const Json *mod(const std::string &id) const;
