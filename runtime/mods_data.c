@@ -126,12 +126,12 @@ void port_mods_data_settings(const PortJson *mods, const PortJson *order) {
         DataMod *m = &data_mods[i];
         const PortJson *s = port_json_get(mods, m->id), *on = port_json_get(s, "enabled");
         char where[128];
-        snprintf(where, sizeof(where), "mods.%s", m->id);
+        snprintf(where, sizeof(where), "mods.%.63s", m->id); /* id is char[64]: gcc 13 -O3 cannot see the bound */
         if (s != NULL && s->type != PORT_JSON_OBJECT) {
             port_settings_fail(where, "an object ({ \"enabled\": ... })");
         }
         if (on != NULL && on->type != PORT_JSON_BOOL) {
-            snprintf(where, sizeof(where), "mods.%s.enabled", m->id);
+            snprintf(where, sizeof(where), "mods.%.63s.enabled", m->id);
             port_settings_fail(where, "true or false");
         }
         m->enabled = on != NULL && on->boolean;
