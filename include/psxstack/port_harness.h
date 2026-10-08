@@ -121,6 +121,9 @@ int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */
 void port_video_gpu_headless(void);
+/* --dump-textures DIR (SDL build): every texture a primitive samples, the first time, as a PNG named by its key
+ * (docs/RUNTIME.md "Texture dump"); 0 when DIR cannot be made or the build has no SDL. */
+int port_video_dump_textures(const char *dir);
 /* The hardware renderer's picture now (the display at its internal scale) as a PPM: the debug channel's screenshot
  * with "renderer": "gpu". 1 written, 0 the file cannot be written, -1 no GPU renderer in this run. */
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h);

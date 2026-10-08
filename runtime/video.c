@@ -49,6 +49,7 @@
 #include <SDL3/SDL.h>
 
 #include "render_gpu.h"
+#include "render_gpu_textures.h"
 #endif
 
 #define VIDEO_MAX_W 640 /* screen pixels: the GPU's widest mode */
@@ -452,6 +453,7 @@ void port_video_quit(void) {
     if (video_checks > 0) {
         port_log("gpu vram check: %ld checks, %ld with differences", video_checks, video_checks_failed);
     }
+    render_gpu_tex_close();
     render_gpu_close(); /* the device too: destroyed before SDL_Quit, its claim before the window */
     if (video_texture != NULL) {
         SDL_DestroyTexture(video_texture);
@@ -544,6 +546,10 @@ void port_video_gpu_headless(void) {
     render_gpu_set_filter(&video_filter);
 }
 
+int port_video_dump_textures(const char *dir) {
+    return render_gpu_tex_dump_open(dir);
+}
+
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h) {
     u32 *buf;
     int ok, pw, s = render_gpu_scale();
@@ -568,6 +574,11 @@ int port_video_available(void) {
 }
 
 void port_video_gpu_headless(void) {
+}
+
+int port_video_dump_textures(const char *dir) {
+    (void)dir;
+    return 0;
 }
 
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h) {
@@ -659,6 +670,7 @@ void port_video_frame(void) {
     int i, shot = 0, present;
 #ifdef PSXSTACK_SDL
     render_gpu_frame(); /* the rasteriser's units of this vsync, presented or not: its target is state */
+    render_gpu_tex_frame();
     video_vram_check();
 #endif
     for (i = 0; i < video_shot_count; i++) {

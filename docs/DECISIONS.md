@@ -133,3 +133,10 @@ textures sit beside the buffers), with full-screen untextured 2D stretched. The 
 and the software picture do not change; the VRAM part stays exact. Rejected: squeezing the GTE's projection (it
 changes what the game draws and stretches every 2D sprite). The game names the scenes (`port_video_widescreen`); a
 scene whose 2D ends at the screen's edge stays 4:3. The first game's issue #71 has the measurements.
+
+## Texture keys by content, SHA-1, per VRAM word (2026-10-08)
+Texture replacement (docs/PORT.md "Texture replacement") names a texture by the transfer that loaded it and by its
+CLUT's content, never by VRAM position: the first game loads one image at up to 11 places and reuses places for
+others. The hash is SHA-1 truncated to 64 bits (`runtime/sha1.c`, no new third-party code; hashing all the first
+game's transfers costs nothing measurable). Ownership is tracked per VRAM word, not per transfer, because 30% of the
+first game's textured draws sample the intact rest of a transfer that a later one partly covered.

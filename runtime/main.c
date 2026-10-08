@@ -101,6 +101,8 @@ static void usage(const char *argv0) {
             "                   crt[:scanlines=,mask=,curvature=] (video.crt's values otherwise; default 50, 30, 0);\n"
             "                   the window and --gpu-screenshot's @WxH pictures; the software renderer shows the\n"
             "                   picture unfiltered (overrides video.filter and video.crt)\n"
+            "  --dump-textures DIR  every texture the game samples, the first time, as a PNG named by its key, and\n"
+            "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
             "  --spu-trace FILE every SPU write and DMA block, per vsync (tests/sound's trace format)\n"
             "  --wav FILE       the audio output as a 44.1 kHz stereo WAV (any build, headless too)\n"
             "  --mute           no audio device in window mode\n"
@@ -136,6 +138,7 @@ int main(int argc, char **argv) {
     const char *disc = NULL, *script = NULL, *log = NULL, *record = NULL, *speed = NULL;
     const char *memcard[2] = { NULL, NULL };
     const char *spu_trace = NULL, *wav = NULL, *debug = NULL, *crash_dir = NULL;
+    const char *dump_textures = NULL;
     int mute = 0, debug_hold = 0;
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
@@ -296,6 +299,8 @@ int main(int argc, char **argv) {
                 return 64;
             }
             gpu_shots = 1;
+        } else if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
+            dump_textures = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -352,6 +357,10 @@ int main(int argc, char **argv) {
     }
     if (gpu_shots && !port_video_available()) {
         fprintf(stderr, "port: --gpu-screenshot: this build has no GPU renderer: configure with -DPSXSTACK_SDL=ON\n");
+        return 64;
+    }
+    if (dump_textures != NULL && !port_video_available()) {
+        fprintf(stderr, "port: --dump-textures: this build has no texture dump: configure with -DPSXSTACK_SDL=ON\n");
         return 64;
     }
     port_video_set_renderer(gpu ? "gpu" : "software");
@@ -412,6 +421,9 @@ int main(int argc, char **argv) {
         port_input_init(input_test);
     } else {
         port_video_gpu_headless(); /* --gpu-screenshot: the rasteriser draws from the first frame */
+    }
+    if (dump_textures != NULL && !port_video_dump_textures(dump_textures)) {
+        port_exit(1, "--dump-textures: the directory cannot be made");
     }
     if (debug != NULL) {
         /* a driven run: the tool decides when it ends, and may hold the game paused for as long as it likes */

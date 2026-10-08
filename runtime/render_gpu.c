@@ -51,6 +51,7 @@
 #include "render_gpu_internal.h"
 #include "render_gpu_wide.h"
 #include "render_gpu_subpixel.h"
+#include "render_gpu_textures.h"
 
 #include "render_gpu_shaders.h"
 
@@ -693,6 +694,7 @@ static void raster_event(const GpuEvent *ev) {
     if (r.cols > VRAM_W) {
         render_gpu_wide_before(ev); /* a display buffer gets its wide canvas (render_gpu_wide.c) */
     }
+    render_gpu_tex_event(ev); /* the texture keys (render_gpu_textures.c), when switched on */
     switch (ev->kind) {
     case GPU_EV_TRIANGLE:
         raster_triangle(ev);
@@ -778,7 +780,7 @@ void render_gpu_unit_mirror(int sx, int sy, int dx, int dy, int w, int h) {
 
 static void render_release(void) {
     if (r.raster) {
-        gpu_set_listener(NULL);
+        gpu_set_listener(render_gpu_tex_active() ? render_gpu_tex_event : NULL);
         render_subpixel_stop();
     }
     if (r.device != NULL) {
