@@ -61,6 +61,7 @@ static int video_shot_count;
 static long video_converted_frame = -1; /* the frame video_pixels was converted at (the debug channel's screenshot) */
 static int video_gpu_wanted;            /* --renderer gpu / video.renderer "gpu" */
 static int video_internal_scale = 1;    /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
+static PortFilter video_filter;         /* --filter / video.filter: the hardware renderer's present (render_gpu_present.c) */
 static struct {
     long frame;
     int w, h; /* the output's size; 0: the image's own */
@@ -175,6 +176,10 @@ void port_video_set_internal_scale(int scale) {
     video_internal_scale = scale < 1 ? 1 : scale > 8 ? 8 : scale;
 }
 
+void port_video_set_filter(const PortFilter *f) {
+    video_filter = *f;
+}
+
 int port_video_gpu_screenshot_add(const char *spec) {
     char *end;
     long frame = strtol(spec, &end, 0);
@@ -249,6 +254,12 @@ void port_video_open(int scale, int fullscreen) {
         } else if (!render_gpu_raster_start(video_internal_scale, why, sizeof(why))) {
             port_log("renderer: gpu: no rasteriser (%s); the software image through SDL_GPU", why);
         }
+    }
+    if (video_gpu) {
+        render_gpu_set_filter(&video_filter);
+    } else if (video_filter.kind != PORT_FILTER_NONE) {
+        port_log("filter: %s needs the GPU renderer (--renderer gpu); the picture is unfiltered",
+                 port_filter_names[video_filter.kind]);
     }
     if (!video_gpu) {
         video_renderer = SDL_CreateRenderer(video_window, NULL);
@@ -497,6 +508,7 @@ void port_video_gpu_headless(void) {
         port_log("renderer: gpu: no rasteriser (%s); the software image through SDL_GPU", why);
     }
     port_log("renderer: gpu for the screenshots (%s)", render_gpu_describe());
+    render_gpu_set_filter(&video_filter);
 }
 
 int port_video_gpu_screenshot_now(const char *path, int *w, int *h) {

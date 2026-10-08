@@ -94,6 +94,9 @@ DXC that cannot sign it (no `libdxil.so` beside it). `--gpu-screenshot FRAME[@Wx
 of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
 would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DRIVER=offscreen`), and logs the shot as
 skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
+`--filter NAME` (`video.filter`) is the hardware renderer's present filter: `none` (the default: the picture's pixels as
+whole blocks) or `sharp` (sharp bilinear); it applies to the window and to `--gpu-screenshot`'s `@WxH` pictures, and a
+software-renderer run logs that its picture stays unfiltered (docs/PORT.md "Rendering").
 `<PREFIX>_PORT_PRESENT_READBACK=FRAME:PATH` reads SDL_Renderer's output back (a game's renderer test compares the two
 present paths). `<PREFIX>_PORT_GPU_VRAM_CHECK=N` compares the rasteriser's whole target with the software VRAM every N
 vsyncs and logs any difference (with `--renderer gpu --window`, or `--gpu-screenshot` headless).

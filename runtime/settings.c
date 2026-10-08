@@ -4,7 +4,8 @@
  *   { "schema": 1,
  *     "disc":     { "path": "dw2003.cue", "sha1": "457cb233..." },          none / none
  *     "video":    { "window": true, "scale": 2, "fullscreen": false, "refresh": 50, "renderer": "software",
- *                   "internal_scale": 1 },
+ *                   "internal_scale": 1,
+ *                   "filter": "none" },
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off
@@ -142,6 +143,7 @@ void port_settings_load(const char *path) {
                                             "input", "mods", "launcher", NULL };
     static const char *const disc_keys[] = { "path", "sha1", NULL };
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
+                                              "filter",
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
     PortSettings *s = &port_settings;
@@ -219,6 +221,10 @@ void port_settings_load(const char *path) {
             s->gpu = v->string[0] == 'g';
         }
         settings_int(obj, "video", "internal_scale", 1, 8, &s->internal_scale);
+        if ((v = settings_member(obj, "video", "filter", PORT_JSON_STRING)) != NULL &&
+            (s->filter = port_filter_from_name(v->string)) < 0) {
+            port_settings_fail("video.filter", "%s, not \"%s\"", port_filter_choices(1), v->string);
+        }
     }
     if ((obj = settings_member(root, "", "audio", PORT_JSON_OBJECT)) != NULL) {
         settings_unknown(obj, "audio", audio_keys);
@@ -248,11 +254,15 @@ void port_settings_print(FILE *f, const PortSettings *s) {
     fputs(",\n    \"sha1\": ", f);
     port_json_write_string(f, s->disc_sha1 != NULL ? s->disc_sha1 : "");
     fprintf(f, "\n  },\n  \"video\": {\n    \"window\": %s,\n    \"scale\": %d,\n    \"fullscreen\": %s,\n"
-               "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d\n  },\n"
+               "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d,\n"
+               "    \"filter\": \"%s\"\n"
+               "  },\n"
                "  \"audio\": {\n    \"mute\": %s\n  },\n"
                "  \"memcard1\": ",
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
-            s->gpu ? "gpu" : "software", s->internal_scale, s->mute ? "true" : "false");
+            s->gpu ? "gpu" : "software", s->internal_scale,
+            port_filter_names[s->filter],
+            s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);
     settings_print_path(f, s->memcard[1]);

@@ -9,6 +9,7 @@
 #ifdef PSXSTACK_SDL
 #include <SDL3/SDL.h>
 
+#include "port_harness.h"
 #include "port_runtime.h"
 
 /* The image's rectangle (x, y, w, h) in an output of ow x oh pixels: video.c's 4:3 integer-scaled placement. */
@@ -45,6 +46,10 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
 int render_gpu_read_vram(u16 *out);
 /* The target set to the VRAM as it is now (tests/host/gpu_hw_replay.py, after a case that differed). */
 void render_gpu_raster_resync(void);
+/* The present's filter (port_harness.h PortFilter; render_gpu_present.c) for the window and for --gpu-screenshot's
+ * @WxH pictures; the picture itself (no @WxH, the debug channel's) stays unfiltered. A filter whose pipelines cannot
+ * be created is logged and the present stays nearest. */
+void render_gpu_set_filter(const PortFilter *f);
 /* Releases everything, the window's claim, then the device (before SDL_Quit: video.c port_video_quit). */
 void render_gpu_close(void);
 #endif

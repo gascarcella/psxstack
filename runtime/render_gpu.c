@@ -44,6 +44,7 @@
 #include "port_harness.h"
 #include "psyq_internal.h"
 #include "render_gpu.h"
+#include "render_gpu_internal.h"
 
 #include "render_gpu_shaders.h"
 
@@ -710,6 +711,9 @@ static void render_release(void) {
         }
     }
     if (r.device != NULL) {
+        render_present_release(r.device); /* the filter's pipelines (render_gpu_present.c) */
+    }
+    if (r.device != NULL) {
         SDL_GPUTexture *textures[] = { r.target, r.image, r.vram_target, r.background, r.mirror };
         SDL_GPUTransferBuffer *buffers[] = { r.download, r.upload, r.staging_buf, r.vram_download };
         SDL_GPUGraphicsPipeline *pipes[] = { r.pipe_off, r.pipe_swap, r.pipe_vram_off, r.pipe_vram_swap,
@@ -749,9 +753,9 @@ static void render_release(void) {
     memset(&r, 0, sizeof(r));
 }
 
-/* A shader from its SPIR-V or its DXIL (render_gpu_shaders.h's RENDER_SHADER), whichever the device takes. */
-static SDL_GPUShader *render_shader(const unsigned char *spv, size_t spv_size, const unsigned char *dxil,
-                                    size_t dxil_size, SDL_GPUShaderStage stage, int samplers, int uniforms) {
+/* A shader from its SPIR-V or its DXIL (render_gpu_internal.h's RENDER_SHADER), whichever the device takes. */
+SDL_GPUShader *render_shader(const unsigned char *spv, size_t spv_size, const unsigned char *dxil, size_t dxil_size,
+                             SDL_GPUShaderStage stage, int samplers, int uniforms) {
     SDL_GPUShaderCreateInfo ci;
     memset(&ci, 0, sizeof(ci));
     ci.code = r.dxil ? dxil : spv;
@@ -764,8 +768,7 @@ static SDL_GPUShader *render_shader(const unsigned char *spv, size_t spv_size, c
     return SDL_CreateGPUShader(r.device, &ci);
 }
 
-static SDL_GPUGraphicsPipeline *render_pipeline(SDL_GPUShader *vert, SDL_GPUShader *frag,
-                                                SDL_GPUTextureFormat format) {
+SDL_GPUGraphicsPipeline *render_pipeline(SDL_GPUShader *vert, SDL_GPUShader *frag, SDL_GPUTextureFormat format) {
     SDL_GPUGraphicsPipelineCreateInfo ci;
     SDL_GPUColorTargetDescription target;
     memset(&ci, 0, sizeof(ci));
@@ -1179,18 +1182,16 @@ static int render_upload(SDL_GPUCommandBuffer *cb, const u32 *pixels, int w, int
 }
 
 /* The present's render pass into `target`: black, then the picture at `rect`: the w x h image, or (vram_xy) the w x h
- * display at that corner of the VRAM target, at the internal scale. */
+ * display at that corner of the VRAM target, at the internal scale; `filtered`: through the present filter when one
+ * is set (render_gpu_present.c), else nearest. */
 static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GPUGraphicsPipeline *pipe, int w, int h,
-                        const int *vram_xy, const int rect[4]) {
+                        const int *vram_xy, const int rect[4], int filtered) {
     SDL_GPUColorTargetInfo ct;
     SDL_GPURenderPass *pass;
     SDL_GPUTextureSamplerBinding bind;
     SDL_Rect scissor;
-    struct {
-        Sint32 dst[4];
-        Sint32 src[4];
-        Sint32 disp[4];
-    } u;
+    RenderPresentView u; /* dst, src, disp (cut) as present*.frag.hlsl read them; param for a filter */
+    SDL_GPUGraphicsPipeline *filter = filtered ? render_present_pipeline(target != r.target) : NULL;
 
     memset(&ct, 0, sizeof(ct));
     ct.texture = target;
@@ -1199,7 +1200,7 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
     ct.clear_color.a = 1.0f;
     pass = SDL_BeginGPURenderPass(cb, &ct, 1, NULL);
     if (rect[2] > 0 && rect[3] > 0) {
-        SDL_BindGPUGraphicsPipeline(pass, pipe);
+        SDL_BindGPUGraphicsPipeline(pass, filter != NULL ? filter : pipe);
         scissor.x = rect[0];
         scissor.y = rect[1];
         scissor.w = rect[2];
@@ -1220,11 +1221,18 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
             u.src[1] = h * r.scale;
             u.src[2] = VRAM_W * r.scale;
             u.src[3] = VRAM_H * r.scale;
-            u.disp[0] = vram_xy[0] & 1023;
-            u.disp[1] = vram_xy[1] & 511;
-            u.disp[2] = r.scale;
+            u.cut[0] = vram_xy[0] & 1023;
+            u.cut[1] = vram_xy[1] & 511;
+            u.cut[2] = r.scale;
         }
-        SDL_PushGPUFragmentUniformData(cb, 0, &u, vram_xy != NULL ? sizeof(u) : sizeof(Sint32) * 8);
+        if (filter != NULL) {
+            u.cut[3] = h; /* the display's lines */
+            render_present_params(&u);
+        }
+        SDL_PushGPUFragmentUniformData(cb, 0, &u,
+                                       filter != NULL    ? sizeof(u)
+                                       : vram_xy != NULL ? sizeof(Sint32) * 12
+                                                         : sizeof(Sint32) * 8);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     }
     SDL_EndGPURenderPass(pass);
@@ -1285,7 +1293,7 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
                                                         : (r.pipe_swap ? r.pipe_swap : r.pipe_off);
         dest((int)sw, (int)sh, rect);
         render_clip(rect, (int)sw, (int)sh);
-        render_draw(cb, swap, pipe, w, h, vram_xy, rect);
+        render_draw(cb, swap, pipe, w, h, vram_xy, rect, 1);
     }
     if (!SDL_SubmitGPUCommandBuffer(cb)) {
         goto failed;
@@ -1339,7 +1347,7 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
         dest(ow, oh, rect);
         render_clip(rect, ow, oh);
     }
-    render_draw(cb, r.target, vram_xy != NULL ? r.pipe_vram_off : r.pipe_off, w, h, vram_xy, rect);
+    render_draw(cb, r.target, vram_xy != NULL ? r.pipe_vram_off : r.pipe_off, w, h, vram_xy, rect, dest != NULL);
     memset(&region, 0, sizeof(region));
     region.texture = r.target;
     region.w = (Uint32)ow;
@@ -1365,6 +1373,19 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
     memcpy(out, map, (size_t)ow * (size_t)oh * 4); /* B, G, R, A bytes: 0xAARRGGBB words, A = 255 */
     SDL_UnmapGPUTransferBuffer(r.device, r.download);
     return 1;
+}
+
+void render_gpu_set_filter(const PortFilter *f) {
+    char why[256];
+    if (r.device == NULL) {
+        return;
+    }
+    if (!render_present_set(r.device, r.vert, r.window != NULL ? r.swap_format : SDL_GPU_TEXTUREFORMAT_INVALID, f, why,
+                            sizeof(why))) {
+        port_log("renderer: gpu: filter %s unavailable (%s); none", port_filter_names[f->kind], why);
+    } else if (f->kind != PORT_FILTER_NONE) {
+        port_log("renderer: gpu: filter %s", port_filter_names[f->kind]);
+    }
 }
 
 void render_gpu_close(void) {
