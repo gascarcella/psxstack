@@ -100,7 +100,8 @@ would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DR
 skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
 `--filter NAME[:KEY=V,...]` (`video.filter`, `video.crt`) is the hardware renderer's present filter: `none` (the
 default: the picture's pixels as whole blocks), `sharp` (sharp bilinear), `scanlines[:scanlines=0..100]` or
-`crt[:scanlines=,mask=,curvature=]` (a parameter not named keeps `video.crt`'s value; defaults 50, 30, 0); it applies to
+`crt[:scanlines=,mask=,curvature=]` (a parameter not named keeps `video.crt`'s value; defaults 50, 30, 0) or `smooth`
+(xBR on the 1x software image, whatever the internal scale); it applies to
 the window and to `--gpu-screenshot`'s `@WxH` pictures, and a software-renderer run logs that its picture stays
 unfiltered (docs/PORT.md "Rendering").
 **Widescreen** (docs/PORT.md "Rendering"): when a game mod calls `port_video_widescreen_enable` (from its start) and

@@ -100,8 +100,8 @@ void port_video_set_subpixel(int mode);        /* --subpixel / video.subpixel: 0
  * renderer draws the picture into the window through it (render_gpu_present.c); the software renderer shows the
  * picture unfiltered and says so once. PORT_FILTER_NONE (the default) is the integer nearest mapping, the picture pixel
  * for pixel. The parameters (0..100) are video.crt's: scanlines for `scanlines` and `crt`, mask and curvature for
- * `crt`. */
-enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_SCANLINES, PORT_FILTER_CRT, PORT_FILTER_COUNT };
+ * `crt`. `smooth` filters the 1x software image whatever the internal scale. */
+enum { PORT_FILTER_NONE, PORT_FILTER_SHARP, PORT_FILTER_SCANLINES, PORT_FILTER_CRT, PORT_FILTER_SMOOTH, PORT_FILTER_COUNT };
 typedef struct PortFilter {
     int kind;      /* PORT_FILTER_* */
     int scanlines; /* the lines' strength, 0..100 (default 50) */

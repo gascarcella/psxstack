@@ -7,11 +7,11 @@
 
 #include "port_harness.h"
 
-const char *const port_filter_names[PORT_FILTER_COUNT] = { "none", "sharp", "scanlines", "crt" };
+const char *const port_filter_names[PORT_FILTER_COUNT] = { "none", "sharp", "scanlines", "crt", "smooth" };
 
 /* The parameters a filter takes (`--filter NAME:KEY=V`): a bit per entry of keys[]. */
 static const char *const keys[] = { "scanlines", "mask", "curvature" };
-static const unsigned takes[PORT_FILTER_COUNT] = { 0, 0, 1, 7 };
+static const unsigned takes[PORT_FILTER_COUNT] = { 0, 0, 1, 7, 0 };
 
 static int *filter_param(PortFilter *f, int key) {
     return key == 0 ? &f->scanlines : key == 1 ? &f->mask : &f->curvature;
