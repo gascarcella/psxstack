@@ -149,6 +149,11 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
   executable's), from the game's own tool (dw2003recomp: `tools/port_inputs.py`, which knows the tier list,
   `config/wstag_c.txt` and the stage tables).
 - `MAIN_UNIT`: the unit whose `main` becomes `game_main`.
+  Every unit is also compiled with `include/psxstack/psyq_names.h` forced in (`-include`): the Psy-Q functions whose
+  names are also the host's (LIBAPI's `open`, `read`, `write`, `lseek`, `close`, `EnterCriticalSection`, …) are
+  renamed to the shim's `psyq_api_*` by object-like macros, so a game's call reaches the shim and the runtime, SDL and
+  libc keep the real ones (DECISIONS "LIBAPI's clashing names"). A game's own identifier of one of those names (a
+  struct member, a local) is renamed too, harmlessly, as the macros are object-like.
 - `OVERLAYS`: a file of `<NAME>\t<tier>\t<file id>\t<symbols file or ->` lines: every overlay, its slot (1-based), the
   file ID the game loads it by, and the `name = 0xADDR; // type:func` file of its PS1 functions (the overlay address
   tables). Optional for a program without overlays.
