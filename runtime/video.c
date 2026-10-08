@@ -175,6 +175,14 @@ void port_video_set_internal_scale(int scale) {
     video_internal_scale = scale < 1 ? 1 : scale > 8 ? 8 : scale;
 }
 
+void port_video_set_subpixel(int on) {
+#ifdef PSXSTACK_SDL
+    render_gpu_set_subpixel(on);
+#else
+    (void)on;
+#endif
+}
+
 int port_video_gpu_screenshot_add(const char *spec) {
     char *end;
     long frame = strtol(spec, &end, 0);

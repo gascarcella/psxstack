@@ -5,7 +5,8 @@
 // dithering, the low bits kept. Blending, dithering and the mask test read the background from a copy of the target
 // (`background`, refreshed by the renderer before every unit that reads it), never from the fixed-function blender
 // (DECISIONS "The hardware renderer"). Texels and CLUTs come from the copy of the software VRAM (`vram`, R16_UINT, at
-// scale 1), uploaded in stream order.
+// scale 1), uploaded in stream order. Above scale 1 a triangle at sub-pixel positions (F_PRECISE) takes its attributes
+// from float planes instead (`sp`, render_gpu_subpixel.c).
 Texture2D<uint> vram : register(t0, space2);
 Texture2D<float4> background : register(t1, space2);
 cbuffer Unit : register(b0, space3) {
@@ -23,6 +24,8 @@ cbuffer Unit : register(b0, space3) {
     int4 uvr;  // the triangle's vertices' u range (min, max) and v range (min, max)
     int4 cmin; // their colours' minimum (r, g, b), unused
     int4 cmax; // and maximum
+    float4 sp[7]; // F_PRECISE: [0] the origin (vertex a, VRAM pixels), [1] q, [2..6] u, v, r, g, b times q; each
+                  // (value at the origin, d/dx, d/dy, unused): render_gpu_subpixel.c
 };
 
 #define OP_TRIANGLE 0
@@ -39,6 +42,7 @@ cbuffer Unit : register(b0, space3) {
 #define F_CHECK_MASK 32
 #define F_PAIRS 64
 #define F_BACKGROUND 128
+#define F_PRECISE 256
 
 static const int dither_table[16] = { -4, 0, -3, 1, 2, -2, 3, -1, -3, 1, -4, 0, 3, -1, 2, -2 };
 
@@ -151,7 +155,21 @@ float4 main(float4 pos : SV_Position) : SV_Target0 {
 
     int3 c = col.rgb;
     int u = 0, v = 0;
-    if (op == OP_TRIANGLE) {
+    if (op == OP_TRIANGLE && (flags & F_PRECISE)) {
+        // Sub-pixel vertices (above scale 1 only): the float planes at the integer path's sample point, rounded to the
+        // nearest as it rounds, kept in the vertices' ranges.
+        float2 s = (float2(P) + 0.5) / float(N) - 0.5 - sp[0].xy;
+        float q = sp[1].x + sp[1].y * s.x + sp[1].z * s.y;
+        if (kind.w != 0) {
+            u = clamp(int(floor((sp[2].x + sp[2].y * s.x + sp[2].z * s.y) / q + 0.5)), uvr.x, uvr.y);
+            v = clamp(int(floor((sp[3].x + sp[3].y * s.x + sp[3].z * s.y) / q + 0.5)), uvr.z, uvr.w);
+        }
+        if (flags & F_GOURAUD) {
+            float3 cf = float3(sp[4].x + sp[4].y * s.x + sp[4].z * s.y, sp[5].x + sp[5].y * s.x + sp[5].z * s.y,
+                               sp[6].x + sp[6].y * s.x + sp[6].z * s.y) / q;
+            c = clamp(int3(floor(cf + 0.5)), cmin.rgb, cmax.rgb);
+        }
+    } else if (op == OP_TRIANGLE) {
         relative(P, N);
         if (kind.w != 0) {
             u = attr(a.z, nbu.z, nbu.w, N);

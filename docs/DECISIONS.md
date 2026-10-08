@@ -111,3 +111,8 @@ addresses, refused on a mismatch. A rebuild therefore invalidates every state; m
 point (the first game's battle: about 10 s headless), which is what its tests do. The heap is never in a state (the
 memory cards are media, like the disc); host state (the window, the audio device, files, caches) is the loading
 run's.
+
+## Sub-pixel vertices are on by default above internal scale 1 (2026-10-08)
+`video.subpixel` (`--subpixel`) defaults to `"on"`: a player who chooses a higher internal resolution expects the 3D
+not to wobble by whole 1x pixels, scale 1 and the software renderer cannot change, and the scale itself is already an
+opt-in (the first game's owner's decision, dw2003recomp #68). `"off"` keeps the PS1's whole pixels.
