@@ -287,6 +287,47 @@ typedef struct {
 
 typedef struct {
     u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    s16 x1, y1;
+    s16 x2, y2;
+    u32 pad;
+} LINE_F3;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    u8 r1, g1, b1, p1;
+    s16 x1, y1;
+    u8 r2, g2, b2, p2;
+    s16 x2, y2;
+    u8 r3, g3, b3, p3;
+    s16 x3, y3;
+    u32 pad;
+} LINE_G4;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    u8 u0, v0;
+    u16 clut;
+} SPRT_8;
+
+typedef SPRT_8 SPRT_16;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+} TILE_1;
+
+typedef TILE_1 TILE_8;
+typedef TILE_1 TILE_16;
+
+typedef struct {
+    u32 tag;
     u32 code[2];
 } DR_MODE;
 
@@ -321,6 +362,13 @@ typedef struct {
 #define setLineG2(p) setlen(p, 4), setcode(p, 0x50)
 #define setLineG3(p) setlen(p, 7), setcode(p, 0x58), ((p)->pad = 0x55555555)
 #define setTile(p) setlen(p, 3), setcode(p, 0x60)
+#define setLineF3(p) setlen(p, 5), setcode(p, 0x48), ((p)->pad = 0x55555555)
+#define setLineG4(p) setlen(p, 9), setcode(p, 0x5C), ((p)->pad = 0x55555555)
+#define setSprt8(p) setlen(p, 3), setcode(p, 0x74)
+#define setSprt16(p) setlen(p, 3), setcode(p, 0x7C)
+#define setTile1(p) setlen(p, 2), setcode(p, 0x68)
+#define setTile8(p) setlen(p, 2), setcode(p, 0x70)
+#define setTile16(p) setlen(p, 2), setcode(p, 0x78)
 
 void AddPrim(void *ot, void *p);
 s32 MargePrim(void *p0, void *p1);
@@ -337,6 +385,14 @@ void SetLineF2(LINE_F2 *p);
 void SetLineG2(LINE_G2 *p);
 void SetLineG3(LINE_G3 *p);
 void SetTile(TILE *p);
+void SetLineF3(LINE_F3 *p);
+void SetLineF4(LINE_F4 *p);
+void SetLineG4(LINE_G4 *p);
+void SetSprt8(SPRT_8 *p);
+void SetSprt16(SPRT_16 *p);
+void SetTile1(TILE_1 *p);
+void SetTile8(TILE_8 *p);
+void SetTile16(TILE_16 *p);
 void SetDrawArea(DR_AREA *p, RECT *r);
 void SetTexWindow(DR_TWIN *p, RECT *tw);
 void SetDrawStp(DR_STP *p, s32 pbw);

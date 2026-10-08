@@ -466,6 +466,10 @@ static void test_packets(void) {
         { "SetPolyG4", (void (*)(void *))SetPolyG4, 8, 0x38 },   { "SetPolyGT4", (void (*)(void *))SetPolyGT4, 12, 0x3C },
         { "SetLineF2", (void (*)(void *))SetLineF2, 3, 0x40 },   { "SetLineG2", (void (*)(void *))SetLineG2, 4, 0x50 },
         { "SetLineG3", (void (*)(void *))SetLineG3, 7, 0x58 },   { "SetTile", (void (*)(void *))SetTile, 3, 0x60 },
+        { "SetLineF3", (void (*)(void *))SetLineF3, 5, 0x48 },   { "SetLineF4", (void (*)(void *))SetLineF4, 6, 0x4C },
+        { "SetLineG4", (void (*)(void *))SetLineG4, 9, 0x5C },   { "SetSprt8", (void (*)(void *))SetSprt8, 3, 0x74 },
+        { "SetSprt16", (void (*)(void *))SetSprt16, 3, 0x7C },   { "SetTile1", (void (*)(void *))SetTile1, 2, 0x68 },
+        { "SetTile8", (void (*)(void *))SetTile8, 2, 0x70 },     { "SetTile16", (void (*)(void *))SetTile16, 2, 0x78 },
     };
     u8 buf[64], ref[64];
     size_t i;
@@ -478,6 +482,15 @@ static void test_packets(void) {
         ref[7] = prims[i].code;
         if (prims[i].code == 0x58) { /* LINE_G3's terminator */
             memset(ref + 28, 0x55, 4);
+        }
+        if (prims[i].code == 0x48) { /* LINE_F3's */
+            memset(ref + 20, 0x55, 4);
+        }
+        if (prims[i].code == 0x4C) { /* LINE_F4's */
+            memset(ref + 24, 0x55, 4);
+        }
+        if (prims[i].code == 0x5C) { /* LINE_G4's */
+            memset(ref + 36, 0x55, 4);
         }
         CHECK(memcmp(buf, ref, sizeof(buf)) == 0, "%s: len %u code %02x", prims[i].name, buf[3], buf[7]);
     }
@@ -492,6 +505,9 @@ static void test_packets(void) {
         h.code = 0x3C;
         CHECK(sizeof(POLY_GT4) == 52 && memcmp(&g, &h, sizeof(g)) == 0, "SetPolyGT4's bytes");
     }
+    CHECK(sizeof(LINE_F3) == 24 && sizeof(LINE_F4) == 28 && sizeof(LINE_G4) == 40 && sizeof(SPRT_8) == 16 &&
+              sizeof(SPRT_16) == 16 && sizeof(TILE_1) == 12 && sizeof(TILE_8) == 12 && sizeof(TILE_16) == 12,
+          "the new forms' sizes");
     /* SetSemiTrans/SetShadeTex: bits 1 and 0 of the command byte. */
     {
         POLY_FT4 q;
