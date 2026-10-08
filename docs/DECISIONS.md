@@ -117,6 +117,23 @@ run's.
 not to wobble by whole 1x pixels, scale 1 and the software renderer cannot change, and the scale itself is already an
 opt-in (the first game's owner's decision, dw2003recomp #68). `"off"` keeps the PS1's whole pixels.
 
+## Present filters: one pass, the default untouched (2026-10-08)
+The hardware renderer's filters (`--filter`, `video.filter`; docs/PORT.md "Rendering") are each one pixel shader in
+place of the present's own, with no intermediate target: their cost is the output's size times a few texel reads, and
+no memory at any internal scale. `none` keeps the present's nearest shaders, so the default picture cannot change. A
+filter must be continuous in its sampling position: many window sizes put pixel centres exactly on a boundary between
+source pixels or lines, where devices round differently (a two-line CRT kernel differed by 154 between NVIDIA and
+lavapipe; a continuous one by 2). The software renderer is never filtered: it stays the reference picture.
+
+## Widescreen: a wide canvas beside the VRAM (2026-10-08)
+A 16:9 picture comes from the hardware renderer, not from the game: a game that projects through the GTE already sends
+geometry past the display's edges (its culling has a margin) and the GPU clips it, so the renderer draws every unit of
+a display buffer a second time into a wider canvas in a strip of its target beside the VRAM (the PS1's VRAM has no room:
+textures sit beside the buffers), with full-screen untextured 2D stretched. The game's command stream, the frame hash
+and the software picture do not change; the VRAM part stays exact. Rejected: squeezing the GTE's projection (it
+changes what the game draws and stretches every 2D sprite). The game names the scenes (`port_video_widescreen`); a
+scene whose 2D ends at the screen's edge stays 4:3. The first game's issue #71 has the measurements.
+
 ## Texture keys by content, SHA-1, per VRAM word (2026-10-08)
 Texture replacement (docs/PORT.md "Texture replacement") names a texture by the transfer that loaded it and by its
 CLUT's content, never by VRAM position: the first game loads one image at up to 11 places and reuses places for

@@ -120,7 +120,9 @@ C the game compiles into the port alongside the runtime. It implements:
   version, options, `start`/`frame` callbacks and an optional `status` (text for the window title). Their logic and
   hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
   fast-forward (the one mod every game has) are the stack's. The manifests (`mods/<id>/mod.json`) sit in the game
-  repo and the build copies them next to the binary; `port_fast_forward_request()` lets a game mod ask for
+  repo and the build copies them next to the binary; `port_video_widescreen_enable()` and `port_video_widescreen(on)`
+  let a game mod show the scenes it names 16:9 (the hardware renderer's wide canvas: docs/PORT.md "Rendering");
+  `port_fast_forward_request()` lets a game mod ask for
   fast-forward.
 - **Save states:** `game_savestate(PortState *s)` names the adapter's own state that lives across vsyncs outside the
   game's sections (its mods' statics: a save in progress, a remainder carried between battles) with
