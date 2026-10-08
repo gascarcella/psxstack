@@ -33,7 +33,9 @@ jobs:
       - name: Every example validates
         run: for f in examples/*.game.json examples/hello/game.json; do python3 tools/game_gen.py "$f" --check; done
       - name: The Python compiles
-        run: python3 -m py_compile tools/*.py tools/mcp/*.py tests/*.py
+        run: python3 -m py_compile tools/*.py tools/mcp/*.py tools/replay/*.py tests/*.py
+      - name: The replay runners against a fake emulator (tests/replay_test.py)
+        run: python3 tests/replay_test.py
 
   hello:
     runs-on: ubuntu-24.04

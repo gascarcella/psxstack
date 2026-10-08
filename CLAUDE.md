@@ -49,7 +49,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `launcher/` | The launcher (C++, SDL3 + Dear ImGui): its own CMake project; every string from the game description (`launcher/src/brand.h`) |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`, documented inline), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (llvm-mingw) |
 | `windows/` | The game's Windows resource and manifest templates |
-| `tools/` | `game_gen.py` (`game.json` → header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate a game configures), `mcp/` (the debug channel's MCP server, client, symbols; `tools/mcp/README.md`); built tools under `tools/<name>` (gitignored) |
+| `tools/` | `game_gen.py` (`game.json` → header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate a game configures), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`; docs/RUNTIME.md "The replay runners"), `mcp/` (the debug channel's MCP server, client, symbols; `tools/mcp/README.md`); built tools under `tools/<name>` (gitignored) |
 | `scripts/` | `setup.sh`, `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`, the game description |
 | `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack) |
@@ -70,7 +70,8 @@ cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cm
 python3 tools/mcp/selftest.py                     # the MCP server offline, against fake_game.py
 psyq/check.sh --compile [-I DIR]...               # the shim alone with -Werror, against the stack's declarations (no game); --game-root DIR: its coverage of a game's Psy-Q needs
 python3 tools/psyq_decls.py --gen-include DIR --out DIR --game-header H... [-I DIR]... [-D X]...   # a game's Psy-Q declarations vs the stack's (a game runs it as its inventory's `decls`)
-python3 -m py_compile tools/*.py tools/mcp/*.py tests/*.py
+python3 tests/replay_test.py                      # the replay runners' driver and record logic against a fake emulator (no game)
+python3 -m py_compile tools/*.py tools/mcp/*.py tools/replay/*.py tests/*.py
 ```
 The game-side commands (the port's build, the probe, the replays, the MCP server with a real game) are in the game's
 own `CLAUDE.md`; dw2003recomp's `port/CMakeLists.txt` is the reference consumer.

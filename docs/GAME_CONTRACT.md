@@ -173,11 +173,35 @@ Everything comes from tracked files: a port configures from a fresh clone with n
 `PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`. The runtime's environment variables are `<PREFIX>_PORT_<NAME>`.
 
 ### 6. Tests
-The game owns its oracles: goldens, replays, the emulator harness, the M1 test. The stack provides the formats and the
-runners it can without a game: the layer-2 script grammar and the per-frame log and record shapes (`script.c`,
-`framelog.c`), the debug-channel gate, the renderer comparison, the settings round trip, the launcher self-test. A
-game's test that needs the stack's internals talks to the debug channel, not to the C. The stack's own smoke test
-is `examples/hello` (`tests/hello_test.py`): a Psy-Q program with no game and no disc.
+The game owns its oracles: goldens, replays, the emulator harness's configuration, the M1 test's configuration. The
+stack provides the formats and the runners (`tools/replay/`, docs/RUNTIME.md "The replay runners"): the layer-2
+script grammar and the step engine (`runtime/script.c` on the port, `tools/replay/run.lua` in the emulator: the same
+semantics frame for frame), the per-frame log and record shapes (`framelog.c`, docs/RUNTIME.md "The record"), the
+emulator driver (`tools/replay/emulator.py`: PCSX-Redux headless, the record and its cross-core comparison, `run`,
+`check` and `boot`), the port's replay test (`tools/replay/port_test.py`: two runs byte-identical, the `-m32` and
+sanitizer builds, the cross-core view against the expected file), the emulator installer (`tools/replay/redux.sh`),
+the debug-channel gate, the renderer comparison, the settings round trip, the launcher self-test. A game's test that
+needs the stack's internals talks to the debug channel, not to the C. The stack's own smoke test is `examples/hello`
+(`tests/hello_test.py`): a Psy-Q program with no game and no disc.
+
+What a game supplies to the replay runners (the first game: `tests/replay/replay.py`, `tests/replay/probes.lua`,
+`tests/port/run.py`):
+- **The probes**, a Lua chunk the emulator runs with the stack's memory accessors in scope (`PSXSTACK_REPLAY`):
+  `image_addr`/`image_size` (the checkpoint image: the bytes a checkpoint hashes, the same `game_state_image()`
+  gives on the port), `stage()`, `file()`, `map()`, `random_index()`, optionally `player_pos()` (the `walk` step),
+  `booted()` (the boot check) and `pad_held()`/`pad_pressed()` (verbose state lines). They mirror the adapter's
+  `game_state_*` probes, so a script means the same in the emulator and on the port.
+- **The drivers' configuration** (`emulator.configure()`, `port_test.configure()`): the repository root, `game.json`
+  (the id names the binary, `env_prefix` the environment variables `<PREFIX>_REPLAY_*` and `<PREFIX>_JOBS`, the first
+  slot's base `wait_stage`'s `word0`), where the emulator is installed, the disc image, the scripts and expected
+  files, the probes, the volatile ranges (the bytes of the image zeroed for the stable hash: the same ranges
+  `VOLATILE` gives the build), an optional retail BIOS, the paths whose last commit names the matching tree; for
+  the port test the venv, the UBSan suppressions, the scripts whose `-m32` log must equal the `-m64` log and why
+  the others' may differ, and two hooks for the game's own checks (`before_scripts`, `after_script`).
+- **The pins:** the emulator (`redux.sh`'s zip or AppImage, its SHA-256, the runtime sysroot's packages for an old
+  host glibc) and the disc are the game's choices, in its own setup script; the stack downloads nothing by itself.
+- **The scripts and the expected files**, recorded in the emulator (`run --record`), and whatever Lua the game loads
+  before `run.lua` (`--prelude`: a patch, a trace).
 
 ## What the stack provides
 
