@@ -90,7 +90,8 @@ displays (the movies, the title) stay the software image. At the internal scale 
 path's, pixel for pixel; `--internal-scale N` (`video.internal_scale`, 2 to 8) draws at N times the resolution (no
 dithering, 8-bit colour; a device that cannot allocate the targets gets a lower scale, logged). Above scale 1 the 3D is
 drawn at the GTE's sub-pixel positions (`--subpixel on`, the default; `video.subpixel`; `docs/PORT.md` "Sub-pixel
-precision"), so it moves smoothly instead of a whole 1x pixel at a time; `--subpixel off` keeps the PS1's whole pixels.
+precision"), so it moves smoothly instead of a whole 1x pixel at a time; `--subpixel off` keeps the PS1's whole pixels,
+`--subpixel perspective` also textures the 3D perspective-correct (off by default: it is not the PS1's look).
 The log's last renderer line counts the polygon vertices drawn and those at their sub-pixel position. Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
 configuring the SDL build without it fails with that hint; the Windows build also compiles them to DXIL, and fails on a
 DXC that cannot sign it (no `libdxil.so` beside it). `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture

@@ -223,10 +223,11 @@ void port_settings_load(const char *path) {
         }
         settings_int(obj, "video", "internal_scale", 1, 8, &s->internal_scale);
         if ((v = settings_member(obj, "video", "subpixel", PORT_JSON_STRING)) != NULL) {
-            if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0) {
-                port_settings_fail("video.subpixel", "\"off\" or \"on\", not \"%s\"", v->string);
+            if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0 &&
+                strcmp(v->string, "perspective") != 0) {
+                port_settings_fail("video.subpixel", "\"off\", \"on\" or \"perspective\", not \"%s\"", v->string);
             }
-            s->subpixel = strcmp(v->string, "on") == 0;
+            s->subpixel = strcmp(v->string, "perspective") == 0 ? 2 : strcmp(v->string, "on") == 0;
         }
     }
     if ((obj = settings_member(root, "", "audio", PORT_JSON_OBJECT)) != NULL) {
@@ -260,7 +261,7 @@ void port_settings_print(FILE *f, const PortSettings *s) {
                "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d",
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
             s->gpu ? "gpu" : "software", s->internal_scale);
-    fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel ? "on" : "off");
+    fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel == 2 ? "perspective" : s->subpixel ? "on" : "off");
     fprintf(f, "\n  },\n  \"audio\": {\n    \"mute\": %s\n  },\n  \"memcard1\": ", s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);

@@ -273,8 +273,8 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
         }
         read_int(video, "video", "internal_scale", 1, 8, &s.internal_scale, w);
         read_string(video, "video", "subpixel", &s.subpixel, w);
-        if (s.subpixel != "off" && s.subpixel != "on") {
-            warn(w, "video.subpixel: expected \"off\" or \"on\"; using \"on\"");
+        if (s.subpixel != "off" && s.subpixel != "on" && s.subpixel != "perspective") {
+            warn(w, "video.subpixel: expected \"off\", \"on\" or \"perspective\"; using \"on\"");
             s.subpixel = "on";
         }
     }

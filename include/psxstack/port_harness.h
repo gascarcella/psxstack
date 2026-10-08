@@ -89,7 +89,7 @@ int port_video_screenshot_add(const char *spec); /* "FRAME:PATH"; 0 when malform
  * --gpu-screenshot "FRAME[@WxH]:PATH" (SDL build): the hardware renderer's picture; 0 when malformed (or too many). */
 int port_video_set_renderer(const char *name);
 void port_video_set_internal_scale(int scale); /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
-void port_video_set_subpixel(int on);          /* --subpixel / video.subpixel: sub-pixel vertices above scale 1 */
+void port_video_set_subpixel(int mode);        /* --subpixel / video.subpixel: 0 off, 1 on, 2 perspective */
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */
