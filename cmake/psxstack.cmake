@@ -165,7 +165,11 @@ function(psxstack_add_game target)
     # `include/stdarg.h` (a PS1 build's) from shadowing the host's <stdarg.h> inside the adapter.
     set(GAME_DEFINES PC_PORT ${G_DEFINES})
     set(STACK_INCLUDES "${GEN}/include" "${PSXSTACK_ROOT}/include" "${PSXSTACK_ROOT}/include/psxstack")
-    set(GAME_INCLUDES ${STACK_INCLUDES} ${G_INCLUDE_DIRS})
+    # The units get the probe's order (tools/port_inventory.py probe_command): the generated overrides (the GTE header
+    # at the game's path, which must win over the game's own), the game's directories, then `include/` (units reach the
+    # stack as <psxstack/hooks.h>). `include/psxstack` itself stays off their path: its bare `game.h` (the adapter
+    # interface) would shadow a game's own `include/game.h`.
+    set(GAME_INCLUDES "${GEN}/include" ${G_INCLUDE_DIRS} "${PSXSTACK_ROOT}/include")
     set(ADAPTER_INCLUDE_FLAGS "")
     foreach(d IN LISTS G_INCLUDE_DIRS)
         list(APPEND ADAPTER_INCLUDE_FLAGS "-iquote" "${d}")
