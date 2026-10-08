@@ -328,7 +328,9 @@ and a later run of **the same binary** going on from it.
 - **The cost** (the first game, its first battle): about 8 MB, saved or loaded in under 0.1 s; the sanitizer build's
   is 27 MB (its sections carry ASan's redzones), 1.5 s, and needs `ASAN_OPTIONS=detect_stack_use_after_return=0`.
 - **When states are on:** with `--save-state`, `--load-state` or `--debug`, the game runs on a stack of the runtime's
-  (8 MB, static) instead of the main thread's; without them nothing of it exists but one branch in `port_frame`.
+  (8 MB, static) instead of the main thread's; without them nothing of it exists but one branch in `port_frame`. A
+  game's fibers (docs/PORT.md "Fibers") always run on static stacks of the runtime's, so a state holds them in any
+  case, and a load resumes the fiber the vsync ended on.
   Under AddressSanitizer with its fake stacks on, `--debug` alone runs without states (logged).
 
 **The state file.** A sequence of blocks, each `<tag length: 1 byte><tag><size: 8 bytes, host order><bytes>`, in an
@@ -346,7 +348,8 @@ it. The blocks, in order:
 | `count`, `overlay_seq`, `map_seq`, `checkpoints`, `inputs`, ... | The record so far and what the next frame's log compares with |
 | `name`, `index`, `started`, `held`, ... | The script's name and progress |
 | the adapter's (`game_savestate`) | The game's own (its mods' state across vsyncs) |
-| `lo`, `stack`, `port_savestate_ctx` | The game stack from the capture point up, and `__builtin_setjmp`'s buffer |
+| `fibers`, `current`, `pending`, `fiber<n>` | The fiber table (every slot's entry, argument and saved stack pointer), the fiber the vsync ended on, the switch a vblank handler asked for, and each suspended fiber's stack from its saved pointer up (the main fiber's too when it is suspended) |
+| `lo`, `stack`, `port_savestate_ctx` | The current stack (the game stack, or the fiber's the vsync ended on) from the capture point up, and `__builtin_setjmp`'s buffer |
 A state holds the game's data: it is generated from the user's disc, never committed.
 
 ## The per-frame log (`--log FILE`)

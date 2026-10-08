@@ -104,6 +104,7 @@ static void port_frame(void) {
     if (pump_pause_wanted) {
         port_pause();
     }
+    port_fiber_pump_point(); /* the switch a vblank handler asked for (port_fiber_preempt): the tick is done */
 }
 
 void port_pump_pause_request(void) {

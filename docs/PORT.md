@@ -26,7 +26,7 @@ GAME_CONTRACT.md "5. The build inputs"); the command-line options, the per-frame
 | `include/psxstack/game.h`, `mods.h` | The adapter interface the game implements (`game_main`, `game_apply_rate`, the `game_state_*` probes, `game_mods`) and a mod's shape; `runtime/game_defaults.c` has a weak default for each |
 | `include/psxstack/types.h` | The PS1-style type names for the stack's own C (the game's `common.h` defines the same under the same guard) |
 | `include/psxstack/port_runtime.h`, `port_harness.h`, `settings.h`, `spu.h`, `platform.h`, `json.h`, `sha1.h` | The runtime's internal interfaces |
-| `runtime/` | The runtime: `main.c` (options, setup), `arena.c`, `overlay.c`, `pump.c`, `reset.c`, `disc.c`, `memcard.c`, `video.c`, `render_gpu.c`, `input.c`, `audio.c` and `spu*.c`, `script.c`, `framelog.c`, `settings.c`, `mods.c` (the engine and the fast_forward mod), `crash.c`, `debug.c`, `platform.c`, `json.c`, `sha1.c` |
+| `runtime/` | The runtime: `main.c` (options, setup), `arena.c`, `overlay.c`, `pump.c`, `reset.c`, `disc.c`, `memcard.c`, `video.c`, `render_gpu.c`, `input.c`, `audio.c` and `spu*.c`, `script.c`, `framelog.c`, `settings.c`, `mods.c` (the engine and the fast_forward mod), `crash.c`, `debug.c`, `savestate.c`, `fiber.c` (a game's own tasks), `platform.c`, `json.c`, `sha1.c` |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` compiles it alone and checks its coverage of a game |
 | `shaders/` | The hardware renderer's HLSL, compiled to SPIR-V (and for Windows to DXIL) by DXC at build time and embedded (`cmake/embed.cmake`) |
 | `mods/fast_forward/` | The one mod every game has (its manifest; the code is in `runtime/mods.c`) |
@@ -35,7 +35,7 @@ GAME_CONTRACT.md "5. The build inputs"); the command-line options, the per-frame
 | `tools/port_gen.py` | The generators the build runs: the override headers, the units' compile launcher (the overlay sections), the overlay address tables, the state tables, the post-link check |
 | `tools/port_inventory.py` | The host-compile gate (`probe`, `link`) and the inventory of what a game's C needs (`counts`); a game configures it |
 | `tools/mcp/` | The MCP server over the debug channel, the client, the symbols (configured by the game's `.mcp.json`) |
-| `examples/hello/` | A disc-free Psy-Q program built through `psxstack_add_game()`: the stack's smoke test |
+| `examples/hello/`, `examples/tasks/` | Disc-free Psy-Q programs built through `psxstack_add_game()`: the stack's smoke test, and the fibers' test (three tasks, one preempted from the vblank handler) |
 
 ## Compiling the game C for the host
 - **Flags:** C99 with GNU extensions (`gnu99`: unprototyped `f()` declarations are common in the game C and C23 would
@@ -207,6 +207,41 @@ PS1's copy into the slot:
 - **Save states** (`runtime/savestate.c`, "Save states" below): the end of a vsync saved to a file, and a later run
   going on from it.
 
+## Fibers
+A PS1 game may schedule tasks of its own: Digimon Digital Card Battle keeps up to 32 tasks in kernel-TCB-shaped
+records and switches them in hand-written asm (cooperatively from `yieldTask`/`waitFrames`, preemptively from its
+vblank root-counter handler, which returns into the main task when a lower-priority task was interrupted); a game
+on Psy-Q's `OpenTh`/`ChangeTh` is the same shape. Each task has a PS1 stack of 0x100 to 0x2000 bytes, far too small
+for the task's C on x86-64. On the host each task is a **fiber** (`runtime/fiber.c`; the game's interface is
+`hooks.h` "Fibers"), on a static stack of the runtime's (`PORT_FIBER_STACK_SIZE`, 256 KB; `PORT_FIBER_MAX` of them,
+64); the task records, priorities, waits and wake-ups stay the game's C, and its switch glue under `PC_PORT` calls:
+- `port_fiber_create(entry, arg)`: the task's fiber, started on its first switch; `port_fiber_switch(to)`: the current
+  fiber suspended, `to` resumed (the game's `yield`/`wait`); `port_fiber_exit(to)`: the current fiber ended and its
+  slot freed, `to` resumed (the game's `exitTask`); `port_fiber_destroy(f)`: a suspended fiber dropped (a killed
+  task); `port_fiber_main()`, `port_fiber_current()`.
+- **Preemption:** `port_fiber_preempt(to)`, from the game's vblank handler. The handler runs inside the vsync tick
+  (`psyq_vsync_tick`: the shim's handler call, then `pump.c`'s `port_frame`), on whichever fiber ticked (its
+  `VSync`, its `PLATFORM_WAIT`, or the shim's own ticks in `StGetNext`); a switch there would leave the tick half-done
+  on the interrupted fiber, so the pump performs it at the very end of the tick (`port_fiber_pump_point`, after the
+  frame's log, video and the save-state capture): the interrupted fiber is suspended right after its tick, as the
+  PS1's task is suspended right after the interrupt, and resumes there when switched to again.
+- **Determinism:** every switch is where the game asked for it, or at the end of a vsync tick the game's handler asked
+  for; there is no timer and no thread, so a run is as repeatable as without fibers (`tests/tasks_test.py` runs
+  `examples/tasks` twice and compares every frame's primitive hash).
+- **The switch** (`port_fiber_swap_`): a dozen instructions per architecture that push the callee-saved registers (and
+  the floating-point control words; on Win64 also xmm6-15) on the current stack, store its pointer, load the other's
+  and pop: x86-64 SysV and Win64, i386 (`-m32`), AArch64 (compiled, not run). On Windows the thread block's stack
+  bounds follow the switch (SEH and the stack probes read them). A new fiber's stack holds a frame that "returns"
+  into the trampoline that calls its entry; an entry that returns is fatal (a task ends with `port_fiber_exit`).
+  Not `ucontext` and not Win32 fibers: their contexts (glibc's `ucontext_t` points into itself and carries the signal
+  mask; `CreateFiber`'s object is opaque, on the heap) could not be held by a save state (DECISIONS "Fibers: a
+  hand-written switch, preemption at the tick's end").
+- **AddressSanitizer** is told about every switch (the fiber annotations), as `savestate.c` is about the game stack.
+- **The console's reset** drops every fiber; `game_main` runs again on the main fiber.
+- **Save states** ("Save states" below) hold the fiber table, every suspended fiber's stack from its saved pointer up
+  and the context of the fiber the vsync ended on, and a load resumes that fiber: `examples/tasks` saved at a vsync
+  that ended on a preempted task's fiber resumes with the straight run's picture and log.
+
 ## Debug channel and the MCP server
 `--debug SOCKET` (`runtime/debug.c`, whose header comment is the protocol, v1) opens a Unix stream socket of
 newline-delimited JSON requests (`{"id", "op", ...}`), answered in order, on which a tool drives and inspects the
@@ -251,7 +286,9 @@ another process:
   `PLATFORM_WAIT`, `psyq_vsync_tick`, `port_frame`), and those frames hold return addresses, frame pointers and
   pointers to its globals, the arena and the stack itself. When states may be used (a state option, `--debug`) the
   game runs on a static 8 MB array of `savestate.c` (a three-instruction stack switch per architecture: x86-64 SysV and
-  Win64, i386, AArch64), so the stack's address is fixed with the image.
+  Win64, i386, AArch64), so the stack's address is fixed with the image. A game's fibers ("Fibers") are on static
+  stacks of `fiber.c` in any case; the vsync may end on one of them (a task that ticked and was preempted), and the
+  context is then on that stack.
 - **Fixed addresses.** Everything a state holds points into the image: code (return addresses, the function pointers in
   the game's objects, the callbacks the shim keeps), the game's sections, the arena, the shim's statics, the game
   stack. ELF builds are linked non-PIE, so every run of a binary has the same addresses; the header names the binary
@@ -267,7 +304,9 @@ another process:
 - **The modules.** Each module with state the game can observe has one sync function at the end of its file
   (`savestate.h`): the game's sections (overlay.c), the arena, every library of the shim (`psyq_state`: LIBCD's drive,
   sector, stream ring and XA decoder, the VRAM and the drawing state, the GTE, LIBSND, ...), the SPU, the audio's vsync
-  count, the run's record and the script's progress, and the adapter's (`game_savestate`: its mods). The same function
+  count, the run's record and the script's progress, the adapter's (`game_savestate`: its mods), and the fibers
+  (`port_fiber_state`: the table, every suspended fiber's live stack, the pending preemption; the current fiber's
+  stack is the context's). The same function
   saves and loads, in one order. Host state stays the loading run's: the window, the audio device, files, options,
   the debug channel, and the caches that are rebuilt: gpu.c's decoded textures are stamped stale, the GTE's sub-pixel
   shadow starts empty (as at the reset), the hardware renderer gets the power-on event and reloads its VRAM from the

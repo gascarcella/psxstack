@@ -120,4 +120,30 @@ uint32_t port_ptr_to_u32(const void *p);
 /* The byte at the PS1 address `addr` (0x1FC00000..) of the BIOS ROM's stand-in (PSXSTACK_GAME_BIOS_STANDINS). */
 void *port_bios_ptr(uint32_t addr);
 
+/* --- Fibers (runtime/fiber.c; docs/PORT.md "Fibers"): a game's own tasks, each on a host stack of the runtime's. A
+ * game whose scheduler switches tasks itself (hand-written context switches, Psy-Q's OpenTh/ChangeTh) replaces its
+ * switch glue under PC_PORT with these; the task records, priorities, waits and wake-ups stay the game's C.
+ * port_fiber_create: a fiber that runs entry(arg) on its own stack when first switched to; it must end with
+ *   port_fiber_exit (an entry that returns is fatal). Fatal when PORT_FIBER_MAX fibers are alive.
+ * port_fiber_switch: suspends the current fiber and resumes `to` (a no-op for the current one); returns when something
+ *   switches back. port_fiber_main: the fiber game_main runs on; port_fiber_current: the running one;
+ *   port_fiber_index: 0 for the main fiber, else 1.. (logs).
+ * port_fiber_exit: ends the current fiber (its slot is free for port_fiber_create) and resumes `to`; never returns.
+ * port_fiber_destroy: drops a suspended fiber that will never be resumed (a killed task); the current one is fatal.
+ * port_fiber_preempt: from a vblank handler (it runs inside the vsync tick, from VSync, PLATFORM_WAIT or the shim's
+ *   own ticks): the switch to `to` happens at the very end of that tick, once the tick's work is done, so the
+ *   interrupted fiber is suspended right after its tick, as the PS1's task right after the interrupt. The last call
+ *   in a tick wins; a call outside a tick takes effect at the next tick's end.
+ * Every switch happens where the game asks for it or at a tick's end: a run is as deterministic as without fibers.
+ * Save states hold every live fiber (docs/RUNTIME.md "Save states"); the console's reset drops them all. */
+typedef struct PortFiber PortFiber;
+PortFiber *port_fiber_create(void (*entry)(void *), void *arg);
+void port_fiber_switch(PortFiber *to);
+PortFiber *port_fiber_main(void);
+PortFiber *port_fiber_current(void);
+int port_fiber_index(const PortFiber *f);
+void port_fiber_exit(PortFiber *to) __attribute__((noreturn));
+void port_fiber_destroy(PortFiber *f);
+void port_fiber_preempt(PortFiber *to);
+
 #endif /* PSXSTACK_HOOKS_H */
