@@ -177,8 +177,8 @@ package.
 
 ## Releases
 
-A game's players' build is one package with the launcher, the game and the mods (the game's packaging, arriving with
-phase 4). Its launcher is built with `-DCMAKE_BUILD_TYPE=Release -DPSXSTACK_LAUNCHER_STATIC_RUNTIME=ON` (libstdc++ and
+A game's players' build is one package with the launcher, the game and the mods (the game's packaging: dw2003recomp's
+`scripts/package_appimage.sh` and `package_windows.sh`). Its launcher is built with `-DCMAKE_BUILD_TYPE=Release -DPSXSTACK_LAUNCHER_STATIC_RUNTIME=ON` (libstdc++ and
 libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3-desktop`).
 
 ## Files
