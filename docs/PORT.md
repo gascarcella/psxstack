@@ -403,6 +403,11 @@ same with it on or off.
   come from float planes through the precise vertices (`raster.frag.hlsl` `F_PRECISE`), sampled where the integer
   path samples them and rounded as it rounds. At scale 1 nothing changes: the shadow is not even on. The renderer
   turns the shadow on and off with the rasteriser.
+- **Perspective-correct texturing** (`--subpixel perspective`, `video.subpixel` `"perspective"`; off by default): the
+  PS1 interpolates texture coordinates and colours linearly in screen space (affine), so the textures of large
+  polygons bend and swim; measured on the first game's battle, 85 % of the fully precise textured triangles' area is
+  off by a texel or more. With the shadow's SZ on all three vertices a triangle's planes interpolate value / z and
+  1 / z (the plane `q`) and divide per pixel; a triangle with a vertex of unknown depth stays affine.
 - **Measuring:** `<PREFIX>_PORT_SUBPIXEL_LOG=path` turns it on from boot and logs every RTPS vertex, the batches and
   each frame's drawn-vertex counts (`_FROM`, `_TO`: a frame range); the format is in `gte_shadow.c`'s header. The first
   game's `tests/port/subpixel_jitter.py` turns it into the jitter metric.
