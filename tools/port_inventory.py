@@ -1,48 +1,38 @@
 #!/usr/bin/env python3
-"""PC-port inventory: what the game C needs from the PS1, and the host-compile gate (docs/PORT.md "Compiling the game C for the host").
+"""psxstack's PC-port inventory: what a game's C needs from the PS1, and the host-compile gate (docs/PORT.md
+"Compiling the game C for the host"). A game's own tools/port_inventory.py configures it (configure()) and adds its
+own commands; the game's CLI is:
 
-  tools/venv/bin/python tools/port_inventory.py counts                 # the inventory's numbers on this tree
-  tools/venv/bin/python tools/port_inventory.py counts --sites KIND    # file:line of every site of one kind
-  tools/venv/bin/python tools/port_inventory.py probe [FILES...]       # host-compile gate at -m64 (exit 0 = clean)
-  tools/venv/bin/python tools/port_inventory.py probe --warnings       # also count the non-gating -Wall warnings
-  tools/venv/bin/python tools/port_inventory.py probe --m32            # the same at -m32 (compile only)
-  tools/venv/bin/python tools/port_inventory.py probe --target windows # the same with llvm-mingw's clang (Windows x86_64)
-  tools/venv/bin/python tools/port_inventory.py link                   # probe, then nm: duplicate / undefined globals
-  tools/venv/bin/python tools/port_inventory.py structs                # sizeof every typedef'd struct, -m32 and -m64
-  tools/venv/bin/python tools/port_inventory.py object-sizes           # literal object/data sizes (exit 0 = none)
+  tools/port_inventory.py counts                 # the inventory's numbers on this tree
+  tools/port_inventory.py counts --sites KIND    # file:line of every site of one kind
+  tools/port_inventory.py probe [FILES...]       # host-compile gate at -m64 (exit 0 = clean)
+  tools/port_inventory.py probe --warnings       # also count the non-gating -Wall warnings
+  tools/port_inventory.py probe --m32            # the same at -m32 (compile only)
+  tools/port_inventory.py probe --target windows # the same with llvm-mingw's clang (Windows x86_64)
+  tools/port_inventory.py link                   # probe, then nm: duplicate / undefined globals
 
-counts reads only tracked files (src/**/*.c, include/**/*.h, config/): comments and strings are stripped, identifiers
-after `.`/`->`, prototypes and definitions are not calls. Site kinds for --sites (KIND or KIND:TAG, e.g. `psyq:LIBGPU`,
-`psyq:DrawSync`, `addr:tier2`, `addr:cast`, `port:PTR_ADD`):
-  psyq         calls of Psy-Q functions (names and libraries: the `// LIBxxx.LIB/OBJ.OBJ` comments of
-               config/symbol_addrs.txt and config/*.symbols.txt)
-  gpu-macro    uses of include/psyq/libgpu.h's function-like macros;  gpu-prim  mentions of its primitive types
-  gte          uses of the gte_* macros of include/psyq/gtemac.h
+counts reads only tracked files (the game's C and headers, its symbol files): comments and strings are stripped,
+identifiers after `.`/`->`, prototypes and definitions are not calls. Site kinds for --sites (KIND or KIND:TAG, e.g.
+`psyq:LIBGPU`, `psyq:DrawSync`, `addr:<slot name>`, `addr:cast`, `port:PTR_ADD`):
+  psyq         calls of Psy-Q functions (names and libraries: the `// LIBxxx.LIB/OBJ.OBJ` comments of the symbol files)
+  gpu-macro    uses of libgpu.h's function-like macros;  gpu-prim  mentions of its primitive types
+  gte          uses of the gte_* macros of gtemac.h
   rodata, asm  INCLUDE_RODATA / INCLUDE_ASM lines
   size         object_new / heap_funcs.alloc* / heap_funcs.bzero calls whose size argument is an integer literal
-               (tags: object_new, alloc, bzero)
-  addr         constants in PS1 RAM (0x80010000-0x801FFFFF) or the scratchpad (0x1F800000-0x1F8003FF). Tags: the
-               region (exe, tier1, tier2, heap, scratchpad, high) and one of wrapped (inside an ALL-CAPS macro call,
-               also tagged with the macro's name), cast (a pointer cast and no macro), bare (neither)
+  addr         constants in PS1 RAM or the scratchpad (0x1F800000-0x1F8003FF). Tags: the region (exe, the slots by
+               name, heap, high, scratchpad) and one of wrapped (inside an ALL-CAPS macro call, also tagged with the
+               macro's name), cast (a pointer cast and no macro), bare (neither)
   wait         loops with an empty body (busy-waits; tags: empty, or hooked + the macro when the body is one macro)
   late         uses of unprefixed `func_<addr>` names whose address is in an overlay slot (late-bound calls)
-  port         uses of the macros include/port.h defines (found at run time; tag: the macro)
+  port         uses of the macros the game's port.h defines (found at run time; tag: the macro)
 
-probe compiles each file with the host gcc (PROBE_FLAGS + GATE below) into build/port_inventory/<width>/, with
-INCLUDE_ASM/INCLUDE_RODATA empty and every gte_* macro a no-op (override headers generated there; include/ is not
-touched). A file fails on a gating diagnostic (GATE), on any other compiler error, or on an assembler error (MIPS inline
-asm). GCC 14+ gets -fpermissive so that its other default errors (return-mismatch, implicit-int, ...) stay warnings, as
-on GCC 13: the gate is the same on every version. Only the `[-Wflag]` tags of the messages are parsed.
---target windows compiles with llvm-mingw's clang (tools/llvm-mingw, scripts/setup.sh llvm-mingw; the Windows cross
-build's compiler, cmake/windows-x86_64.cmake) into build/port_inventory/windows/: the same gate, with clang's own
-default errors back to warnings (CLANG_GAME_FLAGS), so a unit that compiles for Linux but not for Windows shows here.
-link and structs run the compiler themselves. Needs: gcc and nm on PATH. Nothing here touches the PS1 build.
-
-object-sizes (FINDINGS 9d) lists every object_new / object_create call in src/ whose object size (second argument) or
-data size (third) is a bare integer literal: the host's Object and pointers are wider, so these sizes are written in
-sizeof units (sizeof(<T>Data), N * sizeof(T *), sizeof(Object) + 4, ...). Allowed: a data size of 0 (no block), a call
-in the PS1-only side of `#ifndef PC_PORT` / `#ifdef PC_PORT ... #else`, and a literal that is a true byte count, marked
-`PC_PORT: bytes` in a comment on the call's lines or the line above. Exit 1 when any is left.
+probe compiles each file with the host gcc (PROBE_FLAGS + GATE below) into <out>/<width>/, with INCLUDE_ASM/
+INCLUDE_RODATA empty and every gte_* macro a no-op (override headers generated there). A file fails on a gating
+diagnostic (GATE), on any other compiler error, or on an assembler error (MIPS inline asm). GCC 14+ gets -fpermissive
+so that its other default errors stay warnings, as on GCC 13: the gate is the same on every version.
+--target windows compiles with llvm-mingw's clang (tools/llvm-mingw; the Windows cross build's compiler) with clang's
+own default errors back to warnings (CLANG_GAME_FLAGS), so a unit that compiles for Linux but not for Windows shows.
+Needs: gcc and nm on PATH. Nothing here touches the PS1 build.
 """
 import argparse
 import bisect
@@ -56,18 +46,52 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "build" / "port_inventory"
+STACK_ROOT = Path(__file__).resolve().parent.parent
 
-PROBE_FLAGS = ["-std=gnu99", "-O0", "-fno-builtin", "-fsigned-char", "-fwrapv", "-fno-strict-aliasing",
-               "-DNON_MATCHING", "-DPC_PORT"]
+
+class Config:
+    """What a game tells the inventory (its tools/port_inventory.py calls configure())."""
+
+    def __init__(self, root, game_json, sources, headers, include_dirs, symbol_files, module_of=None, gtemac=None,
+                 include_asm=None, port_h=None, psyq_dir=None, tool_dirs=(), defines=("NON_MATCHING",), out=None):
+        import json
+        self.root = Path(root)
+        self.game_json = Path(game_json)
+        self.sources = sources            # () -> [Path]: the game's C units
+        self.headers = headers            # () -> [Path]: the game's headers (structs, the macro counts)
+        self.include_dirs = [Path(d) for d in include_dirs]
+        self.symbol_files = [Path(f) for f in symbol_files]
+        self.module_of = module_of or (lambda rel: rel.split("/")[-2] if "/" in rel else rel)
+        self.gtemac = Path(gtemac) if gtemac else None
+        self.include_asm = Path(include_asm) if include_asm else None
+        self.port_h = Path(port_h) if port_h else None
+        self.psyq_dir = Path(psyq_dir) if psyq_dir else self.root / "include" / "psyq"
+        self.tool_dirs = [Path(d) for d in tool_dirs]
+        self.defines = list(defines)
+        self.out = Path(out) if out else self.root / "build" / "port_inventory"
+        g = json.loads(self.game_json.read_text())
+        addr = lambda v: int(v, 0) if isinstance(v, str) else int(v)
+        ram = addr(g["memory"]["ram"]["base"]), addr(g["memory"]["ram"]["size"])
+        slots = [(addr(sl["base"]), sl["name"]) for sl in g["memory"]["slots"]]
+        heap = addr(g["memory"]["heap"]["start"]), addr(g["memory"]["heap"]["end"])
+        # Memory regions: the EXE (from the load area up to the first slot), the slots by name, the heap, high.
+        self.regions = [(ram[0] + 0x10000, "exe")] + slots + [(heap[0], "heap"), (heap[1] + 1, "high"),
+                                                              (ram[0] + ram[1], None)]
+        self.slot_base = slots[0][0]      # late-bound addresses: anything from the first slot up
+
+
+CFG = None
+
+
+def configure(**kwargs):
+    global CFG
+    CFG = Config(**kwargs)
+    return CFG
+
+PROBE_FLAGS = ["-std=gnu99", "-O0", "-fno-builtin", "-fsigned-char", "-fwrapv", "-fno-strict-aliasing", "-DPC_PORT"]
 GATE = ["pointer-to-int-cast", "int-to-pointer-cast", "int-conversion", "implicit-function-declaration",
         "incompatible-pointer-types"]
 
-# Memory regions (docs/DISC_LAYOUT.md): the EXE, the two overlay slots, the heap (heap.c: 0x800AB800-0x801FF000).
-REGIONS = [(0x80010000, "exe"), (0x80082CB0, "tier1"), (0x800A5DE0, "tier2"), (0x800AB800, "heap"),
-           (0x801FF001, "high"), (0x80200000, None)]
-TIER1 = 0x80082CB0
 NOT_A_TYPE = {"return", "else", "do", "case", "sizeof", "goto", "if", "while", "for", "switch"}
 IDENT = re.compile(r"[A-Za-z_]\w*")
 ADDR = re.compile(r"(?<![\w.])0[xX](80[0-9A-Fa-f]{6}|1[fF]80[0-9A-Fa-f]{4})[uUlL]*(?!\w)")
@@ -93,7 +117,7 @@ class Source:
 
     def __init__(self, path):
         self.path = path
-        self.rel = path.relative_to(ROOT).as_posix()
+        self.rel = path.relative_to(CFG.root).as_posix()
         self.raw = path.read_text(errors="replace")
         self.text = strip_code(self.raw)
         self.line_starts = [0] + [m.end() for m in re.finditer(r"\n", self.text)]
@@ -201,27 +225,24 @@ class Source:
 
 
 def c_files():
-    return sorted((ROOT / "src").rglob("*.c"))
+    return list(CFG.sources())
 
 
 def headers():
-    return sorted(p for p in (ROOT / "include").rglob("*.h") if "asm_generated" not in p.parts)
+    return list(CFG.headers())
 
 
 def module_of(rel):
-    parts = rel.split("/")
-    if parts[0] == "include":
-        return "include/" + parts[-1]
-    return Path(parts[-1]).stem if parts[1] == "main" else parts[1]
+    return CFG.module_of(rel)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Symbol files
 
 def read_symbols():
-    """-> (sdk: name -> (library, is_func), syms: name -> (addr, is_func)) from config/."""
+    """-> (sdk: name -> (library, is_func), syms: name -> (addr, is_func)) from the game's symbol files."""
     sdk, syms = {}, {}
-    files = [ROOT / "config" / "symbol_addrs.txt"] + sorted((ROOT / "config").rglob("*.symbols.txt"))
+    files = [f for f in CFG.symbol_files if f.exists()]
     for f in files:
         lib = None
         for line in f.read_text(errors="replace").splitlines():
@@ -250,7 +271,7 @@ def region(addr):
     if 0x1F800000 <= addr < 0x1F800400:
         return "scratchpad"
     name = None
-    for start, n in REGIONS:
+    for start, n in CFG.regions:
         if addr < start:
             return name
         name = n
@@ -323,22 +344,22 @@ def pointer_cast_before(src, pos, floor):
 def scan(sources):
     sdk, syms = read_symbols()
     sdk_funcs = {n for n, (lib, f) in sdk.items() if f}
-    psyq = ROOT / "include" / "psyq"
+    psyq = CFG.psyq_dir
     gpu_h = psyq / "libgpu.h"
     gpu_macros = set(header_macros(gpu_h))
     gpu_types = set()
     if gpu_h.exists():
         gpu_types = {n for n in re.findall(r"\}\s*(\w+)\s*;", strip_code(gpu_h.read_text()))
                      if re.match(r"((POLY|LINE|SPRT|TILE|DR)_\w+|SPRT|TILE|BLK_FILL)$", n)}
-    gte_macros = set(header_macros(psyq / "gtemac.h", r"gte_\w+"))
-    port_h = ROOT / "include" / "port.h"
+    gte_macros = set(header_macros(CFG.gtemac or psyq / "gtemac.h", r"gte_\w+"))
+    port_h = CFG.port_h or CFG.root / "include" / "port.h"
     guard = include_guard(port_h) if port_h.exists() else None
     port_macros = {n for n in header_macros(port_h, function_like=False) if n != guard}
     sites = []
     totals = Counter()
     for src in sources:
         text = src.text
-        in_psyq = src.rel.startswith("include/psyq/")
+        in_psyq = psyq in src.path.parents
         base = src.rel.rsplit("/", 1)[-1]
         for m in IDENT.finditer(text):
             name = m.group()
@@ -352,7 +373,7 @@ def scan(sources):
                 sites.append(Site("gte", src, m.start(), name))
             elif name in port_macros and base != "port.h" and src.is_use(m, call=False):
                 sites.append(Site("port", src, m.start(), name))
-            elif name in ("INCLUDE_RODATA", "INCLUDE_ASM") and src.rel.startswith("src/"):
+            elif name in ("INCLUDE_RODATA", "INCLUDE_ASM") and src.path.suffix == ".c":
                 if src.define[src.line(m.start()) - 1] is None:
                     a = src.args(text.index("(", m.end()))
                     sites.append(Site("rodata" if name == "INCLUDE_RODATA" else "asm", src, m.start(), a[-1]))
@@ -372,7 +393,7 @@ def scan(sources):
                         sites.append(Site("size", src, m.start(), which, ("heap_funcs." + m2.group(1), size)))
             elif re.match(r"func_[0-9A-Fa-f]{8}$", name) and src.is_use(m):
                 addr = int(name[5:], 16)
-                if addr >= TIER1:
+                if addr >= CFG.slot_base:
                     sites.append(Site("late", src, m.start(), name, (region(addr) or "?",)))
             elif name == "while":
                 p = re.match(r"\s*\(", text[m.end():m.end() + 40])
@@ -434,17 +455,11 @@ def gcc_version(target="host"):
 
 
 def llvm_mingw_dir():
-    """tools/llvm-mingw (scripts/setup.sh llvm-mingw): $DW3_LLVM_MINGW, this checkout's, else the main checkout's
-    (a worktree before its link)."""
-    dirs = [os.environ.get("DW3_LLVM_MINGW", ""), str(ROOT / "tools" / "llvm-mingw")]
-    r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        dirs.append(str(Path(r.stdout.strip()).parent / "tools" / "llvm-mingw"))
-    for d in dirs:
-        if d and (Path(d) / "bin" / "x86_64-w64-mingw32-clang").exists():
-            return Path(d)
-    sys.exit("llvm-mingw not found: run scripts/setup.sh llvm-mingw (or set DW3_LLVM_MINGW)")
+    """tools/llvm-mingw of the game's tool directories (scripts/setup.sh llvm-mingw), or None."""
+    for d in CFG.tool_dirs:
+        if (d / "llvm-mingw" / "bin" / "x86_64-w64-mingw32-clang").exists():
+            return d / "llvm-mingw"
+    return None
 
 
 def compiler(target):
@@ -453,7 +468,7 @@ def compiler(target):
 
 
 def git_head():
-    r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(CFG.root), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
     return r.stdout.strip() or "?"
 
 
@@ -483,11 +498,7 @@ def cmd_counts(args):
 
     print(f"port inventory: counts at {git_head()} (docs/PORT.md \"Compiling the game C for the host\")")
     lines = sum(c.raw.count("\n") for c in cs)
-    per_dir = Counter()
-    for c in cs:
-        per_dir[c.rel.split("/")[1]] += c.raw.count("\n")
-    print(f"\nC files: {len(cs)} ({lines:,} lines; {per_dir['wstag']:,} in src/wstag/, {per_dir['main']:,} in "
-          f"src/main/); headers: {len(hs)}")
+    print(f"\nC files: {len(cs)} ({lines:,} lines); headers: {len(hs)}")
 
     # Psy-Q calls
     p = by["psyq"]
@@ -517,8 +528,8 @@ def cmd_counts(args):
     print(f"  {top(Counter(s.name for s in e))}")
 
     r, a = by["rodata"], by["asm"]
-    print(f"\nINCLUDE_RODATA: {len(r)} ({top(Counter(s.rel.split('/')[1] for s in r))})")
-    print(f"INCLUDE_ASM: {len(a)} ({top(Counter(s.rel.split('/')[1] for s in a))})")
+    print(f"\nINCLUDE_RODATA: {len(r)} ({top(Counter(module_of(s.rel) for s in r))})")
+    print(f"INCLUDE_ASM: {len(a)} ({top(Counter(module_of(s.rel) for s in a))})")
 
     def lit(name):
         ss = [s for s in by["size"] if s.name == name]
@@ -530,10 +541,11 @@ def cmd_counts(args):
 
     ad = by["addr"]
     ptr = [s for s in ad if "wrapped" in s.tags or "cast" in s.tags]
-    print(f"\nPS1 addresses in C (constants in RAM 0x80010000-0x801FFFFF or the scratchpad, pointer-cast or inside "
-          f"an ALL-CAPS macro): {len(ptr)}")
+    region_names = [n for _, n in CFG.regions if n] + ["scratchpad"]
+    print(f"\nPS1 addresses in C (constants in RAM or the scratchpad, pointer-cast or inside an ALL-CAPS macro): "
+          f"{len(ptr)}")
     print(f"  {'region':<11} {'total':>5} {'wrapped':>7} {'cast only':>9}")
-    for reg in ("exe", "tier1", "tier2", "heap", "high", "scratchpad"):
+    for reg in region_names:
         ss = [s for s in ptr if reg in s.tags]
         if not ss:
             continue
@@ -551,8 +563,8 @@ def cmd_counts(args):
     bare = [s for s in ad if "bare" in s.tags]
     print(f"  other integer constants in those ranges (no pointer cast, no macro: IDs and bit masks, or addresses "
           f"used as integers; `--sites addr:bare`): {len(bare)} ("
-          + ", ".join(f"{r} {n}" for r, n in Counter(next(t for t in s.tags if t in
-              ("exe", "tier1", "tier2", "heap", "high", "scratchpad")) for s in bare).most_common()) + ")")
+          + ", ".join(f"{r} {n}" for r, n in Counter(next(t for t in s.tags if t in region_names)
+                                                     for s in bare).most_common()) + ")")
     lt = by["late"]
     print(f"late-bound functions (unprefixed func_<overlay address> used from C): {len(set(s.name for s in lt))} "
           f"at {len(lt)} sites: {top(Counter(s.name for s in lt))}")
@@ -567,12 +579,12 @@ def cmd_counts(args):
 
     if info["port_h"]:
         pc = Counter(s.name for s in by["port"])
-        print(f"\ninclude/port.h macros ({len(info['port_macros'])} defined): {len(by['port'])} uses")
+        print(f"\nport.h macros ({len(info['port_macros'])} defined): {len(by['port'])} uses")
         for name in sorted(info["port_macros"]):
             files = Counter(s.rel for s in by["port"] if s.name == name)
             print(f"  {name:<24} {pc[name]:>4}  {top(files, 4)}")
     else:
-        print("\ninclude/port.h: not present (no hook macros to count)")
+        print("\nport.h: not present (no hook macros to count)")
     return 0
 
 
@@ -598,22 +610,23 @@ def write_overrides(out):
     include guards, so the real ones are skipped wherever they are included from."""
     inc = out / "include"
     (inc / "psyq").mkdir(parents=True, exist_ok=True)
-    gen = ROOT / "include" / "asm_generated" / "include_asm.h"
-    guard = (include_guard(gen) if gen.exists() else None) or "INCLUDE_ASM_H"
+    gen = CFG.include_asm
+    guard = (include_guard(gen) if gen and gen.exists() else None) or "INCLUDE_ASM_H"
     (inc / "include_asm.h").write_text(
         f"/* generated by tools/port_inventory.py */\n#ifndef {guard}\n#define {guard}\n"
         "#define INCLUDE_ASM(FOLDER, NAME)\n#define INCLUDE_RODATA(FOLDER, NAME)\n#endif\n")
-    real = ROOT / "include" / "psyq" / "gtemac.h"
-    text = strip_code(real.read_text())
-    guard = include_guard(real) or "PSYQ_GTEMAC_H"
-    body = "".join(f"#define {n}{a} ((void)0)\n"
-                   for n, a in re.findall(r"^[ \t]*#[ \t]*define[ \t]+(gte_\w+)(\([^)]*\))", text, flags=re.M))
-    (inc / "psyq" / "gtemac.h").write_text(
-        f"/* generated by tools/port_inventory.py */\n#ifndef {guard}\n#define {guard}\n{body}#endif\n")
-    # port_game_gen.h: the game's description (port/game/game.json), which port/include/psxstack/hooks.h includes
-    # (include/port.h includes that under PC_PORT): the same header the port's build generates.
-    import port_gen
-    (inc / "port_game_gen.h").write_text(port_gen.game_header_text())
+    real = CFG.gtemac
+    if real and real.exists():
+        text = strip_code(real.read_text())
+        guard = include_guard(real) or "PSYQ_GTEMAC_H"
+        body = "".join(f"#define {n}{a} ((void)0)\n"
+                       for n, a in re.findall(r"^[ \t]*#[ \t]*define[ \t]+(gte_\w+)(\([^)]*\))", text, flags=re.M))
+        (inc / "psyq" / "gtemac.h").write_text(
+            f"/* generated by tools/port_inventory.py */\n#ifndef {guard}\n#define {guard}\n{body}#endif\n")
+    # psxstack_game_gen.h: the game's description, which psxstack's hooks.h includes (the game's port.h includes that
+    # under PC_PORT): the same header the port's build generates (tools/game_gen.py).
+    subprocess.run([sys.executable, str(STACK_ROOT / "tools" / "game_gen.py"), str(CFG.game_json),
+                    "--out", str(inc / "psxstack_game_gen.h")], check=True)
     return inc
 
 
@@ -635,8 +648,9 @@ def probe_command(width, inc, warnings, target="host"):
         diag = ["-fno-caret-diagnostics", "-ferror-limit=0"]
     if warnings:
         cmd += ["-Wall", "-Wstrict-prototypes"]
-    cmd += ["-fdiagnostics-color=never"] + diag + ["-fmessage-length=0",
-            f"-I{inc}", f"-I{ROOT / 'include'}", f"-I{ROOT}", f"-I{ROOT / 'port/include'}"]
+    cmd += [f"-D{d}" for d in CFG.defines]
+    cmd += ["-fdiagnostics-color=never"] + diag + ["-fmessage-length=0", f"-I{inc}"]
+    cmd += [f"-I{d}" for d in CFG.include_dirs] + [f"-I{STACK_ROOT / 'include'}", f"-I{STACK_ROOT / 'include/psxstack'}"]
     return cmd
 
 
@@ -652,9 +666,9 @@ def check_width(width, out, target="host"):
 
 def run_probe(files, width=64, warnings=False, jobs=None, target="host"):
     """Compiles files (repo-relative posix paths). -> {rel: (ok, errors Counter, warnings Counter, messages, obj)}"""
-    out = OUT / (f"m{width}" if target == "host" else target)
+    out = CFG.out / (f"m{width}" if target == "host" else target)
     out.mkdir(parents=True, exist_ok=True)
-    inc = write_overrides(OUT)
+    inc = write_overrides(CFG.out)
     base = probe_command(width, inc, warnings, target)
     env = dict(os.environ, LC_ALL="C")
 
@@ -663,10 +677,10 @@ def run_probe(files, width=64, warnings=False, jobs=None, target="host"):
         obj.parent.mkdir(parents=True, exist_ok=True)
         if obj.exists():
             obj.unlink()
-        r = subprocess.run(base + ["-c", rel, "-o", str(obj)], cwd=ROOT, capture_output=True, text=True, env=env,
+        r = subprocess.run(base + ["-c", rel, "-o", str(obj)], cwd=CFG.root, capture_output=True, text=True, env=env,
                            errors="replace")
         errs, warns, msgs, pending = Counter(), Counter(), [], None
-        for line in r.stderr.replace(str(ROOT) + "/", "").splitlines():
+        for line in r.stderr.replace(str(CFG.root) + "/", "").splitlines():
             m = NOTE.match(line)
             if m and pending is not None and m.group("file") == rel:
                 # an error inside a header's macro: the last expansion note in the C file is the game site
@@ -707,15 +721,15 @@ def run_probe(files, width=64, warnings=False, jobs=None, target="host"):
 
 def resolve_files(names):
     if not names:
-        return [p.relative_to(ROOT).as_posix() for p in c_files()]
+        return [p.relative_to(CFG.root).as_posix() for p in c_files()]
     out = []
     for n in names:
         p = Path(n)
         p = p if p.is_absolute() else (Path.cwd() / p)
         if p.is_dir():
-            out += [q.resolve().relative_to(ROOT).as_posix() for q in sorted(p.rglob("*.c"))]
+            out += [q.resolve().relative_to(CFG.root).as_posix() for q in sorted(p.rglob("*.c"))]
         elif p.exists():
-            out.append(p.resolve().relative_to(ROOT).as_posix())
+            out.append(p.resolve().relative_to(CFG.root).as_posix())
         else:
             sys.exit(f"no such file: {n}")
     return out
@@ -726,8 +740,8 @@ def cmd_probe(args):
     target = args.target
     if target != "host" and args.m32:
         sys.exit("probe: --m32 is the host's; the Windows build is x86_64 only")
-    OUT.mkdir(parents=True, exist_ok=True)
-    why = check_width(width, OUT, target)
+    CFG.out.mkdir(parents=True, exist_ok=True)
+    why = check_width(width, CFG.out, target)
     if why:
         print(f"probe: {compiler(target)} cannot compile" + (f" at -m{width}" if target == "host" else "") + f": {why}")
         return 2
@@ -737,7 +751,7 @@ def cmd_probe(args):
     what = f"-m{width}" if target == "host" else f"{target} x86_64 (llvm-mingw)"
     print(f"port inventory: {'host' if target == 'host' else target}-compile probe at {git_head()}, {what}, "
           f"{gcc_version(target)}")
-    print("flags: " + " ".join(probe_command(width, Path("build/port_inventory/include"), args.warnings, target)[1:-3]))
+    print("flags: " + " ".join(probe_command(width, CFG.out / "include", args.warnings, target)[1:]))
     failing = {f: r for f, r in res.items() if not r[0]}
     total = Counter()
 
@@ -836,8 +850,8 @@ def file_scope_definitions(src):
 
 
 def cmd_link(args):
-    OUT.mkdir(parents=True, exist_ok=True)
-    why = check_width(64, OUT)
+    CFG.out.mkdir(parents=True, exist_ok=True)
+    why = check_width(64, CFG.out)
     if why:
         print(f"link: the host gcc cannot compile at -m64: {why}")
         return 2
@@ -865,19 +879,19 @@ def cmd_link(args):
     sdk, syms = read_symbols()
     rodata = {}
     for f in files:
-        raw = (ROOT / f).read_text(errors="replace")
+        raw = (CFG.root / f).read_text(errors="replace")
         for m in re.finditer(r"^\s*INCLUDE_RODATA\([^,]+,\s*(\w+)\s*\)", raw, flags=re.M):
             rodata[m.group(1)] = f
     in_missing = {}
     for f in missing:
-        for n in file_scope_definitions(Source(ROOT / f)):
+        for n in file_scope_definitions(Source(CFG.root / f)):
             in_missing.setdefault(n, f)
     cats = defaultdict(list)
     for n in sorted(set(undefined) - set(where)):
         m = re.match(r"func_([0-9A-Fa-f]{8})$", n)
         if n in sdk:
             cats["Psy-Q function" if sdk[n][1] else "Psy-Q data"].append(n)
-        elif m and int(m.group(1), 16) >= TIER1:
+        elif m and int(m.group(1), 16) >= CFG.slot_base:
             cats["late-bound overlay address"].append(n)
         elif n in in_missing:
             cats["defined in a file missing from the probe"].append(n)
@@ -922,174 +936,8 @@ def cmd_link(args):
     return 1 if dups else 0
 
 
-# ---------------------------------------------------------------------------------------------------------------------
-# structs
-
-TYPEDEF = re.compile(r"\btypedef\s+(struct|union)\b[^;{}]*\{")
-
-
-def header_typedefs(path):
-    """-> [(name, documented size or None)] for every `typedef struct/union {...} Name;` of a header."""
-    raw = path.read_text(errors="replace")
-    text = strip_code(raw)
-    out = []
-    for m in TYPEDEF.finditer(text):
-        depth, i = 1, m.end()
-        while depth and i < len(text):
-            depth += (text[i] == "{") - (text[i] == "}")
-            i += 1
-        t = re.match(r"\s*(\w+)\s*;", text[i:i + 200])
-        if not t:
-            continue
-        tail = raw[i + t.end():raw.find("\n", i + t.end())]
-        s = re.match(r"\s*/\*\s*size\s+(0x[0-9A-Fa-f]+|\d+)", tail)
-        out.append((t.group(1), int(s.group(1), 0) if s else None))
-    return out
-
-
-def measure_sizes(width, jobs):
-    """-> ({(header, name): size}, {header: error}) by compiling one translation unit per header."""
-    out = OUT / f"structs{width}"
-    out.mkdir(parents=True, exist_ok=True)
-    inc = write_overrides(OUT)
-    env = dict(os.environ, LC_ALL="C")
-    flags = ["gcc", f"-m{width}"] + PROBE_FLAGS + ["-w", "-fno-common", f"-I{inc}", f"-I{ROOT / 'include'}",
-                                                  f"-I{ROOT}", f"-I{ROOT / 'port/include'}"]
-    if gcc_major() >= 14:
-        flags.append("-fpermissive")
-
-    def one(h):
-        rel = h.relative_to(ROOT / "include").as_posix()
-        names = [n for n, _ in header_typedefs(h)]
-        if not names:
-            return rel, {}, None
-        stem = rel.replace("/", "__")[:-2]
-        err = ""
-        for prefix in ("", '#include "common.h"\n'):
-            c = out / f"{stem}.c"
-            c.write_text(prefix + f'#include "{rel}"\n'
-                         + "".join(f"char size__{n}[sizeof({n})];\n" for n in names))
-            o = c.with_suffix(".o")
-            r = subprocess.run(flags + ["-c", str(c), "-o", str(o)], capture_output=True, text=True, env=env)
-            if r.returncode == 0:
-                break
-            err = next((line for line in r.stderr.splitlines() if "error" in line), "gcc failed")
-        else:
-            return rel, {}, err
-        sizes = {}
-        for line in subprocess.run(["nm", "-S", str(o)], capture_output=True, text=True).stdout.splitlines():
-            p = line.split()
-            if len(p) == 4 and p[3].startswith("size__"):
-                sizes[p[3][6:]] = int(p[1], 16)
-        return rel, sizes, None
-
-    sizes, errors = {}, {}
-    with ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as ex:
-        for rel, s, err in ex.map(one, headers()):
-            if err:
-                errors[rel] = err
-            for n, v in s.items():
-                sizes[(rel, n)] = v
-    return sizes, errors
-
-
-def cmd_structs(args):
-    OUT.mkdir(parents=True, exist_ok=True)
-    t0 = time.time()
-    doc = {}
-    for h in headers():
-        rel = h.relative_to(ROOT / "include").as_posix()
-        for n, s in header_typedefs(h):
-            doc[(rel, n)] = s
-    documented = {k: v for k, v in doc.items() if v is not None}
-    print(f"port inventory: struct sizes at {git_head()}, {gcc_version()}")
-    print(f"typedef'd structs/unions in include/: {len(doc)}; with a `/* size 0xNN */` comment: {len(documented)}")
-    sizes = {}
-    for width in (32, 64):
-        why = check_width(width, OUT)
-        if why:
-            print(f"-m{width}: the host gcc cannot compile at this width: {why}")
-            continue
-        sizes[width], errors = measure_sizes(width, args.jobs)
-        for rel, err in sorted(errors.items()):
-            print(f"-m{width}: include/{rel} does not compile on its own: {err}")
-        s = sizes[width]
-        match = [k for k in documented if s.get(k) == documented[k]]
-        differ = [k for k in documented if k in s and s[k] != documented[k]]
-        print(f"-m{width}: measured {len(s)} of {len(doc)}; documented sizes: {len(match)} match the PS1, "
-              f"{len(differ)} differ")
-        if width == 32 or not args.brief:
-            for k in sorted(differ):
-                print(f"    {k[1]:<32} PS1 0x{documented[k]:X}  -m{width} 0x{s[k]:X}  ({k[0]})")
-    if 32 in sizes and 64 in sizes:
-        common = [k for k in sizes[32] if k in sizes[64]]
-        changed = [k for k in common if sizes[32][k] != sizes[64][k]]
-        print(f"-m32 -> -m64: {len(changed)} of {len(common)} change size "
-              f"({sum(1 for k in changed if k not in documented)} of them undocumented)")
-        if args.verbose:
-            for k in sorted(changed):
-                if k not in documented:
-                    print(f"    {k[1]:<32} -m32 0x{sizes[32][k]:X}  -m64 0x{sizes[64][k]:X}  ({k[0]})")
-    print(f"({time.time() - t0:.1f} s)")
-    return 0
-
-
-def ps1_only_lines(src):
-    """Per line of src: True inside the PS1-only side of a PC_PORT conditional (`#ifndef PC_PORT`, or the #else of
-    `#ifdef PC_PORT` / `#if defined(PC_PORT)`)."""
-    out, stack = [], []
-    for line in src.text.split("\n"):
-        m = re.match(r"\s*#\s*(ifdef|ifndef|if|else|elif|endif)\b\s*(.*)", line)
-        if m:
-            kind, rest = m.groups()
-            if kind in ("ifdef", "ifndef", "if"):
-                pc = re.search(r"\bPC_PORT\b", rest) is not None
-                neg = kind == "ifndef" or (kind == "if" and re.search(r"!\s*defined", rest) is not None)
-                stack.append((pc, neg))
-            elif kind in ("else", "elif") and stack:
-                pc, neg = stack[-1]
-                stack[-1] = (pc, not neg)
-            elif kind == "endif" and stack:
-                stack.pop()
-        out.append(any(pc and neg for pc, neg in stack))
-    return out
-
-
-def cmd_object_sizes(args):
-    """FINDINGS 9d: object_new/object_create calls with a bare literal object or data size (exit 1 if any)."""
-    bad, total = [], 0
-    for path in c_files():
-        src = Source(path)
-        ps1 = None
-        for m in re.finditer(r"\bobject_(?:new|create)\b", src.text):
-            if not src.is_use(m):
-                continue
-            total += 1
-            ps1 = ps1 or ps1_only_lines(src)
-            ln = src.line(m.start())
-            if ps1[ln - 1]:
-                continue
-            i = src.text.index("(", m.end())
-            a = src.args(i)
-            if len(a) < 3:
-                continue
-            lits = [(what, v) for what, v in (("size", a[1]), ("data", a[2]))
-                    if INT_LITERAL.match(v) and (what == "size" or int(v.strip("()uUlL ").rstrip("uUlL"), 0) != 0)]
-            if not lits:
-                continue
-            end = src.line(src.close_paren(i))
-            lo = src.line_starts[max(ln - 2, 0)]
-            hi = src.line_starts[end] if end < len(src.line_starts) else len(src.raw)
-            if "PC_PORT: bytes" in src.raw[lo:hi]:
-                continue
-            bad.append(f"{src.rel}:{ln}: {m.group()} " + ", ".join(f"{what} {v}" for what, v in lits))
-    for b in bad:
-        print(b)
-    print(f"object-sizes: {total} object_new/object_create calls in src/, {len(bad)} with a bare literal size")
-    return 1 if bad else 0
-
-
-def main():
+def build_parser():
+    """The parser with the stack's commands; a game adds its own (structs, ...) to the returned subparsers."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("counts", help="the inventory's numbers on the current tree")
@@ -1108,15 +956,18 @@ def main():
     p.add_argument("-j", "--jobs", type=int)
     p.add_argument("-v", "--verbose", action="store_true", help="list every undefined symbol")
     p.set_defaults(func=cmd_link)
-    p = sub.add_parser("structs", help="sizeof of every typedef'd struct at -m32/-m64 vs the documented PS1 size")
-    p.add_argument("-j", "--jobs", type=int)
-    p.add_argument("--brief", action="store_true", help="do not list the documented structs that differ at -m64")
-    p.add_argument("-v", "--verbose", action="store_true", help="also list the undocumented structs that change")
-    p.set_defaults(func=cmd_structs)
-    p = sub.add_parser("object-sizes", help="object_new/object_create calls with a bare literal size (exit 0 = none)")
-    p.set_defaults(func=cmd_object_sizes)
-    args = ap.parse_args()
-    if shutil.which("gcc") is None and args.cmd not in ("counts", "object-sizes"):
+    return ap, sub
+
+
+NO_GCC = {"counts", "object-sizes"}   # commands that run without a compiler
+
+
+def main(parser=None, argv=None):
+    if CFG is None:
+        sys.exit("port_inventory: not configured: run the game's tools/port_inventory.py, which calls configure()")
+    ap = parser or build_parser()[0]
+    args = ap.parse_args(argv)
+    if shutil.which("gcc") is None and args.cmd not in NO_GCC:
         sys.exit("gcc not found on PATH")
     return args.func(args)
 

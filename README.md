@@ -24,26 +24,40 @@ python3 tests/game_gen_test.py           # the description generator's test
 
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay, pump, video, render_gpu, spu, audio, input, memcard, settings, json, sha1, crash, debug, framelog, platform, reset |
-| `include/psxstack/` | The hook macros the game C uses (`hooks.h`), the adapter interface (`game.h`), the runtime's headers |
-| `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c` |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset |
+| `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the runtime's headers |
+| `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
+| `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V at build time) |
+| `mods/fast_forward/` | The one mod every game has |
 | `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
-| `tools/` | `port_gen.py` (the generic generators), `mcp/` (the debug channel's MCP server), `port_inventory.py` (the host-compile gate) |
-| `cmake/`, `scripts/` | `psxstack_add_game()`, the Windows toolchain, setup steps (SDL3, ImGui, DXC, llvm-mingw, AppImage), packaging |
-| `schema/` | `game.schema.json`: the game description; `settings.schema.json`, `mod.schema.json` later |
-| `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free host-only Psy-Q program, the stack's smoke test |
-| `docs/` | `GAME_CONTRACT.md`, `DECISIONS.md`; `PORT.md`, `LAUNCHER.md`, `RELEASE.md` once their generic parts move here |
-| `tests/` | The stack's own tests: the launcher self-test, the debug-channel gate, the renderer comparison, the hello example |
+| `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
+| `windows/` | The game's Windows resource and manifest templates |
+| `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `mcp/` (the debug channel's MCP server, client and symbols) |
+| `scripts/` | `setup.sh` (SDL3, ImGui, DXC, llvm-mingw, SDL3 for Windows, cmake), `dev_link_tools.sh` |
+| `schema/` | `game.schema.json`: the game description |
+| `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test |
+| `docs/` | `GAME_CONTRACT.md`, `PORT.md`, `RUNTIME.md`, `LAUNCHER.md`, `DECISIONS.md`, `THIRD_PARTY.md` |
+| `tests/` | The stack's own tests: `hello_test.py`, `game_gen_test.py`, the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
+
+## Using it from a game
+```cmake
+include(psxstack/cmake/psxstack.cmake)          # the submodule (or a sibling clone linked at psxstack/)
+psxstack_add_game(mygame GAME_JSON port/game/game.json UNITS build/gen/units.txt MAIN_UNIT src/main.c
+                  OVERLAYS build/gen/overlays.txt INCLUDE_DIRS include . ADAPTER port/game/state.c ...)
+```
+`cmake/psxstack.cmake` documents every argument; `docs/GAME_CONTRACT.md` what the game provides; `examples/hello` is
+the smallest consumer, dw2003recomp's `port/CMakeLists.txt` the first real one. The launcher is its own project:
+`cmake -S psxstack/launcher -B build/launcher -DPSXSTACK_GAME_JSON=... -DPSXSTACK_VERSION_ROOT=...`.
 
 ## Phases
 
-0. **Contract** (this): `GAME_CONTRACT.md`, `game.schema.json`, decisions. Both tracks code against it.
-1. **Split in place** in dw2003recomp: `port/runtime` vs `port/game`, `port.h` split, N-slot overlay manager. No behavior change.
-2. **Bootstrap**: the runtime, the shim, the tools and scripts move here; `examples/hello`; this repo's CI. A scratch copy of
-   dw2003recomp consumes it by local path and passes its full test suite.
-3. **Launcher** (parallel with 2): moves here, branding and disc identity from the game description, self-test driven by it.
-4. **Converge**: the scratch copy switches to the submodule; release, CI and setup scripts adapted.
-5. **Public and switch**: docs, THIRD_PARTY, tag `v0.1.0`; dw2003recomp replaces `port/` and `launcher/` with the pin.
+0. **Contract** (done): `GAME_CONTRACT.md`, `game.schema.json`, decisions.
+1. **Split in place** (done) in dw2003recomp: `port/runtime` vs `port/game`, `port.h` split, N-slot overlay manager.
+2. **Bootstrap** (done): the runtime, the shim, the tools and scripts moved here; `examples/hello`; this repo's CI. A
+   scratch copy of dw2003recomp consumes it by local path and passes its full test suite.
+3. **Launcher** (done): branding and disc identity from the game description, self-test driven by it.
+4. **Converge**: the first game switches to the submodule; its release, CI and setup scripts adapted.
+5. **Public and switch**: tag `v0.1.0`; dw2003recomp replaces `port/` and `launcher/` with the pin.
 
 ## License
 

@@ -442,8 +442,8 @@ def cmd_sections(args):
     main_data = game.get(md, 0) + game.get(f"{PE_PREFIX}data", 0)
     main_bss = game.get(mb, 0) + game.get(f"{PE_PREFIX}bss", 0)
     print(f"port_gen sections: {sum(game.values())} bytes of the game's writable data in {len(game)} non-empty "
-          f"overlay sections ({'main .data' if md in game else PE_PREFIX + 'data'} {main_data}, "
-          f"{'main .bss' if mb in game else PE_PREFIX + 'bss'} {main_bss}); {len(bad)} outside")
+          f"overlay sections ({PE_PREFIX + 'data' if f'{PE_PREFIX}data' in game else 'main .data'} {main_data}, "
+          f"{PE_PREFIX + 'bss' if f'{PE_PREFIX}bss' in game else 'main .bss'} {main_bss}); {len(bad)} outside")
     if args.verbose:
         for k in sorted(other):
             print(f"  not game data: {k}: {other[k]} bytes")

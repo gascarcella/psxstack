@@ -9,7 +9,7 @@
  * log.
  *
  * The EXE's units (src/main/) have their .data/.bss in their own sections too (tools/port_gen.py ldscript:
- * .dw3.data.main, .dw3.bss.main), snapshotted at startup with the overlays': the console's reset (runtime/reset.c)
+ * <id>_data_main, <id>_bss_main), snapshotted at startup with the overlays': the console's reset (runtime/reset.c)
  * puts every game global back with port_overlay_reset, and port_overlay_check proves it (<PREFIX>_PORT_RESET_CHECK). The
  * link map check (port_gen.py sections, after every link) proves that no game object's writable data is outside
  * these sections. */

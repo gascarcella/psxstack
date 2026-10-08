@@ -1,7 +1,9 @@
-# psxstack's CI: disc-free, no game. The game-description generator's test, the launcher's build and headless
-# self-test on Ubuntu 24.04 (SDL3 and Dear ImGui at their pins through scripts/setup.sh; the built tools cached on
-# the pins, scripts/setup.sh --pins, not on the script's text), and the Windows cross-build with its self-test under
-# Wine. On pull requests, pushes to main and by hand; a newer push to a pull request cancels the older run.
+# psxstack's CI: disc-free, no game. The game-description generator's test, the hello example built through
+# psxstack_add_game() and run headless (tests/hello_test.py: the generators, the sections, the shim, the runtime), the
+# debug tools' offline self-test, the launcher's build and headless self-test on Ubuntu 24.04 (SDL3 and Dear ImGui at
+# their pins through scripts/setup.sh; the built tools cached on the pins, scripts/setup.sh --pins, not on the
+# script's text), and the Windows cross-build with its self-test under Wine. On pull requests, pushes to main and by
+# hand; a newer push to a pull request cancels the older run.
 name: CI
 on:
   push:
@@ -29,7 +31,37 @@ jobs:
           python3 -m venv .venv && .venv/bin/pip install -q jsonschema
           .venv/bin/python tests/game_gen_test.py
       - name: Every example validates
-        run: for f in examples/*.game.json; do python3 tools/game_gen.py "$f" --check; done
+        run: for f in examples/*.game.json examples/hello/game.json; do python3 tools/game_gen.py "$f" --check; done
+      - name: The Python compiles
+        run: python3 -m py_compile tools/*.py tools/mcp/*.py tests/*.py
+
+  hello:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: cmake and ninja
+        run: |
+          scripts/setup.sh cmake
+          echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
+      - name: examples/hello built through psxstack_add_game() and run headless (tests/hello_test.py)
+        run: python3 tests/hello_test.py
+      - name: The shim compiles on its own against hello's headers (psyq/check.sh --compile)
+        run: |
+          mkdir -p build/probe/include
+          python3 tools/game_gen.py examples/hello/game.json --out build/probe/include/psxstack_game_gen.h
+          printf '#ifndef INCLUDE_ASM_H\n#define INCLUDE_ASM_H\n#define INCLUDE_ASM(F, N)\n#define INCLUDE_RODATA(F, N)\n#endif\n' > build/probe/include/include_asm.h
+          psyq/check.sh --game-root examples/hello --probe-dir build/probe --compile
+
+  mcp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: The debug tools' offline self-test (tools/mcp/selftest.py)
+        run: |
+          python3 -m venv .venv && .venv/bin/pip install -q mcp
+          .venv/bin/python tools/mcp/selftest.py
 
   launcher:
     runs-on: ubuntu-24.04

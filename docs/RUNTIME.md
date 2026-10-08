@@ -1,0 +1,295 @@
+# The runtime: building, running, options and formats
+
+A game built through `psxstack_add_game()` (`cmake/psxstack.cmake`; docs/PORT.md for the architecture) is one host
+binary named after the game: the game's C, its adapter, the runtime (`runtime/`) and the Psy-Q shim (`psyq/`). This
+page is the runtime's manual: the build options, the command line, the settings file, the window, what the build
+generates, the runtime's parts, the per-frame log and the record, the SPU core and the audio output. `<game>` is the
+game's id (the first game's: `dw2003`); `<PREFIX>` its environment prefix (`DW3`).
+
+## Build and run
+```sh
+cmake -S port -B build/port -G Ninja      # the game's port directory; CMake >= 3.20; Ninja; GCC (or Clang) with GNU ld
+cmake --build build/port                  # ~30 s from scratch with -j6 for the first game
+build/port/<game> --max-frames 60         # exit 0 at the frame cap; 3 from port_unimplemented; 2 PLATFORM_HALT; 4 watchdog
+build/port/<game> --trace                 # every tick, overlay load/resolve and stub call, to stderr
+build/port/<game> --max-frames 600 --log run.log --record run.json   # the per-frame log and the record (below)
+build/port/<game> --disc <disc>.cue --script scripts/new_game.json --log run.log --record run.json
+build/port/<game> --help                  # every option (--cd-speed instant|realistic, --no-disc-check, ...)
+build/port/<game> --disc <disc>.cue --debug /tmp/game.sock   # the debug channel (runtime/debug.c; tools/mcp drives it)
+```
+Options (CMake cache): `-DPSXSTACK_SANITIZE=ON` (`-fsanitize=address,undefined`; needs libasan/libubsan installed),
+`-DPSXSTACK_M32=ON` (a 32-bit binary: `-m32` on every compile and link; needs gcc-multilib),
+`-DPSXSTACK_ALLOW_UNRESOLVED=ON` (link with undefined symbols ignored), `-DPSXSTACK_UNIT_OVERRIDES="<unit>=<path>;..."`
+(experiments: build a unit from another file, the tree untouched), `-DPSXSTACK_PSYQ_WERROR=OFF`,
+`-DPSXSTACK_SDL=ON` (the window: below), `-DPSXSTACK_TOOLS_DIR=<dir>` (where `sdl3/`, `dxc/`, ... were built),
+`-DPSXSTACK_VERSION_ROOT=<repo>` (the repository `git describe` names the build after: the game's),
+`-DPSXSTACK_PYTHON=<python>` (the generators' interpreter).
+
+The sanitizer and 32-bit builds go into their own build directories:
+```sh
+cmake -S port -B build/port-san -G Ninja -DPSXSTACK_SANITIZE=ON && cmake --build build/port-san
+build/port-san/<game> --max-frames 600    # any ASan/UBSan report goes to stderr (and ASan's exits non-zero)
+cmake -S port -B build/port-m32 -G Ninja -DPSXSTACK_M32=ON && cmake --build build/port-m32
+build/port-m32/<game> --max-frames 600 --log m32.log && build/port/<game> --max-frames 600 --log m64.log && cmp m32.log m64.log
+```
+The `-m32` build is the layout check: pointers are 4 bytes there, as on the PS1, so a run whose log differs from the
+64-bit build's has a pointer-size bug on one side (the log holds no host address).
+
+## The settings file (`--config FILE`)
+What the launcher starts the game with (docs/LAUNCHER.md "Contract" to "Settings file", schema 1; `runtime/settings.c`): the disc, the
+window (`video.window`, `scale`, `fullscreen`, `refresh`), `audio.mute`, the memory cards (default `card1.mcd` and
+`card2.mcd` beside the file, created formatted when missing; `null` for no card), the watchdog (default off), and the
+`input` and `mods` sections. Paths in the file are relative to its directory. The options given on the command line
+override the file. The game reads a settings file only when `--config` names it: the bare binary, which the tests run,
+never depends on the machine. A bad value exits 64 naming the key; an unknown key is logged and ignored.
+```sh
+build/port-sdl/<game> --config <settings dir>/settings.json                   # as the launcher starts it
+build/port/<game> --config settings.json --print-settings                     # the effective settings, every key
+```
+
+## The window (`-DPSXSTACK_SDL=ON`)
+SDL3 (zlib licence) shows the PS1's display and reads the keyboard and
+gamepads. It is optional: the default build has no SDL and stays headless (the tests use it). SDL3 is pinned
+(`scripts/setup.sh` `SDL3_VER`/`SDL3_SHA256`) and built from its release tarball into `tools/sdl3/` as a static library,
+so the binary needs nothing beside it; SDL loads X11/Wayland/ALSA/PulseAudio/... with `dlopen` at run time.
+```sh
+scripts/setup.sh sdl3 dxc                 # ~70 s with 2 jobs; again: "already installed"
+cmake -S port -B build/port-sdl -G Ninja -DPSXSTACK_SDL=ON && cmake --build build/port-sdl
+build/port-sdl/<game> --disc <disc>.cue --window            # 640x480, 50 vsyncs per second (PAL)
+build/port-sdl/<game> --disc <disc>.cue --scale 3 --fullscreen
+build/port-sdl/<game> --disc <disc>.cue --script scripts/new_game.json --window   # watch a replay
+build/port-sdl/<game> --disc <disc>.cue --window --renderer gpu   # the window through the hardware renderer
+SDL_VIDEO_DRIVER=offscreen build/port-sdl/<game> --input-test --fps 0   # no display: the input self-test (exit 0)
+```
+SDL's backends follow the `-dev` headers present when `setup.sh sdl3` runs: missing optional ones are turned off one by
+one (logged), and with no X11/Wayland headers at all only the `offscreen` and `dummy` video drivers are built (enough
+for the tests). For a desktop window install the headers (Debian/Ubuntu: `libx11-dev libxext-dev libwayland-dev
+libxkbcommon-dev wayland-protocols libasound2-dev libpulse-dev libudev-dev`), then `rm -rf tools/sdl3 && scripts/setup.sh
+sdl3`. Another SDL3 (3.2 or newer) is used when CMake is pointed to it (`-DSDL3_DIR=<dir with SDL3Config.cmake>` or
+`CMAKE_PREFIX_PATH`). The window is 64-bit only (`PSXSTACK_M32` with `PSXSTACK_SDL` is refused).
+
+**The picture** (`runtime/video.c`): every vsync the display area that `PutDispEnv` set (`psyq.h` "The video output":
+`psyq_gpu_display`) is read from the VRAM (`psyq_gpu_vram`, the software GPU's) and converted to 32-bit pixels at its
+own size: 15-bit (one VRAM pixel per screen pixel, 5-bit components widened as `(c << 3) | (c >> 2)`, the mask bit not
+shown) or 24-bit (`isrgb24`, the movies and the title: 3 bytes per screen pixel, so a 320-pixel line spans 480 VRAM
+pixels; `disp.w` counts screen pixels), any width up to 640 and height up to 576 (the title's 320x480 interlaced frame
+is shown whole, both fields), wrapping in the VRAM as the GPU does; black while `SetDispMask(0)` holds. The image is
+drawn at 4:3, nearest-neighbour, as tall as an integer multiple of its lines fits the window (centred; scaled to fit when
+the window is smaller than the image). `--scale N` opens a 320N x 240N window (default 2; with an even N a 240-line and
+a 480-line display come out the same size), `--fullscreen` (F11 toggles). `--screenshot FRAME:PATH` (repeatable; any
+build, also headless) writes the image of vsync FRAME as a binary PPM: the texture's pixels, independent of the window.
+**The renderer** (docs/PORT.md "Rendering"): `--renderer software` (the default) presents through
+SDL_Renderer; `--renderer gpu` (or `video.renderer: "gpu"`) through the hardware renderer, `runtime/render_gpu.c` on SDL_GPU
+(Vulkan). It is opened before any SDL_Renderer (on Wayland a window that had an OpenGL renderer cannot be claimed by
+Vulkan); when it cannot present (no Vulkan driver, NVIDIA on the offscreen driver, a shader that does not load) the run
+logs `renderer: gpu unavailable (<why>); software` and uses SDL_Renderer. Its rasteriser draws the game itself into a
+VRAM target of its own (`runtime/render_gpu.c`'s header comment) and a 15-bit display is presented from that target; 24-bit
+displays (the movies, the title) stay the software image. At the internal scale of 1 the picture is the software
+path's, pixel for pixel. Its shaders need DXC at build time (`scripts/setup.sh dxc`, or `-DPSXSTACK_DXC=<path>`):
+configuring the SDL build without it fails with that hint. `--gpu-screenshot FRAME[@WxH]:PATH` (repeatable) writes the hardware renderer's picture
+of vsync FRAME as a PPM: the image itself, or with `@WxH` its present into a W x H output, letterboxed as the window
+would be; a run that has no device opens one for it (headless too: `SDL_VIDEO_DRIVER=offscreen`), and logs the shot as
+skipped when none opens. `--screenshot` and the debug channel's screenshot stay the software image.
+`<PREFIX>_PORT_PRESENT_READBACK=FRAME:PATH` reads SDL_Renderer's output back (a game's renderer test compares the two
+present paths). `<PREFIX>_PORT_GPU_VRAM_CHECK=N` compares the rasteriser's whole target with the software VRAM every N
+vsyncs and logs any difference (with `--renderer gpu --window`, or `--gpu-screenshot` headless). `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` picks Mesa's software Vulkan driver.
+`--debug SOCKET` (any build) opens the debug channel on a Unix socket (`runtime/debug.c`'s header comment is the protocol;
+`tools/mcp/` drives it): pause, step, wait, the pad, memory by host or PS1 address, screenshots, the hash, reset, quit,
+each between two vsyncs; it turns the watchdog and the default frame cap off; `--debug-hold` starts the game paused at
+its first vsync until the client resumes it (docs/PORT.md "Debug channel").
+
+**Real time**: with a window the vsyncs are paced to `--fps N` per second (default: the description's rate; 0: unthrottled) against `CLOCK_MONOTONIC`; a run more than 0.1 s late starts the pace over instead of hurrying. Only the
+time between vsyncs changes: the log and the record of a window run are the headless run's, byte for byte. Without a
+window nothing is paced.
+
+**Input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad (`psyq_pad_set`),
+once per vsync. Keys (by position): arrows the D-pad; X cross, C circle, Z square, S triangle; Enter (or keypad Enter)
+START; Backspace (or right Shift) SELECT; Q L1, E R1, 1 L2, 3 R2; F11 fullscreen, P pause. Gamepads (SDL's positional
+buttons, the PlayStation layout): south cross, east circle, west square, north triangle, back SELECT, start START,
+shoulders L1/R1, triggers L2/R2, the D-pad and the left stick the D-pad. All of it is rebindable in the settings
+(`input.keyboard`, `input.gamepad`, `input.hotkeys`; docs/LAUNCHER.md "Input bindings"), and the mods add hotkeys. A
+hotkey never reaches the pad: a completed trigger masks its inputs until they are all released. **The pause** stops the
+game between two vsyncs (the window keeps presenting the last image, the audio device pauses) until the key again. Every change of the pad goes to the log's `I` lines and the
+record's `inputs`, as a script's do. With `--script` the script owns the pad: the window's input never reaches it.
+Closing the window (or SIGINT/SIGTERM, which SDL turns into a quit) ends the run: `port_exit(0, "window closed")`, the
+log and the record written. `--input-test` checks the path: it injects every key of the map (`SDL_PushEvent`), then
+attaches a virtual SDL gamepad and presses each of its buttons, triggers and stick directions, and a chord, one per
+frame with its release in the next, then every hotkey trigger, and requires the buttons sent to `psyq_pad_set` to be the
+map's (none for a hotkey's, which must fire; with `--script`: none sent, and the script's log stays byte-identical to a
+run without the test), then (without a script) the pause's round trip; exit 0 when all the checks pass , 6 otherwise. With `--config` it tests the settings' map. The first game's CI runs it on SDL's offscreen driver, with the defaults and with a rebound settings file.
+
+**The mods** (`runtime/mods.c`; docs/LAUNCHER.md "Mod manifest", "Mod runtime"): the registry (the stack's
+fast_forward, then the game's `game_mods`); each has a manifest `mods/<id>/mod.json` (the stack's `mods/`, the game's
+directories), copied beside the binary (`build/port*/mods/`) for the launcher. `--print-mods` prints the
+registry; the settings' `mods.<id>` enable and configure them; under `--script` they are off unless `--script-mods`.
+
+**Two rates** (`runtime/pump.c`): the nominal rate (`port_rate`, the description's; `--fps N` sets it: the audio's samples per vsync) and
+the pace (the wall clock's vsyncs per second; `port_pace_set`, which starts the schedule over on every change, so a
+fast-forward that ends never makes the game wait for the vsyncs it ran ahead).
+
+**Fast-forward** (the `fast_forward` mod; docs/LAUNCHER.md "Fast-forward"): enabled in the settings, hold `Tab` (or a
+toggle binding) runs the game at the nominal rate times its speed (default `4x`), presents at most 60 images a second
+and mutes the audio device; the game, its log and its record are unchanged.
+
+## What the build generates (`build/port/gen/`, by `tools/port_gen.py`)
+At configure time (the inputs are the files the game's tooling writes: `units.txt`, `overlays.txt`, `tag_sites.txt`,
+`volatile.txt`; GAME_CONTRACT.md "5"):
+- `include/psxstack_game_gen.h` (`tools/game_gen.py`): the game description as C macros; `psxstack_game.cmake` the
+  id, title, prefix and rate as CMake variables.
+- `include/include_asm.h` (empty `INCLUDE_ASM`/`INCLUDE_RODATA`) and, when the game gives its `GTEMAC`,
+  `include/psyq/gtemac.h` (every `gte_*` macro translated from its MIPS sequence into calls of the software GTE,
+  `psyq/gte.c`), first on the include path with the real headers' guards.
+- `units.txt`: `<source path>\t<overlay>` per unit (`MAIN` for the EXE's) with the unit overrides applied, what the
+  compile launcher reads.
+- `markers.c` (PE only, `port_gen.py markers`): the `__start_<id>_*`/`__stop_<id>_*` symbols of the EXE's and each
+  overlay's `.data`/`.bss` as empty labelled chunks in the groups `.psxdata$<ovl>_0`/`_2` and `.psxbss$<ovl>_0`/`_2`.
+
+Each unit is compiled through `port_gen.py rename` (CMake's `C_COMPILER_LAUNCHER` on the units; a launcher of the
+user's such as ccache runs after it): the object's writable sections (`.data*`, `.bss*`; not `.data.rel.ro*`, const
+after relocation) go into the overlay's: on ELF `<id>_data_<ovl>` and
+`<id>_bss_<ovl>` (`<ovl>` = `main` for the EXE), orphan output sections with C-identifier names, for which GNU ld
+makes `__start_`/`__stop_` by itself and which it places after `.data`/`.bss`, outside GNU_RELRO (the ELF link stays non-PIE for the debug channel's `nm` addresses, docs/PORT.md
+"Compiling the game C for the host"); on PE `.psxdata$<ovl>_1` and `.psxbss$<ovl>_1`, chunk groups of the two output sections
+`.psxdata` and `.psxbss` (eight characters: a PE image section name's limit) that lld sorts by their `$` suffix, so that they lie between the markers above (two output
+sections in all, not one per overlay). No linker script (lld for PE takes none; DECISIONS "Overlay sections by
+renaming, no linker script"). On ELF the launcher runs the compile, then the host's GNU objcopy renames the
+sections. On PE (`--pe`) it forces the overlay's `#pragma clang section data=... bss=...` into the compile
+(`build/port-win/gen/sections/<ovl>.h`), and no objcopy touches the object: GNU objcopy drops the
+`IMAGE_SCN_LNK_COMDAT` flag of every COFF section it rewrites, after which lld discards the unit's COMDAT
+`.pdata$fn`/`.xdata$fn` (the x64 unwind tables; a crash report's stack walk and any SEH unwinding then stop at the
+first game frame), and llvm-objcopy cannot rename COFF sections at all. Either way the launcher checks the object
+with GNU objdump, which reads COFF too (Fedora's and Ubuntu's binutils have the `x86_64-pe` target; CMake checks
+`objdump --info`). A game's stand-in data names its overlay's section explicitly the same way (`<id>_data_<ovl>`).
+
+At build time, after the units are compiled:
+- `overlay_tables.c`: per overlay `{ tier, file ID, name, [{ PS1 address, host function }], section bounds }`.
+  The addresses are the `type:func` lines of each overlay's symbol file (`overlays.txt`); a function is in the
+  table only if `nm` of the overlay's objects shows it as a global (a `static` function, or one still `INCLUDE_ASM`,
+  has no host symbol). The file IDs come from `overlays.txt` too. The generator also checks every tag site
+  (`SLOT_FUNC` and `LATE_FUNC` sites it finds itself; the game's `tag_sites.txt`) against the tables and fails the
+  build if one does not resolve.
+- `port_state_tables.c` (`port_gen.py state`, when the game gives `EXE_SYMBOLS`): the EXE's functions (`{ PS1
+  address, host function }`, the `type:func` lines of its symbol file that nm finds in the EXE's objects), its data
+  symbols with a `size:` there (`{ PS1 address, PS1 size, host object, layout-identical length }`), and the volatile
+  ranges (`volatile.txt`). A data symbol is layout-identical as a whole when its `sizeof` at `-m64` is its PS1 size
+  (a pointer or a `long` makes it larger at -m64); the generator measures that size by compiling the defining units
+  at `-m64` (to assembly, ~1 s) in every build, so the `-m32` build's table is the same, and it fails if a
+  pointer-free object's size differs between the two.
+
+After the link (`port_gen.py sections`, POST_BUILD): every writable section of a game object (`.data*`, `.bss*`,
+`COMMON` of the units' objects, read with `objdump -h`) must be a renamed one, i.e. inside the
+ranges the console's reset restores; one left out fails the build (`-v` lists the other writable sections, such as
+ASan's `asan_globals`). The link map (`build/port/<target>.map`, `-Wl,-Map`) is written for reading.
+
+## The runtime
+**Arena** (docs/PORT.md "Memory arena"): one static block, `port_arena`, mirroring the PS1 from the first slot
+up: the description's slots at their distances, then the heap (`host_size`, larger than the PS1's because 64-bit
+structs are bigger); `port_slot<n>`, `port_heap_start` and `port_heap_end` are macros on it (the generated header). A
+pointer's PS1-style address (`PTR_TO_S32`) is `PORT_SLOT1_BASE + offset`. An
+ordering-table tag (`PTR_TO_U32`) is a pointer's word offset in the **tag window**, the units' `.data`/`.bss` regions
+plus the arena (a few MB, more under ASan; measured by `port_overlay_init`, under 64 MB by a startup check), since
+a game may keep an ordering table static; the shim's `DrawOTag` walks tags from `port_tag_base`. No alignment or link
+address is assumed by the arena (the ELF link is still non-PIE, for the ld script's RELRO interaction only;
+`port/CMakeLists.txt`): the arrangement a PE build can use as it is.
+
+**Overlay manager**: every overlay is linked in. `OVERLAY_COPY` (a game's overlay `memcpy` sites) calls
+`port_overlay_load(tier, file, ...)`: a file with a table becomes the tier's current overlay and gets its `.data` and
+`.bss` restored from the startup snapshot (`.bss`: zero; what the PS1's copy of the file did); a file without one
+(data files) is copied into the slot buffer, exactly the PS1's memcpy. `OVERLAY_FN`/`LATE_CALL`
+call `port_overlay_resolve(tier, addr)`: a tag (an address inside the PS1's RAM) is looked up in the tier's
+current overlay's table (fatal if absent: static, still asm, or a data file is loaded); anything else is a host
+function pointer and comes back unchanged. **The copy's time:** on the PS1 the copy is LIBC2's byte-loop `memcpy`
+(about 12 cycles a byte), so 0x19000 bytes take ~1.8 frames, and an emulator's checkpoints can see the state
+between the copy and the overlay's start-up. `port_overlay_load` therefore runs `size * 12 / 677376` vsync ticks
+(`port_wait`) after a copy.
+
+**Game-state probes** (the adapter's `game_state_*`, GAME_CONTRACT.md "4"): what a replay runner reads from PS1 RAM
+(the stage, the file, the map, the random index, the player's position) read from the host's objects by the game's
+adapter; the slot's first word is the runtime's (`port_overlay_load` keeps the first word of every file it copies,
+per tier). `game_state_read(addr, size, signed, &v)` (the script's `wait_mem`, the debug channel's `peek_ps1` below
+the arena) maps a PS1 address only where the adapter maps it (layout-identical objects, explicit field tables);
+anything else returns 0 (unmapped).
+
+**The checkpoint hash**: the adapter's `game_state_image` (its PS1 bytes, pointers as PS1 addresses), the emulator's
+dump. The record has its SHA-1 and the SHA-1 with the volatile ranges zeroed (`gamestate_sha1_stable`).
+
+**Pump**: a frame is one vsync tick (`psyq_vsync_tick`), from the game's `VSync()` or from `PLATFORM_WAIT()` ->
+`port_wait()`, or from LIBCD's `StGetNext` once per 5000 empty polls (the movie player spins without a wait hook).
+Each tick runs `port_frame` (`pump.c`): the CD tick (`psyq_cd_tick`), the frame log, the window's input (with a
+window), the script's step, the screenshots and the window's present (`video.c`), the exit at `--max-frames` (default
+600; none with `--script`), and with a window the real-time pace ("The window"). `<PREFIX>_PORT_CHECKPOINT_DIR=<dir>` writes each checkpoint's PS1
+image as `cpNN_<name>.bin`. A watchdog (`--watchdog SEC`,
+default 10) exits 4 when no `port_wait()` ran for that long: a loop that no hook reaches (see below).
+
+**The console's reset** (`reset.c`; the script's `reset` step, an emulator's hard reset): the step releases
+the pad and ends its frame (the input trace, the end-of-script check), then `port_reset_request`
+longjmps from the vsync tick, however deep in the game's stack (a `VSync`, a `PLATFORM_WAIT`, `StGetNext`'s polling
+tick, an overlay copy's ticks), to `main()`, which calls `port_reset_state` and `game_main()` again. The reset puts
+back: every game global (the EXE's and every overlay's `.data`/`.bss` from the startup snapshot, static locals
+included; no overlay current; `port_overlay_reset`), the arena (zero: the PS1's RAM is cleared), the shim
+(`psyq_reset`: each library's `psyq_<lib>_reset`; the CD's sector source and timing model, the vsync hook, the GPU walk
+window, the memory cards' contents and the trace setting stay). The frame count, the frame log's sequences (the next
+frame records `(0, 0)` and map 0 as a change, as an emulator's listener records the cleared RAM), the checkpoints,
+the input trace and the script's next step go on; the log gets an `R` line. `<PREFIX>_PORT_RESET_CHECK=1` (or `--trace`)
+proves the restore: at startup (the last setup call before `game_main`) and after every reset, every game section is
+compared with its startup snapshot and the arena with zero, fatal on a difference; with `port_gen.py sections` (no
+game data outside the sections) that is the whole of the game's writable state.
+
+## The per-frame log (`--log FILE`)
+Text, line-buffered, one line per frame and one per event; nothing in it depends on the host (no time, no address),
+so two runs, and the `-m32` and `-m64` builds, write the same bytes. `<frame>` is `port_frames`: the vsync ticks so
+far (an event between two ticks carries the last tick's number, as an emulator's listener would see it at the next).
+| Line | Meaning |
+|---|---|
+| `# <game> port frame log 1 (port/README.md)` | The header (the format's version) |
+| `F <frame> st <stage> fl <file> map 0x<map> prims <n> hash <8 hex>` | Every frame: the adapter's stage, file and map, and the primitive stream of the frame (`psyq_gpu_take_hash`: the primitives DrawOTag walked since the previous frame, their FNV-1a hash over the words the GPU reads: a textured polygon's padding halves and, for a 15-bit texture, its unused CLUT field are hashed as 0, since the game leaves them to stale packet-buffer bytes that differ between builds) |
+| `S <frame> stage <stage> file <file>` | An overlay-sequence entry: `(stage, file)` changed (frame 1 always) |
+| `M <frame> map 0x<map>` | A map-sequence entry: the map changed (frame 1 always) |
+| `L <frame> tier <t> file 0x<id> <name> word0 0x<8 hex> size 0x<n>` | A file copied into a slot (`port_overlay_load`): the overlay's name, or `(data)`; its first word; its size |
+| `C <frame> <name> stage <stage> map 0x<map> rnd <index> sha1 <40 hex> stable <40 hex>` | A checkpoint |
+| `I <frame> buttons 0x<4 hex>` | The script's pad changed (`port_framelog_input`; PS1 bit order, active high) |
+| `R <frame> reset` | The console's reset (the script's `reset` step): the next frame runs the game from `main()` again |
+| `X <frame> status <status> <reason>` | The exit (`port_exit`) |
+
+## The record (`--record FILE`)
+JSON written at exit, with the keys of the first game's emulator records (its `replay.py` reads it as it is):
+`runner` (`"port"`), `status` (the exit status), `reason`, `frames`, `checkpoints` (`name`, `frame`, `stage`, `map`,
+`random_index`, `gamestate_sha1`, `gamestate_sha1_stable`, as the emulator runner records them), `overlay_sequence`
+(`{frame, stage, file}`), `map_sequence` (`{frame, map}`), and `inputs` (`{frame, buttons: [names]}`, the names sorted) once the script has called `port_framelog_input`. The sequences follow the emulator runner's vsync
+listener: an entry at every change, the first frame always (`{1, 0, 0}`, map 0).
+
+## The SPU core
+`runtime/spu.c` and `runtime/spu_dsp.c` are the PS1's sound chip, our own from psx-spx (the first game's docs/SOUND.md section 6 has
+what is modelled, the readings taken where psx-spx is silent, and the checks): the register file by offset from
+`0x1F801C00` (`spu_write16`/`spu_read16`), 512 KB of SPU RAM (`spu_dma_write`, the FIFO), 24 voices (ADPCM, pitch
+with the 4-point interpolation, ADSR, volume sweeps, noise, PMON), the mix with its clamps, the reverb at 22,050 Hz,
+the CD input (`spu_cd_input`) and the capture buffers. `spu_render(out, frames)` renders 44,100 Hz stereo; time moves
+only there (a register write acts between two samples), so the output is a function of the writes and the frame
+counts. `spu_set_write_hook` sees every write and DMA block (the trace writer). LIBSND drives it (`psyq/libsnd*.c`); the first game's `tests/spu/` holds its unit goldens (from a Python model of
+the same psx-spx text) and its checks against PCSX-Redux. 53× real time at `-O2`, 13× at `-O0`.
+
+## Audio (`--wav`, the SDL3 audio device)
+`runtime/audio.c` renders the SPU core once per vsync (`port_audio_frame`, `pump.c`'s vsync pre-hook: at the start of the
+tick, before the game's VSyncCallback handler, where LIBSND's flush reads the envelopes and writes the SPU): vsync n gets `floor((n + 1) * 44100 / rate) - floor(n * 44100 / rate)` stereo frames
+with `rate` = `--fps` (the description's rate by default: 882 frames a vsync at 50, 735 at 60; `--fps 0`: the nominal rate). So the audio lasts exactly as long as the vsyncs at their nominal pace and its pitch never changes (a PAL game
+paced at 60 plays its music 20 % faster). It renders whether anything listens or not: LIBSND reads the voices'
+envelopes back, so the game must not run differently with or without an output. The samples depend only on the SPU
+writes and the vsync count: two runs give the same bytes.
+```sh
+build/port/<game> --disc <disc>.cue --script scripts/new_game.json --wav run.wav   # any build, headless
+build/port-sdl/<game> --disc <disc>.cue --window            # sound through SDL3's default device
+build/port-sdl/<game> --disc <disc>.cue --window --mute     # no device
+SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=out.raw build/port-sdl/<game> --disc <disc>.cue --window --max-frames 3000
+```
+`--wav FILE`: 44,100 Hz, stereo, signed 16-bit little-endian PCM; the header's sizes are written at exit
+(`port_exit`), so the file is `44 + vsyncs × 882 × 4` bytes (every vsync of the run, the last one too). The window's device (unless `--mute`) is an SDL3 audio stream fed the
+same samples. Its clock and the window's pace (`CLOCK_MONOTONIC`, `pump.c`) drift apart; the queue (frames put and
+not yet played, measured before each vsync's put) is held without touching the game's timing or the samples: a moving
+average above the band (target ± one vsync, target = the device's period + two vsyncs: 63 ms ± 20 ms at 1,024 frames)
+speeds the stream's playback up by 0.2 % (`SDL_SetAudioStreamFrequencyRatio`, 3.5 cents) until it is back at the
+target, below the band slows it down as much; an empty queue (the host was late) is refilled with the target's worth
+of silence; above target + three vsyncs (an unthrottled `--fps 0`, a device that stalled) the vsync's samples are
+dropped. The log (stderr) gets the device, the watermarks, and every 10 s and at exit the queue's minimum, maximum and
+mean, the ratio changes, refills and drops. Without a device (none on the host, or SDL fails) the run goes on silent.
+SDL's `disk` driver plays in real time into a file (S16LE stereo at 44,100 Hz) and `dummy` discards: headless tests of
+the path (a CI can run the input self-test with `dummy`).

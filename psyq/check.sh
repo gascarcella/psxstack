@@ -1,43 +1,62 @@
 #!/usr/bin/env bash
-# port/psyq/check.sh: compiles the Psy-Q shim on its own with the port's flags (-Wall -Wextra -Werror) and checks
-# that it covers every Psy-Q symbol the game's host objects need (tools/port_inventory.py's probe objects).
-# Needs no CMake or SDL. Run from the repo root after `tools/venv/bin/python tools/port_inventory.py probe`
-# (which writes build/port_inventory/include, the override headers: an empty INCLUDE_ASM and no-op GTE macros).
-#   port/psyq/check.sh            # compile + coverage
-#   port/psyq/check.sh --compile  # compile only
-#   EXTRA="-O2 -fsanitize=address,undefined" port/psyq/check.sh --compile   # with more flags
+# psyq/check.sh: compiles the Psy-Q shim on its own with the port's flags (-Wall -Wextra -Werror) and, given a
+# game's probe objects, checks that it covers every Psy-Q symbol the game's host objects need. Needs no CMake or SDL.
+#
+#   psyq/check.sh --game-root DIR [--probe-dir DIR] [--compile] [-I DIR]...
+#     --game-root DIR   the game checkout: its include/ and root are on the include path (its recovered psyq/*.h,
+#                       its common.h), its port/game/game.json is the description
+#     --probe-dir DIR   the game's probe output (tools/port_inventory.py probe: DIR/include holds the override
+#                       headers, DIR/m64/obj the game's objects); default <game-root>/build/port_inventory
+#     --compile         compile only (no game objects needed)
+#     -I DIR            more include directories
+#   EXTRA="-O2 -fsanitize=address,undefined" psyq/check.sh ... --compile   # with more flags
+# Exit 0: compiled (and, with the coverage, nothing missing and no duplicate global).
 set -euo pipefail
-cd "$(dirname "$0")/../.."
-
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 CC=${CC:-gcc}
-EXTRA=${EXTRA:-}   # extra compiler flags, e.g. EXTRA="-O2 -fsanitize=address,undefined"
-OUT=build/port_psyq
-CFLAGS=(-m64 -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -DPC_PORT -DNON_MATCHING -Wall -Wextra -Werror
-        -Ibuild/port_inventory/include -Iinclude -Iinclude/asm_generated -I. -Iport/psyq -Iport/include -Iport/runtime)
-
-if [ ! -d build/port_inventory/include ]; then
-    echo "check: build/port_inventory/include is missing: run tools/venv/bin/python tools/port_inventory.py probe" >&2
+EXTRA=${EXTRA:-}
+game= probe= compile_only=0 extra_inc=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --game-root) game="$2"; shift 2 ;;
+        --probe-dir) probe="$2"; shift 2 ;;
+        --compile) compile_only=1; shift ;;
+        -I) extra_inc+=("-I$2"); shift 2 ;;
+        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+        *) echo "check: unknown argument $1" >&2; exit 2 ;;
+    esac
+done
+[[ -n "$game" ]] || { echo "check: --game-root DIR is required (the shim compiles against a game's psyq headers)" >&2; exit 2; }
+probe="${probe:-$game/build/port_inventory}"
+OUT="$probe/psyq"
+if [[ ! -d "$probe/include" ]]; then
+    echo "check: $probe/include is missing: run the game's tools/port_inventory.py probe first" >&2
     exit 2
 fi
+CFLAGS=(-m64 -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -DPC_PORT -DNON_MATCHING -Wall -Wextra -Werror
+        -I"$probe/include" -I"$game/include" -I"$game" -I"$HERE/psyq" -I"$HERE/include" -I"$HERE/include/psxstack"
+        -I"$HERE/runtime" "${extra_inc[@]}")
 mkdir -p "$OUT"
 rm -f "$OUT"/*.o
-for src in port/psyq/*.c; do
+for src in "$HERE"/psyq/*.c; do
     "$CC" ${EXTRA} "${CFLAGS[@]}" -c "$src" -o "$OUT/$(basename "${src%.c}").o"
 done
 ar rcs "$OUT/libpsyq.a" "$OUT"/*.o
 echo "compile: $(ls "$OUT"/*.o | wc -l) objects -> $OUT/libpsyq.a"
-[ "${1:-}" = "--compile" ] && exit 0
+[[ $compile_only -eq 1 ]] && exit 0
 
-# Coverage: the 123 Psy-Q functions (port_inventory.py counts) and the asm-only Psy-Q data (link -v) against what the
-# shim defines; LIBC2 and LIBAPI are the host libc (psyq.h), so they are checked against libc's exports instead.
-PY=tools/venv/bin/python
-if [ ! -d build/port_inventory/m64/obj ]; then
-    echo "check: build/port_inventory/m64/obj is missing: run $PY tools/port_inventory.py probe" >&2
+# Coverage: the Psy-Q functions the game's objects need (undefined in the probe's objects and named in the game's
+# symbol files as library code: the game's tools/port_inventory.py link -v lists them) against what the shim
+# defines; LIBC2 and LIBAPI are the host libc, so they are checked against libc's exports instead.
+if [[ ! -d "$probe/m64/obj" ]]; then
+    echo "check: $probe/m64/obj is missing: run the game's tools/port_inventory.py probe" >&2
     exit 2
 fi
-game_objs=$(find build/port_inventory/m64/obj -name '*.o')
-need=$($PY tools/port_inventory.py link -v 2>/dev/null | awk '/Psy-Q function:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
-need_data="D_800812F8 D_80081358 D_80081454"
+game_objs=$(find "$probe/m64/obj" -name '*.o')
+inv="$game/tools/port_inventory.py"
+py="$game/tools/venv/bin/python"; [[ -x "$py" ]] || py=python3
+need=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q function:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
+need_data=$("$py" "$inv" link -v 2>/dev/null | awk '/Psy-Q data:/{f=1;next} /asm-only data/{f=0} f && $2 ~ /^0x/ {print $1}' | sort -u)
 have=$(nm -g --defined-only "$OUT"/*.o | awk '$2 ~ /^[TDBR]$/ {print $3}' | sort -u)
 libc=$(nm -D --defined-only "$(gcc -print-file-name=libc.so.6)" | awk '{print $3}' | sed 's/@.*//' | sort -u)
 missing=0; via_libc=0; via_shim=0
