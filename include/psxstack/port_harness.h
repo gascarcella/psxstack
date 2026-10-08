@@ -26,7 +26,7 @@ int port_disc_set_speed(const char *speed);
  * the overlay sequence and the map sequence as tests/replay/replay.py writes them. */
 void port_framelog_open(const char *log_path, const char *record_path);
 void port_framelog_frame(void);                 /* once per vsync, before the script's step */
-void port_framelog_checkpoint(const char *name); /* a script checkpoint: hashes gamestate_data's PS1 image */
+void port_framelog_checkpoint(const char *name, int image); /* a script checkpoint: hashes gamestate_data's PS1 image, unless !image */
 void port_framelog_close(int status, const char *reason); /* from port_exit: flushes the log, writes the record */
 
 /* The game-state probes for the script are the game adapter's (psxstack/game.h game_state_*: what run.lua reads from
