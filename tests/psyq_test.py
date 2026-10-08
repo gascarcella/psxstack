@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""The shim's LIBGTE and LIBGPU functions on their own: tests/psyq/psyq_test.c built with every psyq/*.c and the flags
-of psyq/check.sh (-Wall -Wextra -Werror, hello's game.json standing in for a game's description), then run.
+"""The shim's LIBGTE, LIBGPU and LIBGS functions on their own: tests/psyq/psyq_test.c built with every psyq/*.c and
+the flags of psyq/check.sh (-Wall -Wextra -Werror, hello's game.json standing in for a game's description), then run.
 
     python3 tests/psyq_test.py [--sanitize] [--build DIR]
 
 The C checks documented cases and properties (csqrt(16.0) = 4.0, ratan2 at the axes and against atan2, RotMatrix
 against the exact product, RotTransPers3 = three RotTransPers, the matrix stack's round trip and its 20 entries,
-AddPrim's links drawn by DrawOTag, the primitives' length and command bytes, StoreImage of a LoadImage, ReadTIM, ...);
+AddPrim's links drawn by DrawOTag, the primitives' length and command bytes, StoreImage of a LoadImage, ReadTIM;
+GsSetRefView2's views worked out by hand, GsGetLws through a hierarchy and its cache, GsSwapDispBuff, a synthetic TMD
+through GsMapModelingData, GsLinkObject4 and GsSortObject4 to the packets in the OT and the picture, ...);
 what only the PS1 can settle is the consumers' goldens' (psyq/README.md "Behaviour assumed"). Built twice, at -O0 and
 -O2 (a compiler's built-in csqrt/catan must not replace LIBGTE's); --sanitize adds a build under AddressSanitizer and
 UBSan. Exit 0 pass, 1 fail, 2 no compiler.
