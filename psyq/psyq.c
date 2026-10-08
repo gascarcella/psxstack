@@ -61,6 +61,7 @@ void psyq_state(PortState *s) {
     gpu_state(s);
     psyq_gs_state(s);
     gte_state(s);
+    psyq_gte_lib_state(s);
     psyq_press_state(s);
     mdec_state(s);
     psyq_snd_state(s);

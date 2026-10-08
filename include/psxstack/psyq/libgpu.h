@@ -249,4 +249,105 @@ typedef struct {
 
 #define setPolyG3(p) setlen(p, 6), setcode(p, 0x30)
 
+/* The rest of LIBGPU the second game calls: the primitives' function forms, the drawing-mode packets, the environments
+ * and the transfers. The packet layouts are the PS1's (GP0 words after the tag). */
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    s16 x1, y1;
+    s16 x2, y2;
+} POLY_F3;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    u8 r1, g1, b1, p1;
+    s16 x1, y1;
+} LINE_G2;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    u8 r1, g1, b1, p1;
+    s16 x1, y1;
+    u8 r2, g2, b2, p2;
+    s16 x2, y2;
+    u32 pad;
+} LINE_G3;
+
+typedef struct {
+    u32 tag;
+    u8 r0, g0, b0, code;
+    s16 x0, y0;
+    s16 w, h;
+} TILE;
+
+typedef struct {
+    u32 tag;
+    u32 code[2];
+} DR_MODE;
+
+typedef struct {
+    u32 tag;
+    u32 code[2];
+} DR_TWIN;
+
+typedef struct {
+    u32 tag;
+    u32 code[2];
+} DR_AREA;
+
+typedef struct {
+    u32 tag;
+    u32 code[2];
+} DR_STP;
+
+/* What ReadTIM finds in a TIM: the flag word, the CLUT's rectangle and pixels (NULL without a CLUT), the image's. */
+typedef struct {
+    u32 mode;
+    RECT *crect;
+    u32 *caddr;
+    RECT *prect;
+    u32 *paddr;
+} TIM_IMAGE;
+
+#define getlen(p) (u8)(((P_TAG *)(p))->len)
+#define termPrim(p) (((P_TAG *)(p))->addr = 0xFFFFFF)
+#define setShadeTex(p, tge) ((tge) ? setcode(p, getcode(p) | 0x01) : setcode(p, getcode(p) & ~0x01))
+#define setPolyF3(p) setlen(p, 4), setcode(p, 0x20)
+#define setLineG2(p) setlen(p, 4), setcode(p, 0x50)
+#define setLineG3(p) setlen(p, 7), setcode(p, 0x58), ((p)->pad = 0x55555555)
+#define setTile(p) setlen(p, 3), setcode(p, 0x60)
+
+void AddPrim(void *ot, void *p);
+s32 MargePrim(void *p0, void *p1);
+void SetShadeTex(void *p, s32 tge);
+void SetPolyF3(POLY_F3 *p);
+void SetPolyFT3(POLY_FT3 *p);
+void SetPolyG3(POLY_G3 *p);
+void SetPolyGT3(POLY_GT3 *p);
+void SetPolyF4(POLY_F4 *p);
+void SetPolyFT4(POLY_FT4 *p);
+void SetPolyG4(POLY_G4 *p);
+void SetPolyGT4(POLY_GT4 *p);
+void SetLineF2(LINE_F2 *p);
+void SetLineG2(LINE_G2 *p);
+void SetLineG3(LINE_G3 *p);
+void SetTile(TILE *p);
+void SetDrawArea(DR_AREA *p, RECT *r);
+void SetTexWindow(DR_TWIN *p, RECT *tw);
+void SetDrawStp(DR_STP *p, s32 pbw);
+void SetDrawMode(DR_MODE *p, s32 dfe, s32 dtd, s32 tpage, RECT *tw);
+DRAWENV *PutDrawEnv(DRAWENV *env);
+DISPENV *GetDispEnv(DISPENV *env);
+s32 LoadImage2(RECT *rect, u32 *p);
+s32 StoreImage(RECT *rect, u32 *p);
+s32 StoreImage2(RECT *rect, u32 *p);
+s32 MoveImage2(RECT *rect, s32 x, s32 y);
+s32 OpenTIM(u32 *addr);
+TIM_IMAGE *ReadTIM(TIM_IMAGE *timimg);
+
 #endif /* PSYQ_LIBGPU_H */

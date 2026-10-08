@@ -30,6 +30,8 @@ static u32 psyq_gpu_count;
 static long psyq_gpu_dump_frame = -1, psyq_gpu_frame = 1;
 static u32 psyq_gpu_terminator = 0xFFFFFF; /* what BreakDraw hands out: an empty list */
 static PsyqDisplay psyq_gpu_disp;          /* the video output (psyq.h): PutDispEnv's area, SetDispMask */
+static DISPENV psyq_gpu_dispenv;           /* GetDispEnv's: the last PutDispEnv's, all 0xFF after a reset */
+static u32 *psyq_gpu_tim;                  /* OpenTIM's: where ReadTIM reads the next TIM */
 
 static unsigned psyq_gpu_tag_shift = PORT_TAG_SHIFT; /* 0 in a harness's window: PS1-style byte offsets */
 
@@ -59,6 +61,8 @@ void psyq_gpu_reset(void) {
     psyq_gpu_terminator = 0xFFFFFF;
     gpu_power_on();
     memset(&psyq_gpu_disp, 0, sizeof(psyq_gpu_disp));
+    memset(&psyq_gpu_dispenv, 0, sizeof(psyq_gpu_dispenv));
+    psyq_gpu_tim = NULL;
 }
 
 static void psyq_gpu_window(const u8 **lo, const u8 **hi) {
@@ -238,15 +242,14 @@ static s32 psyq_gpu_clamp(s32 v, s32 max) {
  * api_setdrawenv_*): E3 (the clip's corner) and E4 (its far corner), both clamped to the VRAM, E5 (the offset), E1
  * (tpage, dither, dfe), E2 (the texture window), E6 0 (no mask bits); with isbg (any non-zero value) a TILE (GP0 60h,
  * opaque) of the clip rectangle (its size clamped to 0..1023 x 0..511) in the colour (r0, g0, b0), placed relative to
- * the offset (clip - ofs). */
-void SetDrawEnv(DR_ENV *dr_env, DRAWENV *env) {
+ * the offset (clip - ofs). `fill`: PutDrawEnv's variant, where the background is a fill (GP0 02h, at the clip's corner,
+ * not offset) when the clip's x and its clamped width are multiples of 64, as ClearImage does. */
+static void psyq_gpu_draw_env(DR_ENV *dr_env, const DRAWENV *env, int fill) {
     u32 *c = dr_env->code;
     u32 n = 6;
     s32 x2 = psyq_gpu_clamp(env->clip.x + env->clip.w - 1, 1023);
     s32 y2 = psyq_gpu_clamp(env->clip.y + env->clip.h - 1, 511);
 
-    PSYQ_TRACE("SetDrawEnv clip %d,%d %dx%d ofs %d,%d tpage %x isbg %d", env->clip.x, env->clip.y, env->clip.w,
-               env->clip.h, env->ofs[0], env->ofs[1], env->tpage, env->isbg);
     c[0] = 0xE3000000u | ((u32)psyq_gpu_clamp(env->clip.y, 511) << 10) | (u32)psyq_gpu_clamp(env->clip.x, 1023);
     c[1] = 0xE4000000u | ((u32)y2 << 10) | (u32)x2;
     c[2] = 0xE5000000u | (((u32)env->ofs[1] & 0x7FF) << 11) | ((u32)env->ofs[0] & 0x7FF);
@@ -254,12 +257,38 @@ void SetDrawEnv(DR_ENV *dr_env, DRAWENV *env) {
     c[4] = psyq_gpu_tw_word(&env->tw);
     c[5] = 0xE6000000u;
     if (env->isbg) {
-        c[6] = 0x60000000u | ((u32)env->b0 << 16) | ((u32)env->g0 << 8) | env->r0;
-        c[7] = ((u32)(u16)(env->clip.y - env->ofs[1]) << 16) | (u16)(env->clip.x - env->ofs[0]);
-        c[8] = ((u32)psyq_gpu_clamp(env->clip.h, 511) << 16) | (u32)psyq_gpu_clamp(env->clip.w, 1023);
+        u32 rgb = ((u32)env->b0 << 16) | ((u32)env->g0 << 8) | env->r0;
+        s32 w = psyq_gpu_clamp(env->clip.w, 1023), h = psyq_gpu_clamp(env->clip.h, 511);
+
+        if (fill && (env->clip.x & 0x3F) == 0 && (w & 0x3F) == 0) {
+            c[6] = 0x02000000u | rgb;
+            c[7] = ((u32)(u16)env->clip.y << 16) | (u16)env->clip.x;
+        } else {
+            c[6] = 0x60000000u | rgb;
+            c[7] = ((u32)(u16)(env->clip.y - env->ofs[1]) << 16) | (u16)(env->clip.x - env->ofs[0]);
+        }
+        c[8] = ((u32)h << 16) | (u32)w;
         n = 9;
     }
     setlen(dr_env, n);
+}
+
+void SetDrawEnv(DR_ENV *dr_env, DRAWENV *env) {
+    PSYQ_TRACE("SetDrawEnv clip %d,%d %dx%d ofs %d,%d tpage %x isbg %d", env->clip.x, env->clip.y, env->clip.w,
+               env->clip.h, env->ofs[0], env->ofs[1], env->tpage, env->isbg);
+    psyq_gpu_draw_env(dr_env, env, 0);
+}
+
+/* PutDrawEnv: env's packet built into env->dr_env (with the fill variant above), terminated, and drawn at once (it is
+ * part of the frame's primitive stream, like a DrawOTag). LIBGPU also keeps a copy for GetDrawEnv (not implemented: no
+ * game calls it). Returns env. */
+DRAWENV *PutDrawEnv(DRAWENV *env) {
+    PSYQ_TRACE("PutDrawEnv clip %d,%d %dx%d ofs %d,%d tpage %x isbg %d", env->clip.x, env->clip.y, env->clip.w,
+               env->clip.h, env->ofs[0], env->ofs[1], env->tpage, env->isbg);
+    psyq_gpu_draw_env(&env->dr_env, env, 1);
+    termPrim(&env->dr_env);
+    psyq_gpu_walk((const u32 *)&env->dr_env, "PutDrawEnv");
+    return env;
 }
 
 /* The video output (psyq.h): the software GPU's VRAM (gpu.c) and what PutDispEnv/SetDispMask set. */
@@ -280,6 +309,14 @@ DISPENV *PutDispEnv(DISPENV *env) {
     psyq_gpu_disp.h = env->disp.h;
     psyq_gpu_disp.rgb24 = env->isrgb24;
     psyq_gpu_disp.interlace = env->isinter;
+    psyq_gpu_dispenv = *env;
+    return env;
+}
+
+/* A copy of the last PutDispEnv's environment (every byte 0xFF after ResetGraph or SetDispMask(0), as LIBGPU keeps
+ * it). Returns env. */
+DISPENV *GetDispEnv(DISPENV *env) {
+    *env = psyq_gpu_dispenv;
     return env;
 }
 
@@ -314,6 +351,157 @@ void SetSemiTrans(void *p, s32 abe) {
 
 void SetSprt(SPRT *p) {
     setSprt(p);
+}
+
+/* The primitives' function forms: the length and the GP0 command byte, as the macros set them (a polyline's
+ * terminator too); nothing else of the packet is touched. */
+void SetPolyF3(POLY_F3 *p) {
+    setPolyF3(p);
+}
+
+void SetPolyFT3(POLY_FT3 *p) {
+    setPolyFT3(p);
+}
+
+void SetPolyG3(POLY_G3 *p) {
+    setPolyG3(p);
+}
+
+void SetPolyGT3(POLY_GT3 *p) {
+    setPolyGT3(p);
+}
+
+void SetPolyF4(POLY_F4 *p) {
+    setPolyF4(p);
+}
+
+void SetPolyFT4(POLY_FT4 *p) {
+    setPolyFT4(p);
+}
+
+void SetPolyG4(POLY_G4 *p) {
+    setPolyG4(p);
+}
+
+void SetPolyGT4(POLY_GT4 *p) {
+    setPolyGT4(p);
+}
+
+void SetLineF2(LINE_F2 *p) {
+    setLineF2(p);
+}
+
+void SetLineG2(LINE_G2 *p) {
+    setLineG2(p);
+}
+
+void SetLineG3(LINE_G3 *p) {
+    setLineG3(p);
+}
+
+void SetTile(TILE *p) {
+    setTile(p);
+}
+
+/* Bit 0 of the command byte: raw texture (no shading) when tge is non-zero. */
+void SetShadeTex(void *p, s32 tge) {
+    setShadeTex(p, tge);
+}
+
+/* addPrim: p is linked in after ot (p's tag takes ot's link, ot's link becomes p's word offset in the tag window:
+ * PTR_TO_U32, docs/PORT.md "Ordering tables on 64-bit"). */
+void AddPrim(void *ot, void *p) {
+    addPrim(ot, p);
+}
+
+/* p1 becomes part of p0's packet (p1 must follow p0 in memory): p0's length grows by p1's plus its tag word, which is
+ * zeroed (a GP0 no-op). -1 and nothing changed when the merged length would exceed 16 words. */
+s32 MargePrim(void *p0, void *p1) {
+    s32 len = getlen(p0) + getlen(p1) + 1;
+
+    if (len > 16) {
+        return -1;
+    }
+    setlen(p0, len);
+    *(u32 *)p1 = 0;
+    return 0;
+}
+
+/* The texture-window word (E2) of a RECT, as LIBGPU's packet builders compute it: offset x, y and mask -w, -h, each in
+ * 8-pixel units of their low 8 bits. */
+static u32 psyq_gpu_tw_rect(const RECT *tw) {
+    return 0xE2000000u | ((((u32)tw->y & 0xFF) >> 3) << 15) | ((((u32)tw->x & 0xFF) >> 3) << 10)
+           | ((((u32)-tw->h & 0xFF) >> 3) << 5) | (((u32)-tw->w & 0xFF) >> 3);
+}
+
+/* A drawing-area corner word (E3 or E4): the coordinates as shorts, clamped to the VRAM. */
+static u32 psyq_gpu_area_word(u32 code, s16 x, s16 y) {
+    return code | ((u32)psyq_gpu_clamp(y, 511) << 10) | (u32)psyq_gpu_clamp(x, 1023);
+}
+
+/* DR_AREA: the drawing area's two corners (E3, E4) from r, clamped to the VRAM. */
+void SetDrawArea(DR_AREA *p, RECT *r) {
+    setlen(p, 2);
+    p->code[0] = psyq_gpu_area_word(0xE3000000u, r->x, r->y);
+    p->code[1] = psyq_gpu_area_word(0xE4000000u, (s16)(r->x + r->w - 1), (s16)(r->y + r->h - 1));
+}
+
+/* DR_TWIN: the texture window (E2) from tw, or a 0 word (a no-op) for NULL; then a 0 word. */
+void SetTexWindow(DR_TWIN *p, RECT *tw) {
+    setlen(p, 2);
+    p->code[0] = tw != NULL ? psyq_gpu_tw_rect(tw) : 0;
+    p->code[1] = 0;
+}
+
+/* DR_STP: the mask setting (E6): set the mask bit on every pixel drawn when pbw is non-zero; then a 0 word. */
+void SetDrawStp(DR_STP *p, s32 pbw) {
+    setlen(p, 2);
+    p->code[0] = pbw ? 0xE6000001u : 0xE6000000u;
+    p->code[1] = 0;
+}
+
+/* DR_MODE: the drawing mode (E1: tpage, dither, dfe) and the texture window (E2, or a 0 word for NULL). */
+void SetDrawMode(DR_MODE *p, s32 dfe, s32 dtd, s32 tpage, RECT *tw) {
+    setlen(p, 2);
+    p->code[0] = _get_mode(dfe, dtd, tpage);
+    p->code[1] = tw != NULL ? psyq_gpu_tw_rect(tw) : 0;
+}
+
+/* ---- TIMs (real: pure data) ---- */
+
+/* Where ReadTIM starts (a run of TIMs back to back). Returns 0. */
+s32 OpenTIM(u32 *addr) {
+    psyq_gpu_tim = addr;
+    return 0;
+}
+
+/* The next TIM: NULL (and nothing moved) unless its first word is the TIM id 0x10; else timimg gets the flag word,
+ * the CLUT's rectangle and pixels when flag bit 3 says there is one (NULL otherwise) and the image's, all pointing into
+ * the TIM, and the next ReadTIM starts after it. Returns timimg. */
+TIM_IMAGE *ReadTIM(TIM_IMAGE *timimg) {
+    u32 *tim = psyq_gpu_tim;
+    u32 clut_words = 0;
+
+    if (tim == NULL || tim[0] != 0x10) {
+        return NULL;
+    }
+    timimg->mode = tim[1];
+    tim += 2;
+    if (timimg->mode & 8) {
+        clut_words = tim[0] >> 2;
+        timimg->crect = (RECT *)(tim + 1);
+        timimg->caddr = tim + 3;
+        tim += clut_words;
+    } else {
+        timimg->crect = NULL;
+        timimg->caddr = NULL;
+    }
+    timimg->prect = (RECT *)(tim + 1);
+    timimg->paddr = tim + 3;
+    psyq_gpu_tim = tim + (tim[0] >> 2);
+    PSYQ_TRACE("ReadTIM mode %x image %d,%d %dx%d", timimg->mode, timimg->prect->x, timimg->prect->y,
+               timimg->prect->w, timimg->prect->h);
+    return timimg;
 }
 
 /* ---- ordering tables (real) ---- */
@@ -363,6 +551,7 @@ int ResetGraph(int mode) {
     PSYQ_TRACE("ResetGraph %d", mode);
     if (mode == 0 || mode == 3) {
         gpu_reset_state();
+        memset(&psyq_gpu_dispenv, 0xFF, sizeof(psyq_gpu_dispenv));
     }
     if (mode == 0) {
         psyq_gpu_disp.enabled = 0;
@@ -379,6 +568,9 @@ int SetGraphDebug(int level) {
 void SetDispMask(int mask) {
     PSYQ_TRACE("SetDispMask %d", mask);
     psyq_gpu_disp.enabled = mask != 0;
+    if (mask == 0) {
+        memset(&psyq_gpu_dispenv, 0xFF, sizeof(psyq_gpu_dispenv));
+    }
 }
 
 /* ClearImage and ClearImage2, as LIBGPU does them (golden family gpu, api_clearimage*): the size clamped to the VRAM
@@ -432,6 +624,45 @@ void LoadImage(RECT *rect, u32 *p) {
     gpu_load_image(rect->x, rect->y, rect->w, rect->h, (const u16 *)p);
 }
 
+/* LoadImage's blocking form (the drawing is always done here). Returns 0. */
+s32 LoadImage2(RECT *rect, u32 *p) {
+    LoadImage(rect, p);
+    return 0;
+}
+
+/* VRAM to CPU: the rectangle's pixels, row by row, to `p` (two per word), the coordinates wrapping at the VRAM's edges
+ * as the GPU reads them; the size clamped to 0..1024 x 0..512 as LIBGPU clamps it; an empty rectangle reads nothing.
+ * The GPU sends whole words: with an odd pixel count the last word's high half is 0 here (what the PS1 puts there is
+ * not known). Drawing is complete when queued, so the pixels are the VRAM's now. Returns 0. */
+s32 StoreImage(RECT *rect, u32 *p) {
+    const u16 *vram = gpu_vram_pixels();
+    s32 w = rect->w < 0 ? 0 : rect->w > 1024 ? 1024 : rect->w;
+    s32 h = rect->h < 0 ? 0 : rect->h > 512 ? 512 : rect->h;
+    u8 *out = (u8 *)p;
+    s32 row, col, k = 0;
+
+    PSYQ_TRACE("StoreImage %d,%d %dx%d to %u", rect->x, rect->y, rect->w, rect->h, PSYQ_PTR(p));
+    for (row = 0; row < h; row++) {
+        const u16 *line = &vram[((rect->y + row) & 511) * 1024];
+
+        for (col = 0; col < w; col++, k++) {
+            u16 px = line[(rect->x + col) & 1023];
+
+            memcpy(out + 2 * k, &px, 2);
+        }
+    }
+    if (k & 1) {
+        memset(out + 2 * k, 0, 2);
+    }
+    return 0;
+}
+
+/* StoreImage's blocking form. Returns 0. */
+s32 StoreImage2(RECT *rect, u32 *p) {
+    StoreImage(rect, p);
+    return 0;
+}
+
 /* VRAM to VRAM (GP0 80h). An empty rectangle (w or h 0) does nothing and returns -1, as on the PS1 (golden family
  * gpu, api_moveimage_4/5). */
 s32 MoveImage(RECT *rect, s32 x, s32 y) {
@@ -447,6 +678,11 @@ s32 MoveImage(RECT *rect, s32 x, s32 y) {
     w[3] = ((u32)(u16)rect->h << 16) | (u16)rect->w;
     gpu_gp0_words(w, 4);
     return 0;
+}
+
+/* MoveImage's blocking form: the same copy and results. */
+s32 MoveImage2(RECT *rect, s32 x, s32 y) {
+    return MoveImage(rect, x, y);
 }
 
 /* Drawing finishes inside DrawOTag, so the GPU is always idle here, and the PS1's BreakDraw returns NULL while it is
@@ -477,4 +713,6 @@ void psyq_gpu_state(PortState *s) {
     PORT_STATE_VAR(s, psyq_gpu_count);
     PORT_STATE_VAR(s, psyq_gpu_terminator);
     PORT_STATE_VAR(s, psyq_gpu_disp);
+    PORT_STATE_VAR(s, psyq_gpu_dispenv);
+    PORT_STATE_VAR(s, psyq_gpu_tim);
 }
