@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gascarcella/psxstack/schema/game.schema.json",
+  "title": "psxstack game description",
+  "description": "Static facts about a game, read at configure time by psxstack_add_game() and generated into psxstack_game_gen.h. Nothing reads it at run time. GAME_CONTRACT.md \"1. game.json\". Addresses and sizes are hex strings (\"0x80082CB0\") or integers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "title", "discs", "video", "memory"],
+  "$defs": {
+    "address": {
+      "description": "A PS1 address or a byte count: a hex string or an integer.",
+      "oneOf": [{ "type": "string", "pattern": "^0x[0-9A-Fa-f]{1,8}$" }, { "type": "integer", "minimum": 0 }]
+    },
+    "identifier": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+  },
+  "properties": {
+    "schema": { "const": 1 },
+    "id": {
+      "$ref": "#/$defs/identifier",
+      "description": "The game's short name: the port executable (<id>, <id>.exe), the launcher (<id>-launcher), the per-user settings directory (SDL_GetPrefPath('', id)), the cache directory (<id>-port), the data section prefix (<id>_data_<overlay>)."
+    },
+    "title": { "type": "string", "minLength": 1, "description": "The game's title as shown: window titles, the launcher, the packages." },
+    "env_prefix": {
+      "type": "string", "pattern": "^[A-Z][A-Z0-9]{0,15}$",
+      "description": "Environment variables: <PREFIX>_CONFIG_DIR, <PREFIX>_GAME, <PREFIX>_MCP_GAME, ... Default: id upper-cased."
+    },
+    "discs": {
+      "type": "array", "minItems": 1,
+      "description": "The disc images the port accepts. The port and the launcher check the whole BIN's SHA-1 against this list; the error names the labels.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["label", "serial", "sha1", "size", "region"],
+        "properties": {
+          "label": { "type": "string", "description": "For messages: \"Europe (SLES-03936), unpatched\"." },
+          "serial": { "type": "string", "pattern": "^[A-Z]{4}-[0-9]{5}$" },
+          "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "Of the whole BIN (every sector, 2352 bytes each)." },
+          "size": { "type": "integer", "minimum": 1, "description": "The BIN's size in bytes." },
+          "region": { "enum": ["PAL", "NTSC-U", "NTSC-J"] },
+          "cue": { "type": "string", "description": "The expected .cue file name, for the launcher's hint. Optional." }
+        }
+      }
+    },
+    "video": {
+      "type": "object", "additionalProperties": false, "required": ["rate"],
+      "properties": {
+        "rate": { "enum": [50, 60], "description": "The nominal vsyncs per second the game is made for (the audio's samples per vsync follow it)." },
+        "rates": {
+          "type": "array", "items": { "enum": [50, 60] }, "uniqueItems": true,
+          "description": "The rates the launcher offers (default: [rate]). A rate other than `rate` is passed to the game's game_apply_rate()."
+        },
+        "rate_note": { "type": "string", "description": "The launcher's explanation of the alternative rate (dw2003: the NTSC patch's 60 Hz mode)." }
+      }
+    },
+    "memory": {
+      "type": "object", "additionalProperties": false, "required": ["ram", "slots", "heap"],
+      "properties": {
+        "ram": {
+          "type": "object", "additionalProperties": false, "required": ["base", "size"],
+          "properties": { "base": { "$ref": "#/$defs/address" }, "size": { "$ref": "#/$defs/address" } },
+          "description": "The PS1's RAM as the game addresses it: 0x80000000, 0x200000 (KSEG0). An address outside it is a host pointer to the overlay resolver."
+        },
+        "slots": {
+          "type": "array", "minItems": 1, "maxItems": 8,
+          "description": "The overlay slots in address order, contiguous with each other and with the heap: the arena is laid out at these distances so a pointer's PS1-style address is slots[0].base + its offset. Slot n (1-based) is `tier` n in the hook macros.",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name", "base", "size"],
+            "properties": {
+              "name": { "$ref": "#/$defs/identifier", "description": "For logs and the generated macros' comments: \"stage\", \"file\"." },
+              "base": { "$ref": "#/$defs/address" },
+              "size": { "$ref": "#/$defs/address" }
+            }
+          }
+        },
+        "heap": {
+          "type": "object", "additionalProperties": false, "required": ["start", "end"],
+          "properties": {
+            "start": { "$ref": "#/$defs/address", "description": "The PS1 heap's first address (right after the last slot)." },
+            "end": { "$ref": "#/$defs/address", "description": "The PS1 heap's end (exclusive)." },
+            "host_size": { "$ref": "#/$defs/address", "description": "The host heap region's size; larger than the PS1's because 64-bit structs grow. Default 0x400000." }
+          }
+        },
+        "bios_standin": {
+          "type": "array",
+          "description": "Reads the game makes from the BIOS ROM (0x1FC00000..): the stand-in holds `text` at `address`.",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["address", "text"],
+            "properties": { "address": { "$ref": "#/$defs/address" }, "text": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "launcher": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "about": { "type": "string", "description": "One line under the title: \"Digimon World 2003 (Europe, SLES-03936) on the PC port.\"" },
+        "disc_hint": { "type": "string", "description": "Where the disc comes from: the launcher's disc screen." },
+        "website": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}
