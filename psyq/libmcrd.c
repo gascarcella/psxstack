@@ -21,6 +21,10 @@
  *   after the boot and again after the script's reset). On the PS1 the BIOS clears it by writing frame 63 (the
  *   emulator's image then holds whatever buffer its BIOS wrote there); here the image is left as it is.
  *
+ * The card store (the images, their written-back callbacks and the new-card flags) is shared with LIBCARD and the
+ * BIOS's file calls on "bu00:"/"bu10:" (psyq/libcard.c) through the psyq_card_* functions below
+ * (psyq_internal.h): one card per slot, whichever library a game reaches it through.
+ *
  * Timing: deterministic, counted in MemCardSync polls (the game polls once per frame from its state machine, and
  * spins on MemCardSync when a command is refused): Exist completes at the 2nd poll, Accept at the 4th, a read or a
  * write at the (1 + bytes / 128)th. The work (the copy, the flag) is done at the completing poll, as the transfer
@@ -149,12 +153,12 @@ void psyq_mcrd_set_card(int slot, u8 *image, void (*written)(int slot)) {
     psyq_mcrd_cards[slot].fresh = image != NULL;
 }
 
-static int psyq_mcrd_formatted(const u8 *image) {
+int psyq_card_formatted(const u8 *image) {
     return image[0] == 'M' && image[1] == 'C';
 }
 
 /* The first block (1-15) of the file `name`, 0 if none. */
-static int psyq_mcrd_find(u8 *image, const char *name) {
+int psyq_card_find(u8 *image, const char *name) {
     int i;
 
     for (i = 1; i < MCRD_BLOCKS; i++) {
@@ -197,10 +201,36 @@ static PsyqCard *psyq_mcrd_card(int slot) {
     return &psyq_mcrd_cards[slot];
 }
 
+/* `bytes` bytes at `offset` of the file starting at block `first`, to `buf` (`to_card` 0) or from it: 0, or -1 when the
+ * range leaves the file's chain. Offsets and lengths are the caller's to check (LIBMCRD: whole frames). */
+int psyq_card_transfer(u8 *image, int first, s32 offset, u8 *buf, s32 bytes, int to_card) {
+    s32 done;
+
+    for (done = 0; done < bytes;) {
+        s32 ofs = offset + done;
+        int block = psyq_mcrd_block_at(image, first, ofs);
+        s32 n = MCRD_BLOCK - ofs % MCRD_BLOCK;
+        u8 *p;
+        if (block == 0) {
+            return -1;
+        }
+        if (n > bytes - done) {
+            n = bytes - done;
+        }
+        p = image + block * MCRD_BLOCK + ofs % MCRD_BLOCK;
+        if (to_card) {
+            memcpy(p, buf + done, (size_t)n);
+        } else {
+            memcpy(buf + done, p, (size_t)n);
+        }
+        done += n;
+    }
+    return 0;
+}
+
 /* A file transfer of the current command: copies, returns the result. */
 static s32 psyq_mcrd_transfer(PsyqCard *card, const PsyqMcrdCommand *c) {
-    int first = psyq_mcrd_find(card->image, c->name);
-    s32 done;
+    int first = psyq_card_find(card->image, c->name);
     u32 size;
 
     if (first == 0) {
@@ -210,24 +240,8 @@ static s32 psyq_mcrd_transfer(PsyqCard *card, const PsyqMcrdCommand *c) {
     if (c->offset < 0 || c->bytes <= 0 || (c->offset | c->bytes) % MCRD_FRAME != 0 || (u32)(c->offset + c->bytes) > size) {
         return MCRD_INVALID;
     }
-    for (done = 0; done < c->bytes;) {
-        s32 ofs = c->offset + done;
-        int block = psyq_mcrd_block_at(card->image, first, ofs);
-        s32 n = MCRD_BLOCK - ofs % MCRD_BLOCK;
-        u8 *p;
-        if (block == 0) {
-            return MCRD_INVALID;
-        }
-        if (n > c->bytes - done) {
-            n = c->bytes - done;
-        }
-        p = card->image + block * MCRD_BLOCK + ofs % MCRD_BLOCK;
-        if (c->func == MCRD_FUNC_READ_FILE) {
-            memcpy(c->addr + done, p, (size_t)n);
-        } else {
-            memcpy(p, c->addr + done, (size_t)n);
-        }
-        done += n;
+    if (psyq_card_transfer(card->image, first, c->offset, c->addr, c->bytes, c->func == MCRD_FUNC_WRITE_FILE) != 0) {
+        return MCRD_INVALID;
     }
     return MCRD_OK;
 }
@@ -248,7 +262,7 @@ static s32 psyq_mcrd_complete(void) {
     if (c->func == MCRD_FUNC_EXIST) {
         return MCRD_OK;
     }
-    if (!psyq_mcrd_formatted(card->image)) {
+    if (!psyq_card_formatted(card->image)) {
         return MCRD_NOT_FORMAT;
     }
     if (c->func == MCRD_FUNC_ACCEPT) {
@@ -259,6 +273,60 @@ static s32 psyq_mcrd_complete(void) {
         card->written(c->slot);
     }
     return result;
+}
+
+/* ---- The card store, for LIBCARD and the BIOS's file calls (psyq_internal.h) */
+
+u8 *psyq_card_image(int slot) {
+    return slot >= 0 && slot < 2 ? psyq_mcrd_cards[slot].image : NULL;
+}
+
+void psyq_card_written(int slot) {
+    if (psyq_card_image(slot) != NULL && psyq_mcrd_cards[slot].written != NULL) {
+        psyq_mcrd_cards[slot].written(slot);
+    }
+}
+
+int psyq_card_fresh(int slot) {
+    return psyq_card_image(slot) != NULL && psyq_mcrd_cards[slot].fresh;
+}
+
+void psyq_card_set_fresh(int slot, int on) {
+    if (slot >= 0 && slot < 2) {
+        psyq_mcrd_cards[slot].fresh = on;
+    }
+}
+
+/* Directory frame `block` (1-15) of `image`: 1 and the file's name, size, allocation state when it is a file's first
+ * block, else 0. */
+int psyq_card_dir_entry(const u8 *image, int block, char name[21], s32 *size, s32 *state) {
+    const u8 *f = image + block * MCRD_FRAME;
+
+    if (f[0] != MCRD_DIR_FIRST) {
+        return 0;
+    }
+    memcpy(name, f + 0xA, 20);
+    name[20] = '\0';
+    *size = (s32)psyq_mcrd_get32(f + 4);
+    *state = f[0];
+    return 1;
+}
+
+/* Erases the file starting at `first`: its blocks' frames marked deleted (0xA1 first, 0xA2 middle, 0xA3 last, as the
+ * BIOS's erase leaves them: free for a new file, the old chain kept). */
+void psyq_card_erase(u8 *image, int first) {
+    int block = first, guard;
+
+    for (guard = 0; guard < MCRD_BLOCKS - 1 && block > 0 && block < MCRD_BLOCKS; guard++) {
+        u8 *f = psyq_mcrd_frame(image, 0, block);
+        u32 next = f[8] | (f[9] << 8);
+        f[0] = (u8)(0xA0 | (f[0] & 0x0F));
+        f[0x7F] = psyq_mcrd_xor(f, 0x7F);
+        if (next >= MCRD_BLOCKS - 1) {
+            break;
+        }
+        block = (int)next + 1;
+    }
 }
 
 /* ---- LIBMCRD */
@@ -346,28 +414,23 @@ static s32 psyq_mcrd_sync_card(s32 chan, PsyqCard **out) {
     if (card == NULL) {
         return MCRD_NO_CARD;
     }
-    return psyq_mcrd_formatted(card->image) ? MCRD_OK : MCRD_NOT_FORMAT;
+    return psyq_card_formatted(card->image) ? MCRD_OK : MCRD_NOT_FORMAT;
 }
 
-/* Creates the file `file` of `blocks` blocks in the first free ones (its data left as it was). */
-s32 MemCardCreateFile(s32 chan, char *file, s32 blocks) {
-    PsyqCard *card;
-    s32 r = psyq_mcrd_sync_card(chan, &card);
+/* Creates the file `name` of `blocks` blocks in the first free ones of the formatted card `image` (its data left as
+ * it was): MCRD_OK, MCRD_INVALID (a bad size or name), MCRD_ALREADY_EXIST, MCRD_BLOCK_FULL. */
+s32 psyq_card_create(u8 *image, const char *name, s32 blocks) {
     int list[MCRD_BLOCKS - 1];
     int n = 0, i;
 
-    PSYQ_TRACE("MemCardCreateFile chan %x %s blocks %d", chan, file, blocks);
-    if (r != MCRD_OK) {
-        return r;
-    }
-    if (blocks < 1 || blocks > MCRD_BLOCKS - 1 || strlen(file) > 20) {
+    if (blocks < 1 || blocks > MCRD_BLOCKS - 1 || strlen(name) > 20) {
         return MCRD_INVALID;
     }
-    if (psyq_mcrd_find(card->image, file) != 0) {
+    if (psyq_card_find(image, name) != 0) {
         return MCRD_ALREADY_EXIST;
     }
     for (i = 1; i < MCRD_BLOCKS && n < blocks; i++) {
-        if ((psyq_mcrd_frame(card->image, 0, i)[0] & 0xF0) == MCRD_DIR_FREE) {
+        if ((psyq_mcrd_frame(image, 0, i)[0] & 0xF0) == MCRD_DIR_FREE) {
             list[n++] = i;
         }
     }
@@ -377,13 +440,26 @@ s32 MemCardCreateFile(s32 chan, char *file, s32 blocks) {
     for (i = 0; i < n; i++) {
         u16 next = i + 1 < n ? (u16)(list[i + 1] - 1) : 0xFFFF;
         u32 state = i == 0 ? MCRD_DIR_FIRST : (i + 1 < n ? MCRD_DIR_MIDDLE : MCRD_DIR_LAST);
-        psyq_mcrd_dir_set(psyq_mcrd_frame(card->image, 0, list[i]), state, i == 0 ? (u32)blocks * MCRD_BLOCK : 0,
-                          next, i == 0 ? file : NULL);
-    }
-    if (card->written != NULL) {
-        card->written(psyq_mcrd_slot(chan));
+        psyq_mcrd_dir_set(psyq_mcrd_frame(image, 0, list[i]), state, i == 0 ? (u32)blocks * MCRD_BLOCK : 0, next,
+                          i == 0 ? name : NULL);
     }
     return MCRD_OK;
+}
+
+/* Creates the file `file` of `blocks` blocks in the first free ones (its data left as it was). */
+s32 MemCardCreateFile(s32 chan, char *file, s32 blocks) {
+    PsyqCard *card;
+    s32 r = psyq_mcrd_sync_card(chan, &card);
+
+    PSYQ_TRACE("MemCardCreateFile chan %x %s blocks %d", chan, file, blocks);
+    if (r != MCRD_OK) {
+        return r;
+    }
+    r = psyq_card_create(card->image, file, blocks);
+    if (r == MCRD_OK && card->written != NULL) {
+        card->written(psyq_mcrd_slot(chan));
+    }
+    return r;
 }
 
 s32 MemCardFormat(s32 chan) {
@@ -416,7 +492,7 @@ s32 MemCardUnformat(s32 chan) {
 }
 
 /* The BIOS's file-name pattern: '?' any one character, '*' the rest of the name. */
-static int psyq_mcrd_match(const char *pattern, const char *name) {
+int psyq_card_match(const char *pattern, const char *name) {
     for (; *pattern != '\0'; pattern++, name++) {
         if (*pattern == '*') {
             return 1;
@@ -451,7 +527,7 @@ s32 MemCardGetDirentry(s32 chan, char *name, DIRENTRY *dir, s32 *files, s32 offs
         }
         memcpy(fname, f + 0xA, 20);
         fname[20] = '\0';
-        if (!psyq_mcrd_match(name, fname) || found++ < offset) {
+        if (!psyq_card_match(name, fname) || found++ < offset) {
             continue;
         }
         memset(&dir[n], 0, sizeof(dir[n]));

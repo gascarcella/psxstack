@@ -1,8 +1,11 @@
 /* psyq/libsnd.c: LIBSND, the 24 functions the game calls (docs/SOUND.md section 1), over the port's SPU core.
  * This file has the public calls, start-up, the VABs (header parsing, the SPU addresses of their samples, the body's
  * transfer) and the score table's lookup; the sequencer is libsnd_seq.c, the voice manager libsnd_voice.c, the SPU
- * side libsnd_spu.c (libsnd_internal.h has the overview). The game runs LIBSND with SS_NOTICK: it calls
- * SsSeqCalledTbyT itself from its vsync handler (gfx.c), 50 times a second (SsSetTickMode(0x1032)).
+ * side libsnd_spu.c (libsnd_internal.h has the overview). The first game runs LIBSND with SS_NOTICK: it calls
+ * SsSeqCalledTbyT itself from its vsync handler (gfx.c), 50 times a second (SsSetTickMode(0x1032)). The second
+ * (Digimon Digital Card Battle) sets SS_TICK60 and calls SsStart: LIBSND then ticks by itself, once per vsync
+ * (psyq_snd_vsync, from the vsync tick after the game's VSyncCallback handler), and plays SEQ files (SsSeqOpen...) on
+ * the same sequencer as the SEPs, as an access number's sequence 0.
  *
  * The score table: SsSetTableSize(table, s_max, t_max) makes one array of s_max x t_max sequences, addressed as
  * access x t_max + sequence, and nothing checks the sequence against t_max: the game plays COMMON's SEP 0 with
@@ -119,11 +122,45 @@ void SsInit(void) {
     snd.tick_rate = 60;
     snd.open_mask = 0;
     snd.lock = 0;
+    snd.ticking = 0;
+}
+
+/* LIBSND's tick: with SS_NOTICK nothing (the game calls SsSeqCalledTbyT); with a mode that ticks with the display
+ * (SS_TICK60, SS_TICK50, SS_TICKVSYNC: what the games use) one SsSeqCalledTbyT per vsync from then on
+ * (psyq_snd_vsync). The faster modes (SS_TICK120, SS_TICK240, a rate per second) run on a root counter on the PS1:
+ * not modelled. */
+static void snd_start(const char *who) {
+    snd_call("%s()", who);
+    if (!snd.notick && snd.tick_rate != 60 && snd.tick_rate != 50) {
+        port_unimplemented("SsStart: a sequencer tick faster than the vsync (SS_TICK120/240, a rate per second)");
+    }
+    snd.ticking = !snd.notick;
+}
+
+void SsStart(void) {
+    snd_start("SsStart");
 }
 
 void SsStart2(void) {
-    snd_call("SsStart2()");
-    /* SS_NOTICK: nothing to start (no timer interrupt; the game calls SsSeqCalledTbyT) */
+    snd_start("SsStart2");
+}
+
+/* The vsync tick's LIBSND part (psyq_internal.h): the sequencer's tick once SsStart started it. */
+void psyq_snd_vsync(void) {
+    if (snd.ticking) {
+        SsSeqCalledTbyT();
+    }
+}
+
+/* Mono: every note's left and right volumes the louder of the two, from the next note or volume change on. */
+void SsSetMono(void) {
+    snd_call("SsSetMono()");
+    snd.mono = 1;
+}
+
+void SsSetStereo(void) {
+    snd_call("SsSetStereo()");
+    snd.mono = 0;
 }
 
 void SsSetTableSize(u8 *table, s16 s_max, s16 t_max) {
@@ -142,6 +179,7 @@ void SsSetTickMode(s32 tick_mode) {
     int video;
 
     snd_call("SsSetTickMode(0x%x)", (unsigned)tick_mode);
+    snd.notick = (tick_mode & 0x1000) != 0;
     video = SetVideoMode(0); /* LIBETC has no getter here: read the mode and put it back */
     SetVideoMode(video);
     if (code >= 6) {
@@ -381,6 +419,56 @@ void SsSepSetDecrescendo(s16 access_num, s16 seq_num, s16 vol, s32 v_time) {
     snd_seq_decrescendo(access_num, seq_num, vol, v_time);
 }
 
+/* ---- SEQs: one sequence, under an access number of its own (its sequence 0) ---- */
+
+/* The SEQ at `addr` under the first free access number, playing VAB `vab_id`: the access number, or -1. */
+s16 SsSeqOpen(u32 *addr, s16 vab_id) {
+    int access = 0;
+
+    if (snd.open_mask == 0xFFFFFFFFu) {
+        snd_call("SsSeqOpen(%d) = -1", vab_id);
+        return -1;
+    }
+    while (access < 32 && (snd.open_mask & (1u << access))) {
+        access++;
+    }
+    if (snd_seq_open_seq(access, vab_id, (const u8 *)addr) == -1) {
+        snd_call("SsSeqOpen(%d) = -1", vab_id);
+        return -1;
+    }
+    snd.open_mask |= 1u << access;
+    snd_call("SsSeqOpen(%d) = %d", vab_id, access);
+    return (s16)access;
+}
+
+void SsSeqClose(s16 access_num) {
+    snd_call("SsSeqClose(%d)", access_num);
+    snd_seq_close(access_num);
+}
+
+void SsSeqPlay(s16 access_num, char play_mode, s16 l_count) {
+    snd_call("SsSeqPlay(%d, %d, %d)", access_num, play_mode, l_count);
+    snd_seq_play(access_num, 0, play_mode, l_count);
+}
+
+void SsSeqStop(s16 access_num) {
+    snd_call("SsSeqStop(%d)", access_num);
+    snd_seq_stop(access_num, 0);
+}
+
+void SsSeqSetVol(s16 access_num, s16 voll, s16 volr) {
+    snd_call("SsSeqSetVol(%d, %d, %d)", access_num, voll, volr);
+    snd_seq_set_volume(access_num, 0, voll, volr);
+}
+
+/* The sequence's volume as SsSeqSetVol (or SsSepSetVol) last set it (0..127). */
+void SsSeqGetVol(s16 access_num, s16 seq_num, s16 *voll, s16 *volr) {
+    const SndSeq *e = snd_seq(access_num, seq_num);
+
+    *voll = e != NULL ? (s16)e->vol_l : 0;
+    *volr = e != NULL ? (s16)e->vol_r : 0;
+}
+
 /* ---- Utilities ---- */
 
 /* Returns the type set (-1 for a bad one). */
@@ -399,6 +487,12 @@ void SsUtReverbOn(void) {
     snd_spu_reverb_enable(1);
 }
 
+/* Off: SPUCNT's reverb bit cleared and the depth 0 (the work area and the type kept). */
+void SsUtReverbOff(void) {
+    snd_call("SsUtReverbOff()");
+    snd_spu_reverb_enable(0);
+}
+
 void SsUtAllKeyOff(s16 mode) {
     snd_call("SsUtAllKeyOff(%d)", mode);
     snd_all_key_off();
@@ -413,6 +507,18 @@ s16 SsUtKeyOn(s16 vabId, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 v
 s16 SsUtKeyOff(s16 voice, s16 vabId, s16 prog, s16 tone, s16 note) {
     snd_call("SsUtKeyOff(%d, %d, %d, %d, %d)", voice, vabId, prog, tone, note);
     return (s16)snd_ut_key_off(voice, vabId, prog, tone, note);
+}
+
+/* A note on the given voice (0..23), whatever it plays: the voice, or -1. */
+s16 SsUtKeyOnV(s16 voice, s16 vabId, s16 prog, s16 tone, s16 note, s16 fine, s16 voll, s16 volr) {
+    snd_call("SsUtKeyOnV(%d, %d, %d, %d, %d, %d, %d, %d)", voice, vabId, prog, tone, note, fine, voll, volr);
+    return (s16)snd_ut_key_on_voice(voice, vabId, prog, tone, note, fine, voll, volr);
+}
+
+/* The voice keyed off: 0, or -1. */
+s16 SsUtKeyOffV(s16 voice) {
+    snd_call("SsUtKeyOffV(%d)", voice);
+    return (s16)snd_ut_key_off_voice(voice);
 }
 
 /* A save state (psyq_internal.h): LIBSND's state (its pointers are into the arena and into itself). */

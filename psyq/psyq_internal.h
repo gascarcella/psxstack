@@ -28,6 +28,8 @@ void psyq_gs_reset(void);
 void psyq_gte_reset(void);
 void psyq_press_reset(void);
 void psyq_snd_reset(void);
+void psyq_api_reset(void);
+void psyq_card_reset(void);
 
 /* Each library's part of a save state (psyq_state in psyq.c; include/psxstack/savestate.h): its state the game can
  * observe, named in a fixed order; on a load, what depends on it is fixed up (gpu.c: the decoded textures, the
@@ -46,6 +48,38 @@ void mdec_state(PortState *s);
 void psyq_snd_state(PortState *s);
 void snd_spu_state(PortState *s);
 void psyq_mcrd_state(PortState *s);
+void psyq_api_state(PortState *s);
+void psyq_card_state(PortState *s);
+
+/* The vsync tick's interrupts after the game's VSyncCallback handler (libetc.c psyq_vsync_tick, in this order):
+ * LIBSND's own tick once SsStart started it (libsnd.c), the memory card's commands that complete (libcard.c: their
+ * SwCARD/HwCARD events), then the root counter 3 (libapi.c: the RCntCNT3 events, whose handlers run here). */
+void psyq_snd_vsync(void);
+void psyq_card_vsync(void);
+void psyq_api_vsync(void);
+
+/* libapi.c: the BIOS's events. Delivers (class, spec) to every enabled event that waits for it: an EvMdINTR event's
+ * handler runs at once, an EvMdNOINTR event is marked for TestEvent/WaitEvent. */
+void psyq_api_deliver(u32 desc, s32 spec);
+
+/* libmcrd.c: the memory card store, shared by LIBMCRD and by LIBCARD and the BIOS's "bu" file calls (libcard.c). A
+ * card is a 128 KB image (16 blocks of 64 frames of 128 bytes; block 0 the directory: docs/FORMATS.md in the first
+ * game, psx-spx "Memory Card Data Format"). The results are LIBMCRD's McErr* numbers (0 none, 2 invalid, 6 exists,
+ * 7 full). */
+#define PSYQ_CARD_FRAME 0x80
+#define PSYQ_CARD_BLOCK 0x2000
+#define PSYQ_CARD_BLOCKS 16
+u8 *psyq_card_image(int slot);                 /* slot 0 or 1; NULL: no card */
+void psyq_card_written(int slot);              /* the image changed: the runtime writes it back */
+int psyq_card_fresh(int slot);                 /* the new-card flag (set at insertion and at the console's reset) */
+void psyq_card_set_fresh(int slot, int on);
+int psyq_card_formatted(const u8 *image);
+int psyq_card_find(u8 *image, const char *name);   /* the file's first block (1-15), 0 if none */
+int psyq_card_dir_entry(const u8 *image, int block, char name[21], s32 *size, s32 *state); /* 1: a file starts there */
+s32 psyq_card_create(u8 *image, const char *name, s32 blocks);
+void psyq_card_erase(u8 *image, int first);
+int psyq_card_transfer(u8 *image, int first, s32 offset, u8 *buf, s32 bytes, int to_card); /* 0, or -1 */
+int psyq_card_match(const char *pattern, const char *name); /* the BIOS's '?' and '*' */
 
 /* gte.c: the GTE (COP2). The generated gtemac.h (tools/port_gen.py overrides) calls these with the registers and
  * command words of include/psyq/gtemac.h's MIPS sequences, and declares them itself (the game's units do not see

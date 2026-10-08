@@ -1,6 +1,7 @@
 # psxstack's CI: disc-free, no game. The game-description generator's test, the hello example built through
 # psxstack_add_game() and run headless (tests/hello_test.py: the generators, the sections, the shim, the runtime), the
 # tasks example (tests/tasks_test.py: the fibers, plain and under the sanitizers, and for Windows under Wine), the
+# shim's deterministic pieces on their own (tests/shim_test.py, plain and under the sanitizers), the
 # debug tools' offline self-test, the launcher's build and headless self-test on Ubuntu 24.04 (SDL3 and Dear ImGui at
 # their pins through scripts/setup.sh; the built tools cached on the pins, scripts/setup.sh --pins, not on the
 # script's text), and the Windows cross-build with its self-test under Wine. On pull requests, pushes to main and by
@@ -53,6 +54,10 @@ jobs:
         run: python3 tests/tasks_test.py
       - name: The same under AddressSanitizer and UBSan, tests/tasks_test.py --sanitize
         run: python3 tests/tasks_test.py --sanitize
+      - name: "The shim alone: events, the memory card's BIOS calls, CdSearchFile, LIBSPU, LIBSND's SEQs (tests/shim_test.py)"
+        run: python3 tests/shim_test.py
+      - name: The same under AddressSanitizer and UBSan, tests/shim_test.py --sanitize
+        run: python3 tests/shim_test.py --sanitize
       - name: The shim compiles on its own, against the stack's declarations (psyq/check.sh --compile, no game)
         run: psyq/check.sh --compile
       - name: The shim's LIBGTE and LIBGPU functions on their own, also under AddressSanitizer and UBSan (tests/psyq_test.py)

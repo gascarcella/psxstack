@@ -41,7 +41,7 @@ python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU function
 | `schema/` | `game.schema.json`: the game description |
 | `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test; `tasks/`, the same with its work in tasks on the stack's fibers |
 | `docs/` | `GAME_CONTRACT.md`, `PORT.md`, `RUNTIME.md`, `LAUNCHER.md`, `DECISIONS.md`, `THIRD_PARTY.md` |
-| `tests/` | The stack's own tests: `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, `psyq_test.py` (the shim's LIBGTE and LIBGPU, its C in `tests/psyq/`), the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
+| `tests/` | The stack's own tests: `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, `psyq_test.py` (the shim's LIBGTE and LIBGPU, its C in `tests/psyq/`), `shim_test.py` (the shim's deterministic pieces on their own: events, the memory card's BIOS calls, `CdSearchFile`; its C in `tests/shim/`), the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
 
 ## Using it from a game
 ```cmake

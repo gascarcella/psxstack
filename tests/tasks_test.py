@@ -6,8 +6,10 @@ built through psxstack_add_game() and run headless.
     python3 tests/tasks_test.py --exe build/tasks-win/tasks.exe --wine
 
 Checks: `--version` names it; 60 vsyncs run to the frame cap, and the picture at vsync 58 (the software GPU) has the
-SHA-1 EXPECTED (--record prints the hash to put there); with --trace the log shows every operation (create, switch,
-exit, destroy, a slot reused); two runs write the same frame log (every frame's primitive hash); a run that saves
+SHA-1 EXPECTED (--record prints the hash to put there; a tick where the vblank handler, a root counter 3 event, did
+not fire once after the VSyncCallback handler would draw a red bar into it); with --trace the log shows every
+operation (create, switch, exit, destroy, a slot reused) and the event's installation (LIBAPI's OpenEvent, SetRCnt,
+StartRCnt); two runs write the same frame log (every frame's primitive hash); a run that saves
 states at vsyncs 20 and 50 is unchanged, and a run resumed from either ends with the same picture and the straight
 log's lines after that frame; the state at 50 was captured on a task's fiber, so the running fiber, its
 stack and the suspended fibers' are all restored.
@@ -127,6 +129,13 @@ def main():
     check(status == 0 and ops["create 1"] == 2 and ops["create 2"] == 1 and ops["exit 2"] == 1 and ops["destroy 1"] == 1
           and switches > FRAMES,
           f"the trace: {switches} switches, blink exited, quad destroyed, busy created in the freed slot ({ops})")
+    # the vblank handler is a root counter 3 event (psyq/libapi.c), as the second game's scheduler installs it; the
+    # picture's red bar would show a tick where it did not fire once, after the VSyncCallback handler
+    api = [l.split("psyq: ", 1)[1].split(" ")[0] for l in err.splitlines()
+           if l.startswith("psyq: ") and l.split("psyq: ", 1)[1].split(" ")[0] in
+           ("EnterCriticalSection", "OpenEvent", "EnableEvent", "SetRCnt", "StartRCnt", "ExitCriticalSection")]
+    check(api == ["EnterCriticalSection", "OpenEvent", "EnableEvent", "SetRCnt", "StartRCnt", "ExitCriticalSection"],
+          f"the trace: the handler installed as an RCntCNT3 event ({', '.join(api)})")
 
     status, _, shot_b, log_b = run("b")
     check(status == 0 and log_a.exists() and log_b.exists() and log_a.read_bytes() == log_b.read_bytes()

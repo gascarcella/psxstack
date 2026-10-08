@@ -331,13 +331,16 @@ and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and 
 | LIBGPU | Real; drives the software GPU (`libgpu.c`, `gpu.c`): environments, ordering tables, the primitives' function forms, the drawing-mode packets, VRAM transfers both ways, TIMs |
 | LIBGTE | Real, on the software GTE (`libgte.c`, `gte.c`): the perspective transforms, the matrix stack and helpers, normalisation, lighting, `csqrt`/`catan`/`ratan2`, each with LIBGTE's command sequence |
 | LIBGS | TIM info, the GTE set-up, the world-screen and light matrices (`libgs.c`); `GsInitGraph`/`GsInit3D` do the PS1's GTE and matrix set-up and skip its draw environments |
-| LIBETC | `VSync`, `VSyncCallback`, `SetVideoMode`, `ResetCallback`: real, on the pump |
-| LIBCD | A real command model over the disc image, timed in ticks; interrupt-driven sector reads, streaming (`St*`, `CdRead2`); XA sectors to the XA decoder (`libcd.c`, `xa.c`) |
+| LIBETC | `VSync`, `VSyncCallback`, `SetVideoMode`, `ResetCallback`: real, on the pump. The vsync tick runs the `VSyncCallback` handler, then LIBSND's own tick, the memory card's command and the root counter 3's events, then `port_frame` |
+| LIBCD | A real command model over the disc image, timed in ticks; interrupt-driven sector reads, whole reads (`CdRead`, `CdReadSync`, `CdSync`), `CdSearchFile` over the disc's ISO 9660 directories, streaming (`St*`, `CdRead2`); XA sectors to the XA decoder, through `CdMix`'s matrix (`libcd.c`, `xa.c`) |
 | LIBPRESS | MDEC movie decoding (`libpress.c`, `mdec.c`) |
-| LIBSND | The sequencer and voices over the SPU core (`libsnd*.c`; `docs/SOUND.md` in the first game) |
+| LIBSND | The sequencer and voices over the SPU core (`libsnd*.c`; `docs/SOUND.md` in the first game): SEPs and SEQs, ticked by the game (`SS_NOTICK`) or by `SsStart` once per vsync |
+| LIBSPU | The voice and common attributes and the reverb work area a game sets itself (`libspu.c`) |
 | LIBPAD | A digital pad on port 0; actuator calls accepted and ignored |
-| LIBMCRD | Real, over `.mcd` images (`libmcrd.c`) |
-| LIBC2, LIBAPI | Not defined: they resolve to the host libc |
+| LIBMCRD | Real, over `.mcd` images (`libmcrd.c`), whose card store LIBCARD shares |
+| LIBAPI | Events, root counter 3 (the vblank: its event's handler runs inside the vsync tick and may preempt a fiber), critical sections (`libapi.c`); the BIOS's file calls on the memory cards (`bu00:`, `bu10:`) with LIBCARD (`libcard.c`). `open`, `read`, `write`, `lseek`, `close` and `EnterCriticalSection`/`ExitCriticalSection` are also the host's names: the game's units get `include/psxstack/psyq_names.h` forced in, which renames them to the shim's `psyq_api_*`, so the runtime and libc keep the host's |
+| LIBCARD | `InitCARD`, `StartCARD`, `_bu_init`, `_card_info`/`_load`/`_clear`/`_format`: real over the `.mcd` images, completing on the vsync tick with SwCARD/HwCARD events (`libcard.c`) |
+| LIBC2 | Not defined: it resolves to the host libc (`rand` too: the host's sequence, not the PS1's) |
 
 `<PREFIX>_PORT_TRACE=1` traces every shim call. The behaviours each library still assumes (rather than checked
 against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assumed".

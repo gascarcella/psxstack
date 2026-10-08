@@ -18,7 +18,8 @@ int VSyncCallback(void (*f)(void)) {
     return (int)(uintptr_t)prev;
 }
 
-/* The interrupt: one vsync has happened. */
+/* The interrupt: one vsync has happened. In order: the pad, the runtime's audio (pre-hook), the game's VSyncCallback
+ * handler, LIBSND's tick (SsStart), the memory card, the root counter 3's events (libapi.c), the runtime's frame. */
 void psyq_vsync_tick(void) {
     psyq_vsync_count++;
     psyq_gte_shadow_tick();
@@ -29,6 +30,9 @@ void psyq_vsync_tick(void) {
     if (psyq_vsync_handler != NULL) {
         psyq_vsync_handler();
     }
+    psyq_snd_vsync();  /* LIBSND's own tick, once SsStart started it */
+    psyq_card_vsync(); /* the memory card's command completes: its SwCARD/HwCARD event */
+    psyq_api_vsync();  /* root counter 3: the RCntCNT3 events (their handlers may ask for a fiber switch) */
     if (psyq_vsync_hook != NULL) {
         psyq_vsync_hook();
     }
