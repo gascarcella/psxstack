@@ -84,6 +84,20 @@ typedef struct PsyqDisplay {
 const u16 *psyq_gpu_vram(void);
 void psyq_gpu_display(PsyqDisplay *out);
 
+/* Sub-pixel precision (gte_shadow.c; docs/PORT.md "Sub-pixel precision"): the GTE's screen coordinates with their
+ * fractions, found again when gpu.c draws a polygon from them (the listener's GpuVertex fx, fy, z). Off by default;
+ * the hardware renderer turns it on above internal scale 1. psyq_gte_shadow_link is the arena's call for every
+ * primitive linked into an ordering table (port_ptr_to_u32), made only while psyq_gte_shadow_on. The counts are the
+ * polygon vertices gpu.c drew while it was on, those with a precise value, those of them at an ambiguous word's mean,
+ * and the records the tables had no room for. */
+extern int psyq_gte_shadow_on;
+void psyq_gte_shadow_enable(int on);
+void psyq_gte_shadow_link(const void *packet);
+typedef struct {
+    long drawn, precise, ambiguous, dropped;
+} PsyqShadowStats;
+void psyq_gte_shadow_stats(PsyqShadowStats *out);
+
 /* LIBC2 (strlen, strcpy, strncpy, memcpy, strcspn, atoi) and LIBAPI (open, read, write, close) are the host libc:
  * the shim defines none of them, on purpose (a definition in the executable would replace libc's for every shared
  * library in the process, SDL included). Our include/psyq/libc2.h declares strlen/strcspn as returning s32 and

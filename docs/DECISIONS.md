@@ -90,3 +90,12 @@ switches it). The HLSL needed no change: SDL builds the D3D12 root signature its
 game's issue #67): Wine's vkd3d and vkd3d-proton draw the Vulkan build's pictures byte for byte. Wine's own vkd3d
 refuses every swapchain composition, so a refused `SDL_SetGPUSwapchainParameters` keeps the claimed swapchain (SDR,
 vsync) instead of falling back to software. Linux stays SPIR-V only.
+
+## Sub-pixel precision: the GTE's fractions followed by value at addPrim (2026-10-08)
+For the hardware renderer above scale 1, the GTE's 16.16 screen coordinates are kept in a shadow (`psyq/gte_shadow.c`;
+`docs/PORT.md` "Sub-pixel precision"), never in anything the game reads, so the stream and the frame hash cannot
+change. The copies games make from a vertex cache into packets are plain C the shim cannot watch (PGXP's memory
+shadow is not available to a native port), so a linked polygon's vertex words are matched by value against the last
+run of SXY stores (one mesh) and the result is keyed by the packet word's host address, validated against the word and
+its integer when drawn. Words two vertices of a mesh share take their mean: no game-side hook is needed (the first
+game's owner chose this over a hook at its copies, which would have made them exact).

@@ -69,6 +69,8 @@ static u32 gpu_generation; /* gpu_stamp_generation: the stamps started over this
 
 /* The listener (psyq_internal.h "gpu.c's decoded commands"): the hardware renderer's, or NULL. */
 static void (*gpu_listener)(const GpuEvent *ev);
+/* The host address of the word gpu_gp0_words is passing on (gpu_gp0_write's otherwise: NULL). */
+static const u32 *gpu_word_src;
 
 void gpu_set_listener(void (*listener)(const GpuEvent *ev)) {
     gpu_listener = listener;
@@ -102,8 +104,10 @@ static struct {
     /* E6: the mask bit OR-ed into every pixel drawn, and whether pixels with the mask bit set are kept. */
     u16 set_mask;
     int check_mask;
-    /* The command being assembled. */
+    /* The command being assembled, and the host address each word came from (gpu_gp0_words; NULL: a single write):
+     * gte_shadow.c finds a polygon's precise vertices by them. */
     u32 cmd[16];
+    const u32 *cmd_src[16];
     int n, need;
     /* A polyline in progress: its words so far are the last vertex (and colour). */
     int polyline;
@@ -460,7 +464,12 @@ typedef GpuVertex Vertex;
 
 /* The event of a drawing primitive with mode m (the drawing state's area and mask settings are g's). */
 static void gpu_event_mode(GpuEvent *ev, GpuEventKind kind, const Mode *m) {
+    int i;
+
     memset(ev, 0, sizeof(*ev));
+    for (i = 0; i < 3; i++) {
+        ev->v[i].fx = ev->v[i].fy = -1;
+    }
     ev->kind = kind;
     ev->textured = m->textured;
     ev->raw = m->raw;
@@ -1164,6 +1173,11 @@ static void gpu_polygon(const u32 *w) {
         }
         vx[i].x = sext11((u32)(sext11(w[k]) + g.ofs_x));
         vx[i].y = sext11((u32)(sext11(w[k] >> 16) + g.ofs_y));
+        vx[i].fx = vx[i].fy = -1;
+        vx[i].z = 0;
+        if (psyq_gte_shadow_on) {
+            psyq_gte_shadow_find(g.cmd_src[k], w[k], &vx[i].fx, &vx[i].fy, &vx[i].z);
+        }
         k++;
         vx[i].u = vx[i].v = 0;
         if (textured) {
@@ -1377,6 +1391,8 @@ static void gpu_line_vertex(Vertex *v, u32 col, u32 pos) {
     v->x = sext11((u32)(sext11(pos) + g.ofs_x));
     v->y = sext11((u32)(sext11(pos >> 16) + g.ofs_y));
     v->u = v->v = 0;
+    v->fx = v->fy = -1;
+    v->z = 0;
 }
 
 static void gpu_line_mode(Mode *m, u32 code) {
@@ -1635,6 +1651,7 @@ void gpu_gp0_write(u32 word) {
     if (g.n == 0) {
         g.need = gpu_command_length(word >> 24);
     }
+    g.cmd_src[g.n] = gpu_word_src;
     g.cmd[g.n++] = word;
     if (g.n >= g.need) {
         g.n = 0;
@@ -1646,8 +1663,10 @@ void gpu_gp0_words(const u32 *w, u32 n) {
     u32 i;
 
     for (i = 0; i < n; i++) {
+        gpu_word_src = &w[i];
         gpu_gp0_write(w[i]);
     }
+    gpu_word_src = NULL;
 }
 
 /* CPU to VRAM in one go (LoadImage): GP0 A0h, the rectangle, then the pixels (two per word, the last word's high

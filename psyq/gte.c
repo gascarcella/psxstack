@@ -25,6 +25,8 @@
  *    (FLAG 12); H >= 2 * SZ3 is a division overflow (FLAG 17, the quotient 0x1FFFF).
  *  - MVMVA with mx = 3 multiplies by [-R * 16, R * 16, IR0; RT13 x 3; RT22 x 3] (R: RGBC's red), and with cv = 2
  *    (FC) the first column's product only sets flags, as psx-spx describes; both agree with the PS1. */
+#include <string.h>
+
 #include "psyq_internal.h"
 
 /* The 32 data registers (cop2r0-31) and the 32 control registers (cop2r32-63), as words. */
@@ -83,6 +85,9 @@ static u32 gte_lzc(u32 v) {
 }
 
 void psyq_gte_mtc2(int reg, u32 v) {
+    if (psyq_gte_shadow_on && (reg & 31) >= GTE_SXY0 && (reg & 31) <= GTE_SXYP) {
+        gte_shadow_write(reg & 31);
+    }
     switch (reg & 31) {
     case 1: case 3: case 5: case 8: case 9: case 10: case 11: /* VZ0-2, IR0-3: 16 bits signed */
         gte_d[reg] = (u32)gte_lo(v);
@@ -153,6 +158,17 @@ void psyq_gte_ctc2(int reg, u32 v) {
     }
 }
 
+/* swc2 (the generated gte_* macros' stores of a data register): for SXY0-2 and SXYP also the sub-pixel shadow's
+ * record (gte_shadow.c). */
+void psyq_gte_swc2_(void *p, int reg) {
+    u32 v = psyq_gte_mfc2(reg);
+
+    memcpy(p, &v, 4);
+    if (psyq_gte_shadow_on && (reg & 31) >= GTE_SXY0 && (reg & 31) <= GTE_SXYP) {
+        gte_shadow_store(p, v, reg & 31);
+    }
+}
+
 u32 psyq_gte_cfc2(int reg) {
     switch (reg & 31) {
     case GTE_H:
@@ -172,6 +188,7 @@ void psyq_gte_clear(void) {
         gte_c[i] = 0;
     }
     gte_d[GTE_LZCR] = 32; /* LZCS 0 */
+    gte_shadow_clear();
 }
 
 /* ---- the arithmetic ---- */
@@ -368,10 +385,13 @@ static u32 gte_divide(u32 h, u32 sz3) {
 static void gte_rtp(int k, int shift, int lm, int last) {
     s32 v[3];
     s64 mac3;
+    s64 macs[3];
     s32 x;
     s32 y;
     s64 sx;
     s64 sy;
+    s64 fx; /* the 16.16 sums SX, SY are cut from (gte_shadow.c keeps them) */
+    s64 fy;
     u32 n;
     int i;
 
@@ -386,6 +406,7 @@ static void gte_rtp(int k, int shift, int lm, int last) {
         for (j = 0; j < 3; j++) {
             acc = gte_acc(i + 1, acc + (s64)gte_mat(GTE_RT, i, j) * v[j]);
         }
+        macs[i] = acc;
         if (i < 2) {
             gte_set_mac_ir(i + 1, acc, shift, lm);
         } else {
@@ -408,8 +429,10 @@ static void gte_rtp(int k, int shift, int lm, int last) {
     }
     gte_d[GTE_SZ3] = gte_sat_sz(mac3 >> 12);
     n = gte_divide(gte_c[GTE_H] & 0xFFFF, gte_d[GTE_SZ3]);
-    sx = gte_mac0((s64)(s32)gte_c[GTE_OFX] + (s64)gte_ir(1) * n) >> 16;
-    sy = gte_mac0((s64)(s32)gte_c[GTE_OFY] + (s64)gte_ir(2) * n) >> 16;
+    fx = (s64)(s32)gte_c[GTE_OFX] + (s64)gte_ir(1) * n;
+    fy = (s64)(s32)gte_c[GTE_OFY] + (s64)gte_ir(2) * n;
+    sx = gte_mac0(fx) >> 16;
+    sy = gte_mac0(fy) >> 16;
     x = sx < -0x400 ? -0x400 : sx > 0x3FF ? 0x3FF : (s32)sx;
     y = sy < -0x400 ? -0x400 : sy > 0x3FF ? 0x3FF : (s32)sy;
     if (x != sx) {
@@ -421,6 +444,10 @@ static void gte_rtp(int k, int shift, int lm, int last) {
     gte_d[GTE_SXY0] = gte_d[GTE_SXY0 + 1];
     gte_d[GTE_SXY0 + 1] = gte_d[GTE_SXY2];
     gte_d[GTE_SXY2] = ((u32)x & 0xFFFF) | ((u32)y << 16);
+    if (psyq_gte_shadow_on) {
+        gte_shadow_rtp(x == sx && y == sy, fx, fy, gte_d[GTE_SZ3]);
+        gte_shadow_log_rtp(v, x, y, fx, fy, macs, (s32)gte_c[GTE_OFX], (s32)gte_c[GTE_OFY], gte_c[GTE_H] & 0xFFFF);
+    }
     if (last) {
         s64 dq = gte_mac0((s64)gte_lo(gte_c[GTE_DQA]) * n + (s32)gte_c[GTE_DQB]) >> 12;
 

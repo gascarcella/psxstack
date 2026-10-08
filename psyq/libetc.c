@@ -21,6 +21,7 @@ int VSyncCallback(void (*f)(void)) {
 /* The interrupt: one vsync has happened. */
 void psyq_vsync_tick(void) {
     psyq_vsync_count++;
+    psyq_gte_shadow_tick();
     psyq_pad_vsync();
     if (psyq_vsync_pre_hook != NULL) {
         psyq_vsync_pre_hook();
