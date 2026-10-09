@@ -7,8 +7,9 @@
 
 The description is validated against schema/game.schema.json (with `jsonschema` when it is importable, else by hand:
 the same required keys, types, patterns and ranges) and against what the schema cannot say: the slots are in address
-order and contiguous with each other and with the heap, the rates include the nominal one. Every string reaches the
-header as a C string literal; addresses as hex integer constants. Nothing reads the description at run time.
+order and contiguous with each other and with the heap, the rates include the nominal one, a game that needs its
+disc (`disc_required`) lists one. Every string reaches the header as a C string literal; addresses as hex integer
+constants. Nothing reads the description at run time.
 `memory.heap` is optional: without it the arena is the slots alone (PORT_HEAP_PRESENT 0, no PORT_HEAP_START_ADDR /
 PORT_HEAP_END_ADDR, PORT_HEAP_SIZE 0) and the HEAP_* hook macros refuse to compile.
 """
@@ -72,6 +73,8 @@ def validate_schema(game, schema):
         fail("title: a non-empty string")
     if "env_prefix" in game and not re.fullmatch(r"[A-Z][A-Z0-9]{0,15}", str(game["env_prefix"])):
         fail("env_prefix: upper-case letters and digits")
+    if "disc_required" in game and not isinstance(game["disc_required"], bool):
+        fail("disc_required: true or false")
     discs = game["discs"]
     if not isinstance(discs, list):
         fail("discs: a list (empty for a disc-free program, which then runs with the disc check off)")
@@ -130,6 +133,7 @@ def resolve(game):
         "title": game["title"],
         "env_prefix": game.get("env_prefix", game["id"].upper()),
         "discs": [dict(d, cue=d.get("cue", "")) for d in game["discs"]],
+        "disc_required": game.get("disc_required", False),
         "rate": game["video"]["rate"],
         "rates": game["video"].get("rates") or [game["video"]["rate"]],
         "rate_note": game["video"].get("rate_note", ""),
@@ -137,6 +141,8 @@ def resolve(game):
         "disc_hint": game.get("launcher", {}).get("disc_hint", ""),
         "website": game.get("launcher", {}).get("website", ""),
     }
+    if g["disc_required"] and not g["discs"]:
+        fail("disc_required: needs a disc in `discs`")
     if g["rate"] not in g["rates"]:
         fail("video.rates: must include video.rate")
     if len(set(g["rates"])) != len(g["rates"]):
@@ -258,6 +264,8 @@ def header(g, source):
     w("    unsigned long long size;")
     w("} PsxstackGameDisc;")
     w(f"#define PSXSTACK_GAME_DISC_COUNT {len(g['discs'])}")
+    w(f"#define PSXSTACK_GAME_DISC_REQUIRED {int(g['disc_required'])} /* 1: the port does not start without a disc "
+      "(--input-test aside) */")
     items = ", ".join("{ " + ", ".join([cstr(d["label"]), cstr(d["serial"]), cstr(d["sha1"]), cstr(d["cue"]),
                                         cstr(d["region"]), f"{d['size']}ull"]) + " }" for d in g["discs"])
     if g["discs"]:

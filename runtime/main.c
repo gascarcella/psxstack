@@ -1,6 +1,7 @@
 /* The port's entry point: options, the runtime's setup, then the game's main() (src/main/main.c, compiled as
  * game_main). The game never returns; the run ends in port_exit (the frame cap, status 0; a stub that cannot fake
- * its result, 3; PLATFORM_HALT, 2; the watchdog, 4; the window closed, 0; --input-test failed, 6). */
+ * its result, 3; PLATFORM_HALT, 2; the watchdog, 4; the window closed, 0; --input-test failed, 6; a game that needs
+ * its disc started without one, 64). */
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +67,12 @@ static void usage(const char *argv0) {
             "  --refresh HZ     50 (PAL) or 60 (default: the game's video.rate): the game's own response to the rate\n"
             "                   (game_apply_rate), the pace, the audio's and the CD's rate (overrides the settings'\n"
             "                   video.refresh)\n"
-            "  --disc PATH      the user's disc (.cue or .bin; SHA-1 checked); without it reads find no data\n"
+            "  --disc PATH      the user's disc (.cue or .bin; SHA-1 checked); without it reads find no data"
+#if PSXSTACK_GAME_DISC_REQUIRED
+            ";\n"
+            "                   this game does not start without it (game.json disc_required), --input-test aside"
+#endif
+            "\n"
             "  --no-disc-check  skip the disc's SHA-1 check (experiments with another image)\n"
             "  --cd-speed S     the CD's timing: realistic (default: double speed and seeks) or instant\n"
             "  --memcard1 P     memory card 1: a .mcd image (created if missing), or none; default: a fresh card in\n"
@@ -156,7 +162,7 @@ int main(int argc, char **argv) {
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
-    int subpixel = 1;
+    int subpixel = 1, no_game = 0;
     const char *config = NULL;
     PortFilter filter = PORT_FILTER_DEFAULTS;
     int print_settings = 0, print_mods = 0, script_mods = 0;
@@ -384,6 +390,16 @@ int main(int argc, char **argv) {
         port_settings_print(stdout, &eff);
         return 0;
     }
+    if (PSXSTACK_GAME_DISC_REQUIRED && disc == NULL) {
+        /* the game cannot run on reads that find no data (game.json disc_required); the modes above have already
+         * exited, and the input self-test needs no game: it runs on the pump alone (below) */
+        if (!input_test) {
+            fprintf(stderr, "port: no disc: %s does not run without its disc: --disc CUE|BIN (or disc.path in the "
+                            "--config settings); only --input-test runs without one\n", PSXSTACK_GAME_TITLE);
+            return 64;
+        }
+        no_game = 1;
+    }
     if (gpu_shots && !port_video_available()) {
         fprintf(stderr, "port: --gpu-screenshot: this build has no GPU renderer: configure with -DPSXSTACK_SDL=ON\n");
         return 64;
@@ -480,6 +496,14 @@ int main(int argc, char **argv) {
     }
     port_pump_init();
     port_log("start: max-frames %ld, watchdog %d s, %ld Hz", port_max_frames, port_watchdog_sec, port_rate);
+    if (no_game) {
+        /* --input-test without the disc a disc_required game needs: the vsyncs without the game (the window, the
+         * input and its self-test run in the pump's per-frame work; the test ends the run) */
+        port_log("no disc: the input self-test runs without the game");
+        for (;;) {
+            port_wait();
+        }
+    }
     switch (port_setjmp(port_reset_jmp)) {
     case 0:
         port_savestate_run(0); /* game_main, or the --load-state resumed */

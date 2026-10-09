@@ -46,7 +46,9 @@ the port and the launcher stay single binaries. Contents:
 - **Identity:** `id` (the exe's name, the settings and cache directory names, the section prefix), `title`,
   `env_prefix` (`<PREFIX>_CONFIG_DIR`, `<PREFIX>_GAME`, …), `launcher.about`, `launcher.disc_hint`.
 - **Discs:** the accepted images: label, serial, SHA-1 of the whole BIN, BIN size, region. Both the port's check and
-  the launcher's check use this list; the error text names the label.
+  the launcher's check use this list; the error text names the label. `disc_required` (optional, default `false`):
+  the game cannot run on reads that find no data, so the port refuses to start without a disc (a message, status 64);
+  `--input-test` then runs the window's input self-test on the pump alone, without the game.
 - **Timing:** `video.rate` (the nominal vsyncs per second: 50 PAL, 60 NTSC), the rates the launcher offers and the
   text that explains the alternative.
 - **Memory:** `memory.ram` (base, size), `memory.slots` (name, base, size, in address order, contiguous), `memory.heap`
@@ -69,12 +71,13 @@ launcher and the game's adapter use by these exact names:
 | `PORT_SLOT_COUNT`; `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `PORT_SLOT<n>_NAME` for n = 1.. | `memory.slots`, in order: slot n is `tier` n in the hook macros |
 | `PORT_HEAP_PRESENT`; `PORT_HEAP_START_ADDR`, `PORT_HEAP_END_ADDR`, `PORT_HEAP_SIZE` | 1 with a `memory.heap`, then the PS1 bounds and the host region's size (`host_size`, default 4 MB); 0 without one: no bounds, `PORT_HEAP_SIZE` 0, and the `HEAP_*` hooks refuse to compile |
 | `PsxstackGameDisc` (a struct: `label, serial, sha1, cue, region` strings and `size`), `PSXSTACK_GAME_DISC_COUNT`, `PSXSTACK_GAME_DISCS` | `discs`, as an array initializer; `cue` is `""` when absent |
+| `PSXSTACK_GAME_DISC_REQUIRED` | `disc_required`: 1 or 0 |
 | `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
 | `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
 
 A disc's `label` is a noun phrase, since the launcher writes "This is <label>." and "<file> is not <label>". The
 generator checks what the schema cannot: the slots are in address order and contiguous with each other and with the
-heap, the host heap is at least the PS1's, the rates include the nominal one.
+heap, the host heap is at least the PS1's, the rates include the nominal one, a game with `disc_required` lists a disc.
 
 ### 2. The hook header
 The game's `include/port.h` (included by its `common.h`, as today) keeps the **PS1 side** of every macro itself: each
