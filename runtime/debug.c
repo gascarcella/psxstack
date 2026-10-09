@@ -33,9 +33,9 @@
  *   peek: addr (host), len (1..65536) -> data (hex). Raw host memory; the range must be mapped readable (checked in
  *     /proc/self/maps: the game's globals, the arena, anything the process maps), else "unmapped": a bad address never
  *     faults the game. poke: addr, data (hex) -> len; the range must be mapped writable.
- *   peek_ps1: addr (PS1), len -> data. An arena address (>= 0x80082CB0, inside the arena: the slots and the heap)
- *     reads directly, any length; any other PS1 address only through the state map (game_state_read's ranges:
- *     layout-identical EXE objects, the prefixes, the field table), len 1, 2 or 4; else "unmapped".
+ *   peek_ps1: addr (PS1), len -> data. Through the game's state map first (game_state_host: layout-identical EXE
+ *     objects, the prefixes, the field tables; len 1, 2 or 4), else an arena address (from the first slot's base:
+ *     the slots and the heap) directly, any length; else "unmapped" (port_ps1_host).
  *     poke_ps1: addr, data -> len; the same mapping, written.
  *   pad: buttons (u16, PS1 bit order: SELECT=0, L3, R3, START, UP, RIGHT, DOWN, LEFT, L2, R2, L1, R1, TRIANGLE,
  *     CIRCLE, CROSS, SQUARE=15; active high), frames (>= 0; 0 = hold until the next pad op), release (>= 0, default
@@ -418,19 +418,6 @@ static int debug_host_mapped(unsigned long long addr, size_t len, int write) {
     return ok;
 }
 
-/* The host bytes of PS1 address `addr` for `len` bytes: the arena directly, any other address through the state map
- * (1, 2 or 4 bytes); NULL when unmapped. */
-static u8 *debug_ps1_ptr(u32 addr, size_t len) {
-    if (addr >= PORT_SLOT1_BASE && addr - PORT_SLOT1_BASE < PORT_ARENA_SIZE &&
-        len <= PORT_ARENA_SIZE - (addr - PORT_SLOT1_BASE)) {
-        return (u8 *)port_arena_base() + (addr - PORT_SLOT1_BASE);
-    }
-    if (len == 1 || len == 2 || len == 4) {
-        return game_state_host(addr, (int)len);
-    }
-    return NULL;
-}
-
 /* A wait's read: 1 with the value (sign-extended as asked; a 4-byte unsigned read as a u32), 0 when unmapped. */
 static int debug_wait_read(const DebugWait *w, long long *out) {
     u8 buf[4];
@@ -449,7 +436,7 @@ static int debug_wait_read(const DebugWait *w, long long *out) {
         }
         p = (const u8 *)(uintptr_t)w->addr;
     } else {
-        p = debug_ps1_ptr((u32)w->addr, (size_t)w->size);
+        p = (u8 *)port_ps1_host((u32)w->addr, (size_t)w->size);
         if (p == NULL) {
             return 0;
         }
@@ -551,7 +538,7 @@ static void debug_op_peek(const DebugReq *req, const PortJson *obj, int ps1) {
         return;
     }
     if (ps1) {
-        p = debug_ps1_ptr((u32)addr, (size_t)len);
+        p = (u8 *)port_ps1_host((u32)addr, (size_t)len);
     } else {
         p = debug_host_mapped((unsigned long long)addr, (size_t)len, 0) ? (const u8 *)(uintptr_t)addr : NULL;
     }
@@ -572,7 +559,7 @@ static void debug_op_poke(const DebugReq *req, const PortJson *obj, int ps1) {
         return;
     }
     if (ps1) {
-        p = debug_ps1_ptr((u32)addr, len);
+        p = (u8 *)port_ps1_host((u32)addr, len);
     } else {
         p = debug_host_mapped((unsigned long long)addr, len, 1) ? (u8 *)(uintptr_t)addr : NULL;
     }

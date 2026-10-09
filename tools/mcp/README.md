@@ -42,8 +42,8 @@ message; a game that dies comes back with its stderr tail.
 ## Targets
 
 `name` or `name+0x10`: a global of the port's ELF (host memory, `nm`). `0x7f...` or a decimal number: a host
-address. `ps1:0x80048D34`, `ps1:name`, `ps1:name+8`: a PS1 address (the arena, from the description's first slot, is read
-directly, any length; other globals go through the game's state map, 1, 2 or 4 bytes at a time; `ps1:name` uses the
+address. `ps1:0x80048D34`, `ps1:name`, `ps1:name+8`: a PS1 address (through the game's state map first, 1, 2 or 4 bytes at a
+time; else the arena, from the description's first slot, directly, any length; `ps1:name` uses the
 EXE's symbol file, or an overlay's when only one overlay defines the name).
 
 ## Rules

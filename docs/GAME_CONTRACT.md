@@ -126,7 +126,8 @@ C the game compiles into the port alongside the runtime. It implements:
   addresses), `game_state_volatile_count()` and `game_state_volatile()` (the ranges the stable hash zeroes),
   `game_state_read(addr, size, is_signed, out)` and `game_state_host(addr, size)`: a PS1 address outside the arena
   (the EXE's globals, an overlay's objects, memcard state) mapped to the host object by the adapter, from the tables
-  the build generates for it. The stack maps the arena itself and asks the adapter for everything else. A game
+  the build generates for it (`game_state_read` serves a script's `wait_mem` and `peek_ps1`; `game_state_host` the
+  writes, a script's `write_mem` and `poke_ps1`). The stack asks the adapter first and maps the arena itself for what the adapter does not. A game
   whose random index is LIBC2's `rand` state (the PS1's generator, the shim's: `psyq/libc2.c`) returns
   `port_rand_seed()` (`hooks.h`) from `game_state_random_index()`.
 - **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,

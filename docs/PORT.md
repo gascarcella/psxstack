@@ -256,8 +256,9 @@ bare binary, the replays and the goldens are unchanged. The ops:
   paused. `pad buttons frames release [sync]`: the channel owns pad 1 (`psyq_pad_set` each vsync) until `pad_free`;
   a script keeps precedence.
 - `peek` / `poke`: raw host memory, any range `/proc/self/maps` says is mapped (a bad address never faults the game).
-  `peek_ps1` / `poke_ps1`: a PS1 address, the arena (from the first slot's base) directly at any length, anything
-  else through the adapter's state map (`game_state_read`, 1/2/4 bytes).
+  `peek_ps1` / `poke_ps1`: a PS1 address, through the adapter's state map first (`game_state_host`, 1/2/4 bytes: the
+  host objects behind PS1 addresses, an overlay's globals in the slots among them), else the arena (from the first
+  slot's base) directly at any length.
 - `screenshot path` (the display image as a binary PPM), `hash` (the game-state image, as a checkpoint hashes it), `pace fps`, `reset` (the console reset, after the answer), `quit status`.
 - `save_state path`: the whole state at the end of the current vsync (at once when paused, else at this vsync's
   end). `load_state path`: checked and answered, then the game goes on from it (through `main`, as the reset); a game
@@ -579,7 +580,8 @@ stack overflow gets the text (the filter runs on what the guard page leaves) and
 - **No reset key** in the window (the console reset exists only as a script step and a debug-channel op).
 - **Timing stand-ins:** the CD seek times (3 ticks + 1 per 8192 sectors, at most 40) and `StGetNext`'s 5000 polls
   per vsync are estimates, not measurements.
-- **State probes:** `game_state_read` (a script's `wait_mem`) maps what the game's adapter maps; other pointer-bearing
+- **State probes:** `game_state_read` (a script's `wait_mem`) and `game_state_host` (its `write_mem`) map what the
+  game's adapter maps; other pointer-bearing
   objects and overlay data read as unmapped.
 - **BIOS:** a stand-in holding the description's texts, not the user's BIOS.
 - **Windows** (cross-built from Linux with llvm-mingw, `cmake/windows-x86_64.cmake`; tested under Wine): the runtime's

@@ -63,6 +63,18 @@ int port_arena_contains(const void *p, size_t size) {
     return q >= port_arena && size <= PORT_ARENA_SIZE && q + size <= port_arena + PORT_ARENA_SIZE;
 }
 
+void *port_ps1_host(u32 addr, size_t len) {
+    void *p;
+    if ((len == 1 || len == 2 || len == 4) && (p = game_state_host(addr, (int)len)) != NULL) {
+        return p;
+    }
+    if (addr >= PORT_SLOT1_BASE && addr - PORT_SLOT1_BASE < PORT_ARENA_SIZE &&
+        len <= PORT_ARENA_SIZE - (addr - PORT_SLOT1_BASE)) {
+        return port_arena + (addr - PORT_SLOT1_BASE);
+    }
+    return NULL;
+}
+
 s32 port_ptr_to_s32(const void *p) {
     if (p == NULL) {
         return 0;

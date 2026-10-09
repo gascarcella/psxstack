@@ -24,7 +24,9 @@
 --      override bit, PCSX.CONSTS.PAD.BUTTON gives the bit numbers, the PS1 pad's own);
 --   3. advances the step list: press (hold buttons for N frames, then release for `release` frames; optionally
 --      `repeat`ed or repeated `until` a wait condition holds), wait_frames, wait_stage / wait_map / wait_mem (with a
---      timeout), walk (hold the d-pad toward a field position), reset (reboot the console), checkpoint (dump the
+--      timeout), walk (hold the d-pad toward a field position), reset (reboot the console), write_mem (write the
+--      emulated RAM: `addr` and `value`, `size` 1, 2 or 4 bytes little-endian, only `mask`'s bits when given; or
+--      `data`, hex digit pairs, from `addr` on; instant, as runtime/script.c's), checkpoint (dump the
 --      checkpoint image to a file, unless `image` is false, and log the frame, stage, map and random index), vram (append the whole VRAM to
 --      vram_<name>.bin on each of its `frames` frames).
 -- At the end it writes result.json and exits 0; a timeout or a Lua error writes what it has and exits 1.
@@ -155,6 +157,29 @@ local function read_mem(op)
     return signed and s32(op.addr) or u32(op.addr)
 end
 
+-- A write_mem step: `size` bytes at `addr` (little-endian) get `mask`'s bits from `value`, or the bytes of `data`.
+local function write_mem(step)
+    if step.data ~= nil then
+        local data = step.data
+        assert(type(data) == 'string' and #data > 0 and #data % 2 == 0 and #data <= 512 and not data:find('[^%x]'),
+            'write_mem: data is a string of hex digit pairs (1 to 256 bytes)')
+        for i = 0, #data / 2 - 1 do
+            ffi.cast('uint8_t*', ptr(step.addr + i))[0] = tonumber(data:sub(2 * i + 1, 2 * i + 2), 16)
+        end
+        return
+    end
+    local size = step.size or 4
+    assert(size == 1 or size == 2 or size == 4, 'write_mem: size must be 1, 2 or 4')
+    local full = size == 4 and 0xFFFFFFFF or bit.lshift(1, 8 * size) - 1
+    local mask = step.mask or full
+    local old = 0
+    for i = 0, size - 1 do old = old + u8(step.addr + i) * 2 ^ (8 * i) end
+    local v = bit.bor(bit.band(old, bit.bnot(mask)), bit.band(step.value, mask))
+    for i = 0, size - 1 do
+        ffi.cast('uint8_t*', ptr(step.addr + i))[0] = bit.band(bit.rshift(v, 8 * i), 0xFF)
+    end
+end
+
 local function apply_pad()
     for name, bitnum in pairs(BUTTON) do
         if held[name] then pad.setOverride(bitnum) else pad.clearOverride(bitnum) end
@@ -215,6 +240,10 @@ local function run_step(step)
     local t = step.type
     if t == 'checkpoint' then
         checkpoint(step)
+        return true, true
+    elseif t == 'write_mem' then
+        write_mem(step)
+        if verbose then print(string.format('replay: wrote 0x%08X %s', step.addr, state_string())) end
         return true, true
     elseif t == 'reset' then
         -- Reboot the console (PCSX-Redux hardResetEmulator: RAM cleared, the memory cards stay): back to the BIOS and

@@ -402,7 +402,7 @@ by the stack's CI: it needs a game, its disc and its pinned emulator.
 - **`run.lua`** is the step engine in the emulator (`runtime/script.c` is the same engine on the port): every vsync it
   records the (stage, file) and map transitions, applies the held buttons through the pad override, advances the
   steps (`press` with `repeat`/`until`, `wait_stage`/`wait_map`/`wait_mem`/`wait_frames`, `walk`, `reset`,
-  `checkpoint`, `vram`), and writes `result.json`. It reads the game's state through the probes chunk
+  `write_mem`, `checkpoint`, `vram`), and writes `result.json`. It reads the game's state through the probes chunk
   (`PSXSTACK_REPLAY_PROBES`), loaded with `PSXSTACK_REPLAY` (`u8`..`s32` over the emulated RAM) in scope.
 - **The script's `checkpoint` step** is `{"type": "checkpoint", "name": "x"}`: the frame, stage, map and random
   index, and the hashes of the checkpoint image (the dump, with `<PREFIX>_PORT_CHECKPOINT_DIR`). **`"image": false`**
@@ -413,6 +413,14 @@ by the stack's CI: it needs a game, its disc and its pinned emulator.
   such a checkpoint, or lacks them for one with an image, does not belong to the script: the emulator runner and the
   port test report it as a failure, and do so for an expected file as well. Dump files are numbered by the
   checkpoint's position (`cp02_x.bin` is the second checkpoint), no-image ones included.
+- **The script's `write_mem` step** writes PS1 memory on both runners, instantly (the next step runs in the same
+  frame): `{"type": "write_mem", "addr": "0x80010000", "value": 1}` (`size` 1, 2 or 4, default 4, little-endian;
+  `"mask": "0x2"` sets only the mask's bits from `value` and keeps the others), or `{"type": "write_mem", "addr": ...,
+  "data": "0102ff"}` (hex digit pairs, at most 256 bytes). The emulator writes its RAM; the port maps the address as
+  the debug channel's `poke_ps1` does (`port_ps1_host`: through the adapter's `game_state_host` first, else the
+  arena directly; `data` byte by byte), and an address it does not map ends the run with status 1 when the step
+  runs. It is a fixture: a state the script cannot reach by input in reasonable time on both runners (progress behind
+  `rand()`-driven play, say), set at a point where both runners hold the same state, from the game's own addresses.
 - **`boot_check.lua`** waits for the probes' `booted()` (`PSXSTACK_BOOT_FRAMES`, default 3000) and prints
   `boot check: OK` or `FAIL`.
 - **`port_test.py`** builds the port (`cmake -S <port> -B build/port -G Ninja`, and `build/port-m32`,
