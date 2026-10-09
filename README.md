@@ -8,7 +8,7 @@ game repo (a matching decompilation) adds a small adapter and gets a Linux and W
 It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
 `launcher/`, which consume it as a git submodule since `v0.1.0`.
 
-**Status: `v0.3.3`** (LIBC2's rand and the nominal rates; v0.3.2 a checkpoint without an image; v0.3.1 brought the second game's shim: LIBGTE, LIBGPU, LIBGS, LIBAPI, LIBCD, LIBSND, LIBCARD; v0.3.0 brought
+**Status: `v0.3.4`** (the launcher self-test's rate, the GPU's known differences; v0.3.3 LIBC2's rand and the nominal rates; v0.3.2 a checkpoint without an image; v0.3.1 brought the second game's shim: LIBGTE, LIBGPU, LIBGS, LIBAPI, LIBCD, LIBSND, LIBCARD; v0.3.0 brought
 an optional heap, the stack's own Psy-Q declarations, fibers for a game's tasks, the replay runners; v0.2.0 brought the hardware renderer on D3D12, sub-pixel precision, filters,
 texture packs, a wide canvas and save states). Everything a game needs is here: the contract (`docs/GAME_CONTRACT.md`), the game description
 and its generator (`schema/game.schema.json`, `tools/game_gen.py`), the runtime and the Psy-Q shim (`runtime/`,
