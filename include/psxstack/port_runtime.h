@@ -29,6 +29,11 @@ void port_arena_init(void);
 /* The arena's base (port_arena): a 24-bit ordering-table tag (PTR_TO_U32 & 0xFFFFFF) is an offset from it. */
 void *port_arena_base(void);
 int port_arena_contains(const void *p, size_t size);
+/* The host bytes of PS1 address `addr` for `len` bytes: the game's state map first (psxstack/game.h game_state_host:
+ * 1, 2 or 4 bytes; the adapter knows the host objects behind PS1 addresses, an overlay's globals inside the slots
+ * among them), else an arena address directly (any length inside the arena); NULL when unmapped. The debug channel's
+ * peek_ps1/poke_ps1 and the script's write_mem. */
+void *port_ps1_host(u32 addr, size_t len);
 
 /* ---- The overlay manager (overlay.c; the tables come from tools/port_gen.py tables -> overlay_tables.c) */
 typedef struct PortOverlayFunc {

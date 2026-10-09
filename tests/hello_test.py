@@ -6,7 +6,10 @@
 
 Configures and builds examples/hello (cmake, ninja, the host gcc and binutils; no SDL, no disc), checks `--version`
 names it, runs it for 40 vsyncs with a screenshot at vsync 30 (the software GPU: the same bytes on every machine) and
-compares the PPM's SHA-1 with EXPECTED; --record prints the hash to put there. Exit 0 pass, 1 fail, 2 missing tool.
+compares the PPM's SHA-1 with EXPECTED; --record prints the hash to put there. Then the script check: a script's
+write_mem steps (a value, a masked value, `data`; through the example's adapter probe, examples/hello/adapter.c, and
+into the arena) read back by wait_mem in the same frame (timeout 0), and a write to an address nothing maps ends the
+run with status 1. Exit 0 pass, 1 fail, 2 missing tool.
 --exe tests a given build instead (CI: the Windows cross-build with -DPSXSTACK_SDL=ON); --wine runs it through `wine`
 (the prefix build/wine-prefix unless WINEPREFIX names one); --gpu also takes the hardware renderer's picture of the
 same vsync (an SDL build), which must be the software one byte for byte when a device opens (on Windows, Direct3D 12
@@ -14,6 +17,7 @@ first) and is skipped, with the reason, when none does (CI's Wine has none).
 """
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -22,6 +26,38 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = "fbf8eb30c160296161eed21c9790ec8a6c2622b0"   # build/hello/shot.ppm at vsync 30
+
+
+PROBE = 0x80010000  # examples/hello/adapter.c HELLO_PROBE_ADDR
+WRITES = [
+    {"type": "wait_frames", "frames": 3},
+    {"type": "write_mem", "addr": hex(PROBE), "value": "0x12345678"},
+    {"type": "wait_mem", "addr": hex(PROBE), "value": "0x12345678", "timeout": 0},
+    {"type": "write_mem", "addr": hex(PROBE), "value": -1, "mask": "0xFF00"},
+    {"type": "wait_mem", "addr": hex(PROBE), "value": "0x1234FF78", "timeout": 0},
+    {"type": "write_mem", "addr": hex(PROBE + 6), "size": 2, "value": -2},
+    {"type": "wait_mem", "addr": hex(PROBE + 6), "size": 2, "value": -2, "signed": True, "timeout": 0},
+    {"type": "write_mem", "addr": hex(PROBE + 9), "data": "a1B2c3"},
+    {"type": "wait_mem", "addr": hex(PROBE + 8), "value": "0xC3B2A100", "timeout": 0},
+    {"type": "write_mem", "addr": "0x80100000", "data": "00" * 256},
+    {"type": "checkpoint", "name": "written"},
+]
+
+
+def script_check(runner, exe, build, env):
+    """write_mem against wait_mem in the same frame; an unmapped address is status 1."""
+    ok = True
+    for name, steps, want in (("write_mem", WRITES, 0),
+                              ("write_mem_unmapped", [{"type": "write_mem", "addr": "0x80020000", "value": 1}], 1)):
+        path = build / f"{name}.json"
+        path.write_text(json.dumps({"name": name, "max_frames": 100, "steps": steps}))
+        r = subprocess.run([*runner, str(exe), "--script", str(path), "--crash-dir", str(build / f"{name}_crash")],
+                           capture_output=True, text=True, env=env, timeout=600)
+        last = r.stderr.strip().splitlines()[-1] if r.stderr.strip() else ""
+        good = r.returncode == want and (want == 0 or "write_mem: 0x80020000" in r.stderr)
+        print(("ok   " if good else "FAIL ") + f"script {name}: status {r.returncode} (expected {want}); {last}")
+        ok &= good
+    return ok
 
 
 def main():
@@ -95,6 +131,7 @@ def main():
             ok &= same
         else:
             print(f"skip the hardware renderer's picture: {device}")
+    ok &= script_check(runner, exe, build, env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
 

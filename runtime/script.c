@@ -16,8 +16,15 @@
  * takes, active high); the game itself rotates the face buttons for non-Japanese languages (pad_read_buttons), so they
  * pass through unchanged. Numbers in a script may be JSON numbers or hex strings ("0x2D7"). Anything a step does not
  * define (`comment`, ...) is ignored, as run.lua ignores it; everything it defines is checked when the script is
- * loaded (run.lua would fail only on reaching the step), except a wait_mem address, which is fatal (status 1) only when
- * its step runs if game_state_read does not map it, so the steps before it still run. A step's start goes to stderr. */
+ * loaded (run.lua would fail only on reaching the step), except a wait_mem or write_mem address, which is fatal (status
+ * 1) only when its step runs if the port does not map it, so the steps before it still run. A step's start goes to
+ * stderr.
+ * - `write_mem` (an instant step) writes PS1 memory as the emulator's run.lua writes its RAM: `addr` and `value` (`size`
+ *   1, 2 or 4 bytes, default 4, little-endian; with `mask`, only its bits are set from `value`, the others kept), or
+ *   `data`, a string of hex digit pairs written from `addr` on (at most 256 bytes). The port maps the address as the
+ *   debug channel's poke_ps1 does (port_ps1_host): through the game's state map (game_state_host), else an arena
+ *   address directly; `data` byte by byte. A test's way to set up a state its script cannot reach by input in
+ *   reasonable time (the game's addresses come from its scripts, never from the stack). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,10 +48,11 @@ typedef enum ScriptStepType {
     SCRIPT_RESET,
     SCRIPT_CHECKPOINT,
     SCRIPT_VRAM,
+    SCRIPT_WRITE_MEM,
 } ScriptStepType;
 
 static const char *const script_type_names[] = {
-    "wait_stage", "wait_map", "wait_mem", "wait_frames", "press", "walk", "reset", "checkpoint", "vram",
+    "wait_stage", "wait_map", "wait_mem", "wait_frames", "press", "walk", "reset", "checkpoint", "vram", "write_mem",
 };
 
 /* The PS1 pad's button names by bit (PCSX.CONSTS.PAD.BUTTON; psyq.h psyq_pad_set). */
@@ -82,6 +90,11 @@ typedef struct ScriptStep {
     double x, y, tol; /* walk */
     char *name;    /* checkpoint, vram (default "unnamed") */
     int no_image;  /* checkpoint with "image": false: the image is not dumped nor hashed */
+    u32 addr;      /* write_mem: `size` bytes at `addr`, the bits of `mask` set from `value`; or `data_len` bytes */
+    int size;
+    u32 value, mask;
+    u8 *data;
+    size_t data_len;
 } ScriptStep;
 
 static char *script_name;
@@ -242,6 +255,64 @@ static u16 script_buttons(const PortJson *obj, int step) {
     return bits;
 }
 
+#define SCRIPT_WRITE_MAX 256 /* write_mem: the longest `data` */
+
+/* write_mem's `data`: a string of hex digit pairs, 1 to SCRIPT_WRITE_MAX bytes. */
+static void script_load_data(const PortJson *v, ScriptStep *s, int step) {
+    size_t n, i;
+    if (v->type != PORT_JSON_STRING) {
+        script_error(step, "write_mem: `data` is a string of hex digit pairs");
+    }
+    n = strlen(v->string);
+    if (n == 0 || n % 2 != 0 || n / 2 > SCRIPT_WRITE_MAX || strspn(v->string, "0123456789abcdefABCDEF") != n) {
+        script_error(step, "write_mem: `data` is a string of hex digit pairs (1 to %d bytes)", SCRIPT_WRITE_MAX);
+    }
+    s->data_len = n / 2;
+    s->data = malloc(s->data_len);
+    if (s->data == NULL) {
+        port_fatal("script: out of memory");
+    }
+    for (i = 0; i < s->data_len; i++) {
+        char pair[3] = { v->string[2 * i], v->string[2 * i + 1], '\0' };
+        s->data[i] = (u8)strtoul(pair, NULL, 16);
+    }
+}
+
+static void script_load_write(const PortJson *obj, ScriptStep *s, int step) {
+    const PortJson *data = port_json_get(obj, "data");
+    long long addr, size = 4, value, mask;
+    script_int(obj, "addr", &addr, 1, step);
+    if (addr < 0 || addr > 0xFFFFFFFFLL) {
+        script_error(step, "write_mem: `addr` 0x%llX is not a 32-bit address", addr);
+    }
+    s->addr = (u32)addr;
+    if (data != NULL) {
+        if (port_json_get(obj, "value") != NULL || port_json_get(obj, "size") != NULL ||
+            port_json_get(obj, "mask") != NULL) {
+            script_error(step, "write_mem: `data`, or `value` with `size` and `mask`, not both");
+        }
+        script_load_data(data, s, step);
+        return;
+    }
+    script_int(obj, "size", &size, 0, step);
+    if (size != 1 && size != 2 && size != 4) {
+        script_error(step, "write_mem: `size` must be 1, 2 or 4");
+    }
+    s->size = (int)size;
+    s->mask = size == 4 ? 0xFFFFFFFFu : (1u << (8 * size)) - 1;
+    script_int(obj, "value", &value, 1, step);
+    if (value < -(1LL << (8 * size - 1)) || value > (long long)s->mask) {
+        script_error(step, "write_mem: `value` %lld does not fit %d byte(s)", value, (int)size);
+    }
+    s->value = (u32)value & s->mask;
+    if (script_int(obj, "mask", &mask, 0, step)) {
+        if (mask < 0 || mask > (long long)s->mask) {
+            script_error(step, "write_mem: `mask` 0x%llX does not fit %d byte(s)", mask, (int)size);
+        }
+        s->mask = (u32)mask;
+    }
+}
+
 static void script_load_step(const PortJson *obj, ScriptStep *s, long default_timeout, int step) {
     const PortJson *until;
     if (obj->type != PORT_JSON_OBJECT) {
@@ -285,6 +356,9 @@ static void script_load_step(const PortJson *obj, ScriptStep *s, long default_ti
         s->tol = script_number(obj, "tol", 3, 0, step);
         break;
     case SCRIPT_RESET:
+        break;
+    case SCRIPT_WRITE_MEM:
+        script_load_write(obj, s, step);
         break;
     case SCRIPT_VRAM:
         s->frames = script_frames(obj, "frames", 1, 0, step);
@@ -454,6 +528,39 @@ static void script_dump_vram(const char *name, int first) {
     }
 }
 
+/* A write_mem step: the bytes written at once, little-endian; an address the port does not map is fatal (status 1),
+ * as wait_mem's, and nothing is written then. */
+static void script_write_mem(const ScriptStep *s) {
+    if (s->data != NULL) {
+        size_t i;
+        /* byte by byte (the adapter maps 1, 2 or 4 bytes), every byte mapped before any is written */
+        for (i = 0; i < s->data_len; i++) {
+            if (port_ps1_host(s->addr + (u32)i, 1) == NULL) {
+                port_fatal("script: step %d: write_mem: 0x%08X is not an address the port maps", script_index + 1,
+                           s->addr + (u32)i);
+            }
+        }
+        for (i = 0; i < s->data_len; i++) {
+            *(u8 *)port_ps1_host(s->addr + (u32)i, 1) = s->data[i];
+        }
+    } else {
+        u8 *p = port_ps1_host(s->addr, (size_t)s->size);
+        u32 old = 0, v;
+        int i;
+        if (p == NULL) {
+            port_fatal("script: step %d: write_mem: 0x%08X (size %d) is not an address the port maps", script_index + 1,
+                       s->addr, s->size);
+        }
+        for (i = 0; i < s->size; i++) {
+            old |= (u32)p[i] << (8 * i);
+        }
+        v = (old & ~s->mask) | (s->value & s->mask);
+        for (i = 0; i < s->size; i++) {
+            p[i] = (u8)(v >> (8 * i));
+        }
+    }
+}
+
 /* Runs the current step for this frame (run.lua run_step): 1 when it is complete; *instant: the next step may run in
  * the same frame. */
 static int script_run_step(const ScriptStep *s, int *instant) {
@@ -475,6 +582,11 @@ static int script_run_step(const ScriptStep *s, int *instant) {
             script_dump_checkpoint(s->name, script_checkpoints);
         }
         port_savestate_checkpoint(s->name); /* --save-state NAME:FILE */
+        *instant = 1;
+        return 1;
+    case SCRIPT_WRITE_MEM:
+        /* run.lua: the bytes written into the emulated RAM, then the next step in the same frame */
+        script_write_mem(s);
         *instant = 1;
         return 1;
     case SCRIPT_RESET:

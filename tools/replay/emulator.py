@@ -131,7 +131,7 @@ def lua_literal(v, indent=""):
     if isinstance(v, dict):
         parts = []
         for k, x in v.items():
-            if isinstance(x, str) and k in ("addr", "map", "value", "word0") and x.startswith("0x"):
+            if isinstance(x, str) and k in ("addr", "map", "value", "word0", "mask") and x.startswith("0x"):
                 x = int(x, 16)
             parts.append(f"{inner}[{lua_literal(k)}] = {lua_literal(x, inner)}")
         return "{\n" + ",\n".join(parts) + "\n" + indent + "}"
