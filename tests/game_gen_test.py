@@ -65,6 +65,7 @@ def main():
                      "#define PORT_SLOT2_BASE 0x800a5de0u", "#define PORT_SLOT2_SIZE 0x5a20u",
                      "#define PORT_HEAP_START_ADDR 0x800ab800u", "#define PORT_HEAP_END_ADDR 0x801ff000u",
                      "#define PORT_HEAP_SIZE 0x400000u", "#define PSXSTACK_GAME_DISC_COUNT 1",
+                     "#define PSXSTACK_GAME_DISC_REQUIRED 0",
                      "#define PSXSTACK_GAME_BIOS_STANDIN_COUNT 1", "\"457cb233349ba841e03b33d8060f8fbcadd45cb3\"",
                      "692146560ull"]:
             check(line in text, f"the header has: {line}")
@@ -134,6 +135,23 @@ def main():
         def unknown(g):
             g["colour"] = "red"
         failing(unknown, "an unknown key", "colour")
+
+        def required_no_disc(g):
+            g["disc_required"] = True
+            g["discs"] = []
+        failing(required_no_disc, "a game that needs a disc and lists none", "disc_required")
+
+        def required_not_bool(g):
+            g["disc_required"] = "yes"
+        failing(required_not_bool, "disc_required not a boolean", "disc_required")
+
+        # A game that cannot run without its disc: the macro is 1.
+        req = copy.deepcopy(base)
+        req["disc_required"] = True
+        (tmp / "req.json").write_text(json.dumps(req))
+        r = run(str(tmp / "req.json"), "--out", str(tmp / "req.h"))
+        check(r.returncode == 0 and "#define PSXSTACK_GAME_DISC_REQUIRED 1" in (tmp / "req.h").read_text(),
+              f"disc_required true generates PSXSTACK_GAME_DISC_REQUIRED 1: {r.stderr}")
 
         def bad_addr(g):
             g["memory"]["ram"]["base"] = "80000000"

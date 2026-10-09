@@ -40,6 +40,10 @@
         }
       }
     },
+    "disc_required": {
+      "type": "boolean",
+      "description": "The game cannot run without its disc (its reads would find no data): the port then refuses to start without one (--disc or the settings' disc.path), with a message and status 64, except for --input-test and the modes that exit before the run. Default false. Needs a non-empty `discs`."
+    },
     "video": {
       "type": "object", "additionalProperties": false, "required": ["rate"],
       "properties": {

@@ -11,6 +11,7 @@ game's id (the first game's: `dw2003`); `<PREFIX>` its environment prefix (`DW3`
 cmake -S port -B build/port -G Ninja      # the game's port directory; CMake >= 3.20; Ninja; GCC (or Clang) with GNU ld
 cmake --build build/port                  # ~30 s from scratch with -j6 for the first game
 build/port/<game> --max-frames 60         # exit 0 at the frame cap; 3 from port_unimplemented; 2 PLATFORM_HALT; 4 watchdog
+                                          # (64 at once for a game whose game.json has disc_required: --disc first)
 build/port/<game> --trace                 # every tick, overlay load/resolve and stub call, to stderr
 build/port/<game> --max-frames 600 --log run.log --record run.json   # the per-frame log and the record (below)
 build/port/<game> --disc <disc>.cue --script scripts/new_game.json --log run.log --record run.json
@@ -62,6 +63,7 @@ build/port-sdl/<game> --disc <disc>.cue --scale 3 --fullscreen
 build/port-sdl/<game> --disc <disc>.cue --script scripts/new_game.json --window   # watch a replay
 build/port-sdl/<game> --disc <disc>.cue --window --renderer gpu   # the window through the hardware renderer
 SDL_VIDEO_DRIVER=offscreen build/port-sdl/<game> --input-test --fps 0   # no display: the input self-test (exit 0)
+                                          # (a disc_required game without --disc: the test on the pump, no game)
 ```
 SDL's backends follow the `-dev` headers present when `setup.sh sdl3` runs: missing optional ones are turned off one by
 one (logged), and with no X11/Wayland headers at all only the `offscreen` and `dummy` video drivers are built (enough
