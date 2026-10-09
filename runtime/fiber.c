@@ -41,6 +41,7 @@
 #endif
 #endif
 #ifdef FIBER_ASAN
+#include <sanitizer/asan_interface.h>
 #include <sanitizer/common_interface_defs.h>
 #endif
 #ifdef _WIN32
@@ -300,10 +301,15 @@ static void fiber_switch_to(PortFiber *to, int destroyed) {
 }
 
 /* A new fiber's stack: the frame port_fiber_swap_ pops (zero registers, the current control words) under the
- * trampoline's address as the return address, and a zero word at the top for an unwinder. */
+ * trampoline's address as the return address, and a zero word at the top for an unwinder. Under ASan the slot's
+ * shadow is cleared first: a fiber that was destroyed (a killed task) or exited never returned from its frames, so
+ * their redzones are still poisoned in the stack its slot's next fiber gets. */
 static void fiber_prepare(PortFiber *f) {
     uintptr_t top = ((uintptr_t)f->stack + f->size - FIBER_TOP_PAD) & ~(uintptr_t)15;
     uintptr_t *w;
+#ifdef FIBER_ASAN
+    __asan_unpoison_memory_region(f->stack, f->size);
+#endif
     memset((void *)(top - 256), 0, 256);
 #ifdef FIBER_AARCH64
     w = (uintptr_t *)(top - FIBER_FRAME_WORDS * sizeof(uintptr_t));

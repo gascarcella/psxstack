@@ -101,16 +101,25 @@ static Task *task_start(const char *name, void (*entry)(void *)) {
     return NULL;
 }
 
-/* "quad": a quad that moves right one pixel a turn, wrapping; yields every turn. */
+/* quad's turn: the quad at *x, then one pixel right, wrapping. Out of line, so that x is a local whose address
+   escapes. */
+static __attribute__((noinline)) void quad_step(int *x) {
+    POLY_F4 *q = &quad[db];
+    setPolyF4(q);
+    setRGB0(q, 200, 120, 40);
+    setXY4(q, *x, 20, *x + 60, 20, *x, 80, *x + 60, 80);
+    addPrim(ot[db] + 1, q);
+    *x = (*x + 1) % 260;
+}
+
+/* "quad": a quad that moves right one pixel a turn, wrapping; yields every turn. Its position is a local whose
+   address escapes (quad_step), so under ASan its frame, at the top of the fiber's stack, has redzones: they are
+   still poisoned when main destroys the task suspended in that frame, and the slot's next fiber (busy) must start
+   on a clean stack. */
 static void quad_task(void *arg) {
     int x = 0;
     for (;;) {
-        POLY_F4 *q = &quad[db];
-        setPolyF4(q);
-        setRGB0(q, 200, 120, 40);
-        setXY4(q, x, 20, x + 60, 20, x, 80, x + 60, 80);
-        addPrim(ot[db] + 1, q);
-        x = (x + 1) % 260;
+        quad_step(&x);
         task_yield();
     }
     (void)arg;

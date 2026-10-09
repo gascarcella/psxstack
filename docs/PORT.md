@@ -237,7 +237,9 @@ for the task's C on x86-64. On the host each task is a **fiber** (`runtime/fiber
   Not `ucontext` and not Win32 fibers: their contexts (glibc's `ucontext_t` points into itself and carries the signal
   mask; `CreateFiber`'s object is opaque, on the heap) could not be held by a save state (DECISIONS "Fibers: a
   hand-written switch, preemption at the tick's end").
-- **AddressSanitizer** is told about every switch (the fiber annotations), as `savestate.c` is about the game stack.
+- **AddressSanitizer** is told about every switch (the fiber annotations), as `savestate.c` is about the game stack;
+  a slot's stack is unpoisoned before its next fiber starts there (a destroyed or exited fiber never returned from
+  its frames, whose redzones would still be poisoned: `examples/tasks`' quad is destroyed in such a frame).
 - **The console's reset** drops every fiber; `game_main` runs again on the main fiber.
 - **Save states** ("Save states" below) hold the fiber table, every suspended fiber's stack from its saved pointer up
   and the context of the fiber the vsync ended on, and a load resumes that fiber: `examples/tasks` saved at a vsync
