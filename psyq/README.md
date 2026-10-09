@@ -156,6 +156,17 @@ Each file's header comment lists its own; the ones a later milestone must check 
   interpolation ties (the emulator's fixed-point rounding), semi-transparency modes 2/3 of modulated textures (the
   emulator's two-pixels-at-once arithmetic), and three hardware rules kept over the emulator's (fill rounding/wrap,
   copies obey the mask, a 1x1 draw area). Not covered: GP1, interlaced `dfe`, timing.
+- **GPU differences the second game's VRAM comparison found (issue #54; all kept, none a `gpu.c` fault):** against
+  PCSX-Redux's software GPU (`tests/port/vram.py` there) its two whole-VRAM differences are the two known categories
+  above. (1) *Two mask bits at the title*: a 240x240 4-bit texture on a large quad, modulated by black, so only the
+  texel's STP bit shows; the two pixels are where the plane's u is 147.5011 and 212.50004, a hair above .5, which
+  `gpu.c` rounds up and the emulator's fixed-point step rounds down (the "exact .5" category: a different texel,
+  transparent 0000 or STP). (2) *The last column of a 255-wide mode-2 modulated sprite*: a texel of 31 modulated by 8 is
+  31*8>>7 = 1 per channel, so B - F is B - 1 (the rule `gpu.c` and the emulator's two-pixels-at-once path share, which
+  agree on the other 254 columns); the emulator's odd tail pixel, drawn alone, comes out B - 2 in green and blue and B - 1
+  in red, as if the green and blue products were not shifted back to their field before the subtract (the fraction
+  borrows from the field). It disagrees with its own paired path, so it is the emulator's quirk, not a hardware rule;
+  not reproduced (one sample: the rule that selects the single-pixel path is not known).
 - **GPU speed (session 16):** `gpu.c` (built at `-O3`) draws `first_battle_save` (41,779 frames, ~180,000 pixels a
   frame) in ~7 s, the whole run ~8.5 s against ~1.6 s without drawing (22 s before): span loops per primitive kind,
   edge walking, sprite rows from decoded texture segments kept by VRAM write stamps, vectorisable select loops

@@ -12,6 +12,7 @@
  * blending, dithering in 8 bits), Gouraud-textured colour per pair of pixels, vertex + offset wrapping at 11 bits.
  * Not reproduced (rare 1-step differences): exact .5 interpolation ties, and modes 2 and 3 of modulated
  * semi-transparent textures, where the emulator computes two pixels at once and lets carries cross between them.
+ * (Also mode 2 of an odd-width sprite's last pixel, which the emulator draws alone and one step lower in green and blue; psxstack#54.)
  *
  * GP0 arrives as a word stream (gpu_gp0_write: DrawOTag's packets, LoadImage's transfer); commands may span packets.
  * GP1 is not modelled beyond what LIBGPU needs (gpu_reset_state: GP1(00h)'s drawing state; the display is libgpu.c's).
