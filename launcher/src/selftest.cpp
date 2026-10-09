@@ -206,7 +206,7 @@ static void test_settings_file(const std::string &root) {
     SettingsFile b;
     b.load(bad);
     check(b.state() == SettingsFile::State::Loaded && b.messages().size() == 8, "eight warnings for eight bad values");
-    check(b.values.scale == 2 && b.values.refresh == 50 && !b.values.fullscreen && b.values.renderer == "software" &&
+    check(b.values.scale == 2 && b.values.refresh == GAME_RATE && !b.values.fullscreen && b.values.renderer == "software" &&
               b.values.internal_scale == 1 &&
               b.values.memcard[0].path == "card1.mcd" && b.values.memcard[1].path == "card2.mcd",
           "bad values fall back to the defaults");

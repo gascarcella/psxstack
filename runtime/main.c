@@ -41,6 +41,9 @@ void port_fatal(const char *fmt, ...) {
     port_exit(1, "fatal error");
 }
 
+#define PSXSTACK_STR_(x) #x
+#define PSXSTACK_STR(x) PSXSTACK_STR_(x)
+
 static void usage(const char *argv0) {
     fprintf(stderr,
             "usage: %s [--config JSON] [--print-settings] [--print-mods] [--script-mods] [--refresh 50|60]\n"
@@ -81,8 +84,9 @@ static void usage(const char *argv0) {
             "                   rebindable in the settings); with --script the script owns the pad\n"
             "  --scale N        the window's size: 320*N x 240*N (default 2; implies --window)\n"
             "  --fullscreen     a fullscreen window (implies --window)\n"
-            "  --fps N          the window's pace and the nominal rate: N vsyncs per second (default 50, PAL;\n"
-            "                   0: unthrottled at PAL's rate)\n"
+            "  --fps N          the window's pace and the nominal rate: N vsyncs per second (default "
+            PSXSTACK_STR(PSXSTACK_GAME_RATE) ", the game's video.rate;\n"
+            "                   0: unthrottled at that rate)\n"
             "  --input-test     the window's input self-test: injected key and gamepad events (implies --window);\n"
             "                   exit 0 = passed, 6 = failed\n"
             "  --screenshot F:P write the display at vsync F to P (binary PPM); repeatable; any build\n"
