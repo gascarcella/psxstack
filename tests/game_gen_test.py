@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """tools/game_gen.py on examples/dw2003.game.json: the header compiles as C and as C++, a few values are right, the
-descriptions that must fail do, and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
+descriptions that must fail do, the update check's repository (and its absence), and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
 import copy
 import json
 import os
@@ -67,7 +67,7 @@ def main():
                      "#define PORT_HEAP_SIZE 0x400000u", "#define PSXSTACK_GAME_DISC_COUNT 1",
                      "#define PSXSTACK_GAME_DISC_REQUIRED 0",
                      "#define PSXSTACK_GAME_BIOS_STANDIN_COUNT 1", "\"457cb233349ba841e03b33d8060f8fbcadd45cb3\"",
-                     "692146560ull"]:
+                     "692146560ull", "#define PSXSTACK_GAME_UPDATES_GITHUB \"gascarcella/dw2003recomp\""]:
             check(line in text, f"the header has: {line}")
         cm = (tmp / "game.cmake").read_text()
         check('set(PSXSTACK_GAME_ID "dw2003")' in cm and 'set(PSXSTACK_GAME_TITLE "Digimon World 2003")' in cm,
@@ -152,6 +152,22 @@ def main():
         r = run(str(tmp / "req.json"), "--out", str(tmp / "req.h"))
         check(r.returncode == 0 and "#define PSXSTACK_GAME_DISC_REQUIRED 1" in (tmp / "req.h").read_text(),
               f"disc_required true generates PSXSTACK_GAME_DISC_REQUIRED 1: {r.stderr}")
+
+        def bad_repo(g):
+            g["launcher"]["updates"]["github"] = "https://github.com/gascarcella/dw2003recomp"
+        failing(bad_repo, "launcher.updates.github not owner/repo", "github")
+
+        def updates_extra(g):
+            g["launcher"]["updates"]["assets"] = {}
+        failing(updates_extra, "an unknown key in launcher.updates", "updates")
+
+        # No launcher.updates: the macro is "" (the launcher has no update check).
+        noup = copy.deepcopy(base)
+        del noup["launcher"]["updates"]
+        (tmp / "noup.json").write_text(json.dumps(noup))
+        r = run(str(tmp / "noup.json"), "--out", str(tmp / "noup.h"))
+        check(r.returncode == 0 and "#define PSXSTACK_GAME_UPDATES_GITHUB \"\"" in (tmp / "noup.h").read_text(),
+              f"no launcher.updates generates PSXSTACK_GAME_UPDATES_GITHUB \"\": {r.stderr}")
 
         def bad_addr(g):
             g["memory"]["ram"]["base"] = "80000000"

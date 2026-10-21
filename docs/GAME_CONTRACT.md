@@ -45,6 +45,9 @@ Rules:
 the port and the launcher stay single binaries. Contents:
 - **Identity:** `id` (the exe's name, the settings and cache directory names, the section prefix), `title`,
   `env_prefix` (`<PREFIX>_CONFIG_DIR`, `<PREFIX>_GAME`, …), `launcher.about`, `launcher.disc_hint`.
+- **Updates** (optional): `launcher.updates`, `{ "github": "owner/repo" }`, the repository whose latest release the
+  launcher compares with its version stamp (docs/LAUNCHER.md "Updates"); its packages must be named as "Releases"
+  says. Absent: no update check, no network call.
 - **Discs:** the accepted images: label, serial, SHA-1 of the whole BIN, BIN size, region. Both the port's check and
   the launcher's check use this list; the error text names the label. `disc_required` (optional, default `false`):
   the game cannot run on reads that find no data, so the port refuses to start without a disc (a message, status 64);
@@ -65,7 +68,7 @@ launcher and the game's adapter use by these exact names:
 | Macro | Value |
 |---|---|
 | `PSXSTACK_GAME_ID`, `PSXSTACK_GAME_ID_UPPER`, `PSXSTACK_GAME_TITLE` | `id` (and upper-cased), `title`, as string literals |
-| `PSXSTACK_GAME_ENV_PREFIX` | `env_prefix`, default `id` upper-cased; the launcher's variables are `<PREFIX>_GAME`, `<PREFIX>_CONFIG_DIR`, `<PREFIX>_LAUNCHER_FAKE_GAME`, `<PREFIX>_SELFTEST_DISC`, `<PREFIX>_SELFTEST_GAME`, `<PREFIX>_SELFTEST_VIDEO_DRIVER` |
+| `PSXSTACK_GAME_ENV_PREFIX` | `env_prefix`, default `id` upper-cased; the launcher's variables are `<PREFIX>_GAME`, `<PREFIX>_CONFIG_DIR`, `<PREFIX>_LAUNCHER_FAKE_GAME`, `<PREFIX>_LAUNCHER_FAKE_CURL`, `<PREFIX>_SELFTEST_DISC`, `<PREFIX>_SELFTEST_GAME`, `<PREFIX>_SELFTEST_VIDEO_DRIVER` |
 | `PSXSTACK_GAME_RATE`, `PSXSTACK_GAME_RATE_COUNT`, `PSXSTACK_GAME_RATES`, `PSXSTACK_GAME_RATE_NOTE` | The nominal rate (50 or 60), the rates offered (an `int` array initializer, the nominal one among them), the note shown for a rate other than the nominal (`""` when none) |
 | `PSXSTACK_GAME_RAM_BASE`, `PSXSTACK_GAME_RAM_SIZE` | `memory.ram`, as `u` constants |
 | `PORT_SLOT_COUNT`; `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `PORT_SLOT<n>_NAME` for n = 1.. | `memory.slots`, in order: slot n is `tier` n in the hook macros |
@@ -74,6 +77,7 @@ launcher and the game's adapter use by these exact names:
 | `PSXSTACK_GAME_DISC_REQUIRED` | `disc_required`: 1 or 0 |
 | `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
 | `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
+| `PSXSTACK_GAME_UPDATES_GITHUB` | `launcher.updates.github` (`"owner/repo"`), `""` when absent (no update check) |
 
 A disc's `label` is a noun phrase, since the launcher writes "This is <label>." and "<file> is not <label>". The
 generator checks what the schema cannot: the slots are in address order and contiguous with each other and with the
@@ -185,12 +189,13 @@ Passed to `psxstack_add_game(<target> ...)` (`cmake/psxstack.cmake`, which docum
 Everything comes from tracked files: a port configures from a fresh clone with no disc. Options are cache variables
 (`PSXSTACK_SDL`, `PSXSTACK_SANITIZE`, `PSXSTACK_M32`, `PSXSTACK_TOOLS_DIR`, `PSXSTACK_VERSION_ROOT`, ...).
 
-**The generated header** (`psxstack_game_gen.h`, `tools/game_gen.py`): `PSXSTACK_GAME_ID` (and `_ID_UPPER`,
-`_ID_IDENT`, the id as a bare token), `_TITLE`, `_ENV_PREFIX`, `_RATE`, `_RATE_COUNT`, `_RATES`, `_RATE_NOTE`,
-`_RAM_BASE`, `_RAM_SIZE`; `PORT_SLOT_COUNT`, `PORT_SLOT<n>_BASE/SIZE/NAME/OFS`, `port_slot<n>`, `PORT_HEAP_START_ADDR`,
-`PORT_HEAP_END_ADDR`, `PORT_HEAP_OFS`, `PORT_HEAP_SIZE`, `PORT_ARENA_SIZE`; `PsxstackGameDisc`, `PSXSTACK_GAME_DISC_COUNT`,
-`PSXSTACK_GAME_DISCS`; `PsxstackGameBiosStandin`, `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS`;
-`PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`. The runtime's environment variables are `<PREFIX>_PORT_<NAME>`.
+**The generated header** (`psxstack_game_gen.h`, `tools/game_gen.py`): `PSXSTACK_GAME_ID` (and `_ID_UPPER`, `_ID_IDENT`,
+the id as a bare token), `_TITLE`, `_ENV_PREFIX`, `_RATE`, `_RATE_COUNT`, `_RATES`, `_RATE_NOTE`, `_RAM_BASE`,
+`_RAM_SIZE`; `PORT_SLOT_COUNT`, `PORT_SLOT<n>_BASE/SIZE/NAME/OFS`, `port_slot<n>`, `PORT_HEAP_START_ADDR`,
+`PORT_HEAP_END_ADDR`, `PORT_HEAP_OFS`, `PORT_HEAP_SIZE`, `PORT_ARENA_SIZE`; `PsxstackGameDisc`,
+`PSXSTACK_GAME_DISC_COUNT`, `PSXSTACK_GAME_DISCS`; `PsxstackGameBiosStandin`, `PSXSTACK_GAME_BIOS_STANDIN_COUNT`,
+`PSXSTACK_GAME_BIOS_STANDINS`; `PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`, `_UPDATES_GITHUB`. The runtime's
+environment variables are `<PREFIX>_PORT_<NAME>`.
 
 ### 6. Tests
 The game owns its oracles: goldens, replays, the emulator harness's configuration, the M1 test's configuration. The
@@ -235,8 +240,9 @@ What a game supplies to the replay runners (the first game: `tests/replay/replay
 - **The Psy-Q shim:** the libraries' behavior over the hardware models. It implements what its games call; a new
   game's missing function stops with `port_unimplemented(name)` and is added to the shim (the shim grows per game and
   stays generic).
-- **The launcher:** settings directory and file, disc check, video/audio/memcard/input/mods screens, crash reports,
-  the self-test; every string, name and hash from `psxstack_game_gen.h`.
+- **The launcher:** settings directory and file, disc check, video/audio/memcard/input/mods screens, crash reports, the
+  update check against the game's GitHub releases, the self-test; every string, name and hash from
+  `psxstack_game_gen.h`.
 - **The build:** `psxstack_add_game()`, the section renaming without a linker script, the post-link checks, the
   Windows cross-build, the host-compile gate (`port_inventory.py probe/link/structs`), the version header.
 - **Packaging:** the AppImage and the Windows zip with PDBs, driven by `id` and `title`.
@@ -248,3 +254,13 @@ What a game supplies to the replay runners (the first game: `tests/replay/replay
   `requires_port` is checked against it.
 - The settings file keeps `schema` 1; a change there is a stack MAJOR.
 - A game's adapter compiles against exactly one stack version; the game's CI builds the pin, nothing else.
+
+## Releases
+- **The version stamp:** the port's and the launcher's builds are named by `cmake/version.cmake`: `git describe` over
+  the game repository's `vX.Y.Z` tags, without the v (`0.4.1` on a tag, `0.4.1-3-g<hash>` after it, `-dirty` with
+  uncommitted changes, `dev-<hash>` before any tag); `PSXSTACK_VERSION` (the release's tag) wins. A release is built
+  on its tag, so its stamp is exactly `X.Y.Z`: the only stamp the launcher's update check offers an update to
+  (docs/LAUNCHER.md "Updates").
+- **The packages' names**, which the update check looks for among a GitHub release's assets:
+  `<id>-<version>-x86_64.AppImage` (Linux) and `<id>-<version>-windows-x86_64.zip` (Windows), `<version>` the tag
+  without its v (`dw2003-0.4.1-x86_64.AppImage`). Other assets (symbols, checksums) may sit beside them.

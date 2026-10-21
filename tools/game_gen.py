@@ -114,6 +114,18 @@ def validate_schema(game, schema):
         for k in ("start", "end"):
             if k not in mem["heap"]:
                 fail(f"memory/heap: missing {k}")
+    launcher = game.get("launcher", {})
+    if not isinstance(launcher, dict):
+        fail("launcher: an object")
+    for k in launcher:
+        if k not in schema["properties"]["launcher"]["properties"]:
+            fail(f"launcher: unknown key: {k}")
+    if "updates" in launcher:
+        up = launcher["updates"]
+        if not isinstance(up, dict) or set(up) != {"github"}:
+            fail("launcher/updates: an object with `github` alone")
+        if not isinstance(up["github"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", up["github"]):
+            fail("launcher/updates/github: owner/repo")
 
 
 def load(path):
@@ -140,6 +152,7 @@ def resolve(game):
         "about": game.get("launcher", {}).get("about", game["title"]),
         "disc_hint": game.get("launcher", {}).get("disc_hint", ""),
         "website": game.get("launcher", {}).get("website", ""),
+        "updates_github": game.get("launcher", {}).get("updates", {}).get("github", ""),
     }
     if g["disc_required"] and not g["discs"]:
         fail("disc_required: needs a disc in `discs`")
@@ -290,6 +303,8 @@ def header(g, source):
     w(f"#define PSXSTACK_GAME_ABOUT {cstr(g['about'])}")
     w(f"#define PSXSTACK_GAME_DISC_HINT {cstr(g['disc_hint'])}")
     w(f"#define PSXSTACK_GAME_WEBSITE {cstr(g['website'])}")
+    w(f"#define PSXSTACK_GAME_UPDATES_GITHUB {cstr(g['updates_github'])} /* owner/repo of the releases the launcher "
+      "checks; \"\": no update check */")
     w("")
     w("#endif /* PSXSTACK_GAME_GEN_H */")
     return "\n".join(L) + "\n"
