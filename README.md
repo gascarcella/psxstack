@@ -28,7 +28,7 @@ python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU function
 
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, fibers (a game's own tasks) |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, mods engine, json, sha1, sha256, crash report, debug channel, frame log, platform, reset, save states, fibers (a game's own tasks) |
 | `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the Psy-Q declarations the shim implements (`psyq/`), the runtime's headers |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh`. Its declarations are `include/psxstack/psyq/*.h` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
