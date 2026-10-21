@@ -37,6 +37,10 @@ constexpr const char *ENV_SELFTEST_FAKE_GAME = PSXSTACK_GAME_ENV_PREFIX "_LAUNCH
 // The program run in place of curl (http.h; the self-test's stand-in), and the stand-in's answer.
 constexpr const char *ENV_FAKE_CURL = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_FAKE_CURL";
 constexpr const char *ENV_SELFTEST_CURL_REPLY = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_CURL_REPLY";
+constexpr const char *ENV_SELFTEST_CURL_DOWNLOAD = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_CURL_DOWNLOAD";
+// "1": the update check at start answers its prompt with Update now (a test run against the real releases;
+// launcher/README.md "The self-test").
+constexpr const char *ENV_UPDATE_NOW = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_UPDATE_NOW";
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";
 constexpr const char *ENV_SELFTEST_VIDEO_DRIVER = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_VIDEO_DRIVER";

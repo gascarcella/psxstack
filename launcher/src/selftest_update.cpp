@@ -39,8 +39,9 @@ static void check(bool ok, const std::string &what) {
 }
 
 // The new build's mark: appended to a copy of this executable (trailing bytes change neither an ELF nor a PE file).
-static const char NEW_MARK[] = "\npsxstack-selftest-new-build\n";
-static const char CHILD_MODE[] = "update"; // self_test_fake_game's mode for self_test_update_child
+const char SELF_TEST_NEW_MARK[] = "\npsxstack-selftest-new-build\n";
+static const char *const NEW_MARK = SELF_TEST_NEW_MARK;
+static const char *const CHILD_MODE = SELF_TEST_UPDATE_MODE; // self_test_fake_game's mode for self_test_update_child
 
 static bool put(const std::string &path, const std::string &text) {
     return SDL_SaveFile(path.c_str(), text.data(), text.size());
@@ -105,7 +106,7 @@ static std::string self_exe() {
 }
 
 // A copy of this executable at `to` (with the DLLs beside it, if a build has any), `mark` appended.
-static bool copy_self(const std::string &to, const std::string &mark) {
+bool self_test_copy_self(const std::string &to, const std::string &mark) {
     if (!SDL_CopyFile(self_exe().c_str(), to.c_str())) {
         return false;
     }
@@ -162,8 +163,12 @@ static bool run(const std::vector<std::string> &args, const std::string &cwd, st
     return true;
 }
 
+static bool copy_self(const std::string &to, const std::string &mark) {
+    return self_test_copy_self(to, mark);
+}
+
 // The zip of `top` (a folder in `dir`) at `zip`, made with tar in `dir` with relative paths, as update_apply runs it.
-static bool make_zip(const std::string &tar, const std::string &dir, const std::string &top, const std::string &zip) {
+bool self_test_make_zip(const std::string &tar, const std::string &dir, const std::string &top, const std::string &zip) {
     std::string out;
     int code = -1;
     const std::string tmp = path_join(dir, "made.zip");
@@ -172,6 +177,10 @@ static bool make_zip(const std::string &tar, const std::string &dir, const std::
         return false;
     }
     return SDL_RenamePath(tmp.c_str(), zip.c_str());
+}
+
+static bool make_zip(const std::string &tar, const std::string &dir, const std::string &top, const std::string &zip) {
+    return self_test_make_zip(tar, dir, top, zip);
 }
 
 static std::string digest_of(const std::string &file) {
@@ -675,11 +684,7 @@ int self_test_update_child(int argc, char **argv) {
     return 64;
 }
 
-void self_test_update(const std::string &dir, int *checks, int *failures) {
-    n_checks = checks;
-    n_failures = failures;
-    remove_tree(dir);
-    path_make_dir(dir, nullptr);
+std::string self_test_tar() {
     std::string tar;
     const std::string tar_env = std::string(PSXSTACK_GAME_ENV_PREFIX) + "_SELFTEST_TAR";
     if (const char *t = SDL_getenv(tar_env.c_str())) {
@@ -694,6 +699,17 @@ void self_test_update(const std::string &dir, int *checks, int *failures) {
     }
     if (tar.empty()) {
         tar = self_exe();
+    }
+    return tar;
+}
+
+void self_test_update(const std::string &dir, int *checks, int *failures) {
+    n_checks = checks;
+    n_failures = failures;
+    remove_tree(dir);
+    path_make_dir(dir, nullptr);
+    const std::string tar = self_test_tar();
+    if (tar == self_exe()) {
         std::fprintf(stderr, "self-test: update: no bsdtar or tar.exe: the zips are the stand-in's (stored)\n");
     }
     test_sha256(path_join(dir, "sha256"));

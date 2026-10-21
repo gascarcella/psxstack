@@ -16,6 +16,7 @@
 #include "screens.h"
 #include "settings.h"
 #include "update.h"
+#include "update_apply.h"
 
 namespace psxstack {
 
@@ -45,10 +46,25 @@ struct AppOptions {
     std::string update_repo = GAME_UPDATES_GITHUB;
     std::string version = launcher_version;
     std::function<bool(const std::string &)> open_url;
+    // The self-update (docs/LAUNCHER.md "Updates"): the launcher's own arguments (argv without argv[0]), given to the
+    // new launcher it starts; the install it replaces (default update_system(): $APPIMAGE, the Windows folder; the
+    // self-test gives fixtures); `update_now`: the check at start answers Update now by itself when it finds a newer
+    // release ($<PREFIX>_LAUNCHER_UPDATE_NOW=1, for a test run against the real releases).
+    std::vector<std::string> args;
+    std::function<UpdateSystem()> update_system;
+    bool update_now = false;
 };
 
-// The update prompt's buttons.
-enum class UpdateAnswer { ReleasePage, Later, Skip };
+// The update prompt's buttons (Close, after a failed update, is Later).
+enum class UpdateAnswer { UpdateNow, ReleasePage, Later, Skip };
+
+// Where Update now is.
+enum class UpdateStep {
+    None,        // not started (or cancelled, or closed)
+    Downloading, // the package is being downloaded: update_download()
+    Installing,  // downloaded: verified and swapped in at the next frame
+    Failed,      // it did not happen (or the new launcher could not be started): update_message(), Release page, Close
+};
 
 class App {
 public:
@@ -71,7 +87,10 @@ public:
     // The last save or screenshot error, shown in the status bar.
     const std::string &last_error() const;
     // Frames are wanted soon (a check or the game running): the main loop then waits less.
-    bool busy() const { return check_.state() == DiscCheck::State::Running || run_.running() || update_.checking(); }
+    bool busy() const {
+        return check_.state() == DiscCheck::State::Running || run_.running() || update_.checking() ||
+               update_step_ == UpdateStep::Downloading || update_step_ == UpdateStep::Installing;
+    }
 
     // The disc screen's actions (the self-test calls them too).
     void choose_disc(const std::string &path);
@@ -103,6 +122,15 @@ public:
     bool update_prompt() const { return update_prompt_; } // a newer release waits to be (or is being) shown
     bool update_prompt_shown() const { return update_prompt_open_; } // the modal is on the screen
     void update_answer(UpdateAnswer a);
+    // Update now: the plan (whether this install can update itself, computed with the launcher), whether the button is
+    // offered (the plan is possible and the release has this platform's package), and why not; the steps after it.
+    const UpdatePlan &update_plan() const { return update_plan_; }
+    bool update_now_offered() const;
+    std::string update_now_unavailable() const; // "" when offered
+    UpdateStep update_step() const { return update_step_; }
+    const std::string &update_message() const { return update_message_; }
+    const HttpDownload &update_download() const { return download_; }
+    void update_cancel(); // the download's Cancel: stopped, its file removed, the prompt closed (Later)
 
 private:
     void draw();
@@ -114,6 +142,10 @@ private:
     void draw_updates(float label_w);
     void draw_update_prompt();
     void update_poll();
+    void update_now();
+    void update_step_poll();
+    void update_fail(const std::string &message);
+    void update_replan();
     bool open_url(const std::string &url);
     void step_screen(int delta);
     void update_disc_check();
@@ -154,6 +186,14 @@ private:
     bool update_auto_ = false;
     bool update_prompt_ = false, update_prompt_open_ = false;
     std::function<bool(const std::string &)> open_url_;
+    // Update now: the plan, the download, the step, the failure's message, the arguments the new launcher gets.
+    UpdatePlan update_plan_;
+    HttpDownload download_;
+    UpdateStep update_step_ = UpdateStep::None;
+    std::string update_message_;
+    std::vector<std::string> args_;
+    std::function<UpdateSystem()> update_system_;
+    bool update_now_auto_ = false;
 };
 
 } // namespace psxstack

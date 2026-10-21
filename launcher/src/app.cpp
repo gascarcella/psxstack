@@ -91,6 +91,12 @@ App::App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location
     // on and --no-update-check was not given.
     open_url_ = options.open_url;
     update_.configure(options.update_repo, options.version);
+    args_ = options.args;
+    update_system_ = options.update_system;
+    update_now_auto_ = options.update_now;
+    if (update_.available()) {
+        update_replan();
+    }
     if (update_.available() && options.update_check && settings_.values.update_check) {
         update_.start();
         update_auto_ = true;
@@ -319,6 +325,9 @@ bool App::open_url(const std::string &url) {
 }
 
 void App::update_check_now() {
+    if (update_step_ == UpdateStep::Downloading || update_step_ == UpdateStep::Installing) {
+        return; // the release being installed stays the one checked
+    }
     update_auto_ = false;
     update_.start();
 }
@@ -335,12 +344,147 @@ void App::update_poll() {
                             version_compare(update_.release().version, skipped) <= 0;
     if (update_auto_ && update_.state() == UpdateCheck::State::Newer && !is_skipped) {
         update_prompt_ = true;
+        if (update_now_auto_ && update_now_offered()) {
+            std::fprintf(stderr, "launcher: update: Update now, answered by %s\n", ENV_UPDATE_NOW);
+            update_now();
+        }
     }
     update_auto_ = false;
 }
 
+// ---- Update now: the download, the check, the swap, the relaunch (docs/LAUNCHER.md "Updates")
+
+void App::update_replan() {
+    if (location_.dir.empty()) {
+        update_plan_ = UpdatePlan();
+        update_plan_.reason = "There is no settings directory to download the release into.";
+        return;
+    }
+    update_plan_ = psxstack::update_plan(update_system_ ? update_system_() : update_system(), location_.dir);
+}
+
+bool App::update_now_offered() const {
+    return update_now_unavailable().empty();
+}
+
+std::string App::update_now_unavailable() const {
+    if (!update_plan_.possible()) {
+        return update_plan_.reason;
+    }
+    if (update_.state() == UpdateCheck::State::Newer && !update_.release().has_asset) {
+        return "The release has no " + update_asset_name(version_text(update_.release().version)) + " package.";
+    }
+    return "";
+}
+
+void App::update_now() {
+    if (update_step_ == UpdateStep::Downloading || update_step_ == UpdateStep::Installing || run_.running() ||
+        update_.state() != UpdateCheck::State::Newer) {
+        return; // never while the game runs; only for the release the check found
+    }
+    update_replan(); // the install may have changed since the start
+    update_prompt_ = true; // the modal shows the steps, on any screen
+    const std::string why = update_now_unavailable();
+    if (!why.empty()) {
+        update_fail("This build cannot update itself. " + why);
+        return;
+    }
+    const ReleaseAsset &a = update_.release().asset;
+    if (a.sha256.empty()) {
+        update_fail("GitHub gives no SHA-256 digest for " + a.name +
+                    ", so a download could not be verified: nothing was downloaded or changed.");
+        return;
+    }
+    path_make_dir(location_.dir, nullptr);
+    update_message_.clear();
+    update_step_ = UpdateStep::Downloading;
+    std::fprintf(stderr, "launcher: update: downloading %s (%lld bytes) to %s\n", a.url.c_str(), (long long)a.size,
+                 update_plan_.download.c_str());
+    download_.start(a.url, update_plan_.download, a.size);
+}
+
+void App::update_cancel() {
+    if (update_step_ != UpdateStep::Downloading) {
+        return;
+    }
+    download_.cancel();
+    while (download_.poll() == HttpDownload::State::Running) {
+        SDL_Delay(5); // the process was killed: its thread ends at once, and poll() removes the partial file
+    }
+    SDL_RemovePath(update_plan_.download.c_str());
+    std::fprintf(stderr, "launcher: update: the download was cancelled\n");
+    update_step_ = UpdateStep::None;
+    update_prompt_ = false; // as Later
+}
+
+void App::update_fail(const std::string &message) {
+    if (!update_plan_.download.empty()) {
+        SDL_RemovePath(update_plan_.download.c_str()); // never a download left behind by a failure
+    }
+    update_step_ = UpdateStep::Failed;
+    update_message_ = message;
+    update_prompt_ = true;
+    std::fprintf(stderr, "launcher: update: %s\n", message.c_str());
+}
+
+void App::update_step_poll() {
+    if (update_step_ == UpdateStep::Downloading) {
+        if (download_.poll() == HttpDownload::State::Running) {
+            return;
+        }
+        const HttpResult &r = download_.result();
+        if (r.status == HttpResult::Status::Cancelled) {
+            update_step_ = UpdateStep::None;
+        } else if (r.status != HttpResult::Status::Ok) {
+            update_fail("The download failed (" + r.message + "); nothing was changed.");
+        } else {
+            std::fprintf(stderr, "launcher: update: downloaded %lld bytes\n", (long long)download_.received());
+            update_step_ = UpdateStep::Installing; // a frame says so, then the next one installs
+        }
+        return;
+    }
+    if (update_step_ != UpdateStep::Installing) {
+        return;
+    }
+    const std::string digest = "sha256:" + update_.release().asset.sha256;
+    std::string err;
+    if (!update_verify(update_plan_.download, digest, &err)) {
+        update_fail("The download did not pass its check (" + err + "); nothing was changed.");
+        return;
+    }
+    std::fprintf(stderr, "launcher: update: %s matches the release's SHA-256\n", update_plan_.download.c_str());
+    flush(); // the settings on disk before the new launcher starts and reads them
+    const UpdateResult res = update_apply(update_plan_, update_plan_.download, digest, args_);
+    std::fprintf(stderr, "launcher: update: %s\n", res.message.c_str());
+    if (res.exit_now) {
+        // The new launcher runs: this one quits through the normal path (main() saves the settings).
+        update_step_ = UpdateStep::None;
+        update_prompt_ = false;
+        quit_ = true;
+        return;
+    }
+    if (!res.ok) {
+        update_fail("The update did not happen: " + res.message + ".");
+        return;
+    }
+    update_step_ = UpdateStep::Failed; // in place, but the new launcher did not start
+    update_message_ = "The update is installed: " + res.message + ".";
+}
+
 void App::update_answer(UpdateAnswer a) {
+    if (update_step_ == UpdateStep::Installing) {
+        return;
+    }
+    if (update_step_ == UpdateStep::Downloading) {
+        if (a != UpdateAnswer::UpdateNow) {
+            update_cancel();
+        }
+        return;
+    }
     switch (a) {
+    case UpdateAnswer::UpdateNow:
+        update_now();
+        return; // the prompt stays: it shows the download
     case UpdateAnswer::ReleasePage:
         open_url(update_.release_page());
         break;
@@ -351,20 +495,27 @@ void App::update_answer(UpdateAnswer a) {
         screens_.mark_dirty();
         break;
     }
+    update_step_ = UpdateStep::None;
+    update_message_.clear();
     update_prompt_ = false;
 }
 
-// The prompt: a modal over the Play screen, never while the game runs or a prompt for an input is open.
+// The prompt: a modal over the Play screen, never while the game runs or a prompt for an input is open. Update now's
+// steps show in it too, on whichever screen it was pressed.
 void App::draw_update_prompt() {
     static const char *const title = "Update available";
     if (!update_prompt_ && !update_prompt_open_) {
         return;
     }
-    if (update_prompt_ && !update_prompt_open_ && screen_ == Screen::Play && !run_.running() &&
+    const bool steps = update_step_ != UpdateStep::None;
+    if (update_prompt_ && !update_prompt_open_ && (screen_ == Screen::Play || steps) && !run_.running() &&
         !screens_.capture().active() && !ImGui::IsPopupOpen(title)) {
         ImGui::OpenPopup(title);
-        std::fprintf(stderr, "launcher: update prompt: %s %s is available (you have %s)\n", GAME_TITLE,
-                     version_text(update_.release().version).c_str(), update_.current().c_str());
+        if (!steps) {
+            std::fprintf(stderr, "launcher: update prompt: %s %s is available (you have %s)%s\n", GAME_TITLE,
+                         version_text(update_.release().version).c_str(), update_.current().c_str(),
+                         update_now_offered() ? "" : ("; no Update now: " + update_now_unavailable()).c_str());
+        }
     }
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
@@ -373,21 +524,74 @@ void App::draw_update_prompt() {
     }
     update_prompt_open_ = true;
     const Release &r = update_.release();
+    const float wrap = ImGui::GetFontSize() * 34.0f;
     ImGui::Text("%s %s is available (you have %s).", GAME_TITLE, version_text(r.version).c_str(),
                 update_.current().c_str());
-    ImGui::TextDisabled("The release page has its packages and what changed.");
-    ImGui::Spacing();
-    if (ImGui::Button("Release page")) {
-        update_answer(UpdateAnswer::ReleasePage);
+    ImGui::PushTextWrapPos(wrap);
+    switch (update_step_) {
+    case UpdateStep::None: {
+        const bool offered = update_now_offered();
+        if (offered) {
+            ImGui::TextDisabled("Update now downloads %s, checks it and restarts the launcher.", r.asset.name.c_str());
+        } else {
+            ImGui::TextDisabled("This build cannot update itself. %s", update_now_unavailable().c_str());
+            ImGui::TextDisabled("The release page has its packages and what changed.");
+        }
+        ImGui::Spacing();
+        if (offered) {
+            if (ImGui::IsWindowAppearing()) {
+                ImGui::SetKeyboardFocusHere(); // the default: Enter
+            }
+            if (ImGui::Button("Update now")) {
+                update_answer(UpdateAnswer::UpdateNow);
+            }
+            ImGui::SameLine();
+        }
+        if (ImGui::Button("Release page")) {
+            update_answer(UpdateAnswer::ReleasePage);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Later") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            update_answer(UpdateAnswer::Later);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Skip this version")) {
+            update_answer(UpdateAnswer::Skip);
+        }
+        break;
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Later") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-        update_answer(UpdateAnswer::Later);
+    case UpdateStep::Downloading: {
+        const double mib = 1024.0 * 1024.0;
+        char label[96];
+        SDL_snprintf(label, sizeof(label), "%.1f of %.1f MB", (double)download_.received() / mib,
+                     (double)download_.expected_size() / mib);
+        ImGui::TextDisabled("Downloading %s", r.asset.name.c_str());
+        ImGui::ProgressBar(download_.progress(), ImVec2(wrap, 0), label);
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            update_cancel();
+        }
+        break;
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Skip this version")) {
-        update_answer(UpdateAnswer::Skip);
+    case UpdateStep::Installing:
+        ImGui::TextDisabled("Checking the download and installing it...");
+        break;
+    case UpdateStep::Failed:
+        ImGui::PushStyleColor(ImGuiCol_Text, rgb(ERROR_RED));
+        ImGui::TextUnformatted(update_message_.c_str());
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("The installed launcher is unchanged unless this says otherwise; the release page has the "
+                            "packages.");
+        ImGui::Spacing();
+        if (ImGui::Button("Release page")) {
+            update_answer(UpdateAnswer::ReleasePage);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            update_answer(UpdateAnswer::Later);
+        }
+        break;
     }
+    ImGui::PopTextWrapPos();
     if (!update_prompt_) {
         ImGui::CloseCurrentPopup();
         update_prompt_open_ = false;
@@ -439,8 +643,24 @@ void App::draw_updates(float label_w) {
         }
         ImGui::EndDisabled();
     }
+    const bool stepping = update_step_ == UpdateStep::Downloading || update_step_ == UpdateStep::Installing;
+    if (newer && !update_now_offered()) {
+        ImGui::TextDisabled("Update");
+        ImGui::SameLine(label_w);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("This build cannot update itself. %s", update_now_unavailable().c_str());
+        ImGui::PopTextWrapPos();
+    }
     ImGui::Indent(label_w);
-    ImGui::BeginDisabled(update_.checking());
+    if (newer && update_now_offered()) {
+        ImGui::BeginDisabled(stepping);
+        if (ImGui::Button("Update now")) {
+            update_answer(UpdateAnswer::UpdateNow);
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+    }
+    ImGui::BeginDisabled(update_.checking() || stepping);
     if (ImGui::Button("Check now")) {
         update_check_now();
     }
@@ -523,6 +743,7 @@ void App::frame(const char *screenshot) {
     update_disc_check();
     update_game();
     update_poll();
+    update_step_poll();
     {
         std::lock_guard<std::mutex> lock(dialog_mutex_);
         if (dialog_done_) {

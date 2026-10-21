@@ -129,8 +129,8 @@ UpdatePlan update_plan(const UpdateSystem &sys, const std::string &download_dir)
     std::string err;
     if (sys.kind == UpdateKind::AppImage) {
         if (sys.appimage.empty()) {
-            plan.reason = "This launcher does not run from an AppImage (a development or unpacked build), so it cannot "
-                          "update itself: get the new release from its page.";
+            plan.reason = "This launcher does not run from an AppImage (a development or unpacked build): get the new "
+                          "release from its page.";
             return plan;
         }
         if (!path_is_file(sys.appimage)) {

@@ -59,6 +59,12 @@ int main(int argc, char **argv) {
     if (!self_test.empty()) {
         return psxstack::self_test_run(self_test) ? 0 : 1;
     }
+    // A self-update starts the new launcher with these same arguments (--config-dir, --game, ...): the same settings
+    // directory and game. It is not asked again: its stamp is the release it installed.
+    options.args.assign(argv + 1, argv + argc);
+    if (const char *now = SDL_getenv(psxstack::ENV_UPDATE_NOW)) {
+        options.update_now = std::strcmp(now, "1") == 0;
+    }
     psxstack::update_cleanup_at_start(); // what a self-update left behind (docs/LAUNCHER.md "Applying one")
 
     psxstack::SettingsDir location = psxstack::settings_dir_choose(psxstack::dir_lookup_from_system(config_dir));

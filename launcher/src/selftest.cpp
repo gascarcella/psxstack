@@ -810,7 +810,9 @@ int self_test_fake_curl(const char *reply, int argc, char **argv) {
         std::fwrite(w.data(), 1, w.size(), stdout);
         std::fflush(stdout);
     };
-    const std::string r = reply;
+    // A download (-o) gets $<PREFIX>_SELFTEST_CURL_DOWNLOAD's answer when it is set: the check and the package differ.
+    const char *download = SDL_getenv(ENV_SELFTEST_CURL_DOWNLOAD);
+    const std::string r = !out_path.empty() && download != nullptr && *download != '\0' ? download : reply;
     if (r == "offline") {
         const size_t host = url.find("://") == std::string::npos ? 0 : url.find("://") + 3;
         const std::string name = url.substr(host, url.find('/', host) - host);
@@ -1834,6 +1836,270 @@ static void test_update_window(SDL_Window *window, const std::string &root) {
     set_env(ENV_SELFTEST_CURL_REPLY, "offline");
 }
 
+// GitHub's answer for the flow below: release v<version> whose package (this platform's name) is `file`, with `digest`
+// as the asset's (a JSON value: "\"sha256:...\"" or "null").
+static std::string flow_release_json(const std::string &version, const std::string &file, const std::string &digest) {
+    const std::string name = update_asset_name(version);
+    SDL_PathInfo info;
+    const long long size = SDL_GetPathInfo(file.c_str(), &info) ? (long long)info.size : -1;
+    return "{\"tag_name\":\"v" + version + "\",\"name\":\"game v" + version +
+           "\",\"html_url\":\"https://github.com/owner/game/releases/tag/v" + version + "\",\"assets\":[{\"name\":\"" +
+           name + "\",\"size\":" + std::to_string(size) + ",\"digest\":" + digest +
+           ",\"browser_download_url\":\"https://github.com/owner/game/releases/download/v" + version + "/" + name +
+           "\"}]}";
+}
+
+static std::string flow_digest(const std::string &file) {
+    std::string err;
+    return "\"sha256:" + update_sha256_file(file, &err) + "\"";
+}
+
+static bool ends_with_text(const std::string &s, const std::string &tail) {
+    return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// Update now in the window (docs/LAUNCHER.md "Updates"), with curl's stand-in "downloading" fixture packages:
+// the line instead of the button when the plan is not possible, the cancel, a wrong digest and a missing one (nothing
+// applied, the message shown, the prompt still usable), then the whole flow into a fake AppImage install (Enter: the
+// default button) and into a fake Windows folder, each ending with the new launcher started and this one quitting;
+// and the relaunched launcher (its stamp the release's) is not prompted again.
+static void test_update_flow(SDL_Window *window, const std::string &root) {
+    const std::string files = path_join(root, "update-flow"), shots = path_join(root, "screens");
+    path_make_dir(files, nullptr);
+    const std::string release = path_join(files, "release.json"), settings_dir = path_join(files, "settings");
+    const std::string images = path_join(files, "images"), image = path_join(images, "Game-0.4.1-x86_64.AppImage");
+    const std::string new_image = path_join(files, "new.AppImage");
+    path_make_dir(images, nullptr);
+    check(self_test_copy_self(image, "") && self_test_copy_self(new_image, SELF_TEST_NEW_MARK),
+          "the fake AppImage install and the release's image (copies of this executable)");
+    const std::string old_image = read(image);
+    set_env(ENV_FAKE_CURL, self_exe());
+    set_env(ENV_SELFTEST_CURL_REPLY, release);
+    SettingsDir location;
+    location.dir = settings_dir;
+    location.source = DirSource::Argument;
+    std::vector<std::string> opened;
+    AppOptions o;
+    o.update_repo = "owner/game";
+    o.version = "0.4.1";
+    o.echo_game = false;
+    o.open_url = [&](const std::string &u) {
+        opened.push_back(u);
+        return true;
+    };
+    SDL_Renderer *renderer = SDL_GetRenderer(window);
+    const auto start = [&](App &app) {
+        app.set_screen(Screen::Play);
+        pump_until(app, [&] { return !app.update_check().checking(); }, 20000);
+        pump(app, 3);
+    };
+    const auto settle = [&](App &app) {
+        pump_until(app,
+                   [&] {
+                       return app.update_step() != UpdateStep::Downloading &&
+                              app.update_step() != UpdateStep::Installing;
+                   },
+                   60000);
+        pump(app, 2);
+    };
+    const std::string download = path_join(settings_dir, std::string(GAME_ID) + "-update.AppImage");
+    std::string png;
+
+    // Not possible here (no $APPIMAGE): the prompt keeps Release page and says why in a line.
+    {
+        AppOptions none = o;
+        none.update_system = [] {
+            UpdateSystem sys;
+            sys.kind = UpdateKind::AppImage;
+            return sys;
+        };
+        write(release, flow_release_json("0.5.0", new_image, flow_digest(new_image)));
+        App app(window, renderer, location, none);
+        start(app);
+        check(app.update_prompt_shown() && !app.update_now_offered() &&
+                  app.update_now_unavailable().find("AppImage") != std::string::npos,
+              "a build that cannot update itself: no Update now, the plan's reason: " + app.update_now_unavailable());
+        png = path_join(shots, "19-Play-update-cannot.png");
+        app.frame(png.c_str());
+        app.update_answer(UpdateAnswer::Later);
+    }
+
+    // The fake AppImage install: $APPIMAGE (update_system() reads it on Linux; on Windows the plan is given).
+    set_env("APPIMAGE", image);
+    AppOptions img = o;
+#ifdef SDL_PLATFORM_WINDOWS
+    img.update_system = [image] {
+        UpdateSystem sys;
+        sys.kind = UpdateKind::AppImage;
+        sys.appimage = image;
+        return sys;
+    };
+#endif
+    write(release, flow_release_json("0.5.0", new_image, flow_digest(new_image)));
+
+    // The cancel: a slow download stopped halfway; its file removed, the prompt closed as Later, nothing changed.
+    set_env(ENV_SELFTEST_CURL_DOWNLOAD, "slow:" + new_image);
+    {
+        App app(window, renderer, location, img);
+        start(app);
+        check(app.update_prompt_shown() && app.update_now_offered() && app.update_plan().download == download,
+              "an AppImage install: Update now offered, the download into the settings directory: " +
+                  app.update_now_unavailable());
+        png = path_join(shots, "19b-Play-update-now.png");
+        app.frame(png.c_str());
+        app.update_answer(UpdateAnswer::UpdateNow);
+        check(app.update_step() == UpdateStep::Downloading, "Update now starts the download");
+        pump_until(app, [&] { return app.update_download().progress() > 0.25f; }, 20000);
+        app.update_check_now();
+        check(!app.update_check().checking(), "no update check during a download");
+        pump(app, 2);
+        png = path_join(shots, "19c-Play-update-download.png");
+        app.frame(png.c_str());
+        check(app.update_step() == UpdateStep::Downloading && app.update_download().progress() > 0.0f &&
+                  app.update_download().progress() < 1.0f,
+              "the download's progress is between 0 and 1");
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, true);
+        pump(app, 1);
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, false);
+        pump(app, 3);
+        check(app.update_step() == UpdateStep::None && !app.update_prompt() && !app.update_prompt_shown() &&
+                  !path_is_file(download) && read(image) == old_image && !app.quit_requested(),
+              "Cancel (Escape): the download stopped and removed, the prompt closed, the install unchanged");
+        app.set_screen(Screen::Settings); // the Settings screen's Update now
+        pump(app, 3);
+        scroll_page_down(window, app);
+        png = path_join(shots, "19e-Settings-update-now.png");
+        app.frame(png.c_str());
+    }
+    set_env(ENV_SELFTEST_CURL_DOWNLOAD, new_image);
+
+    // A wrong digest: downloaded, refused, removed; the message in the prompt with Release page and Close.
+    write(release, flow_release_json("0.5.0", new_image, "\"sha256:" + std::string(64, '0') + "\""));
+    {
+        App app(window, renderer, location, img);
+        start(app);
+        app.update_answer(UpdateAnswer::UpdateNow);
+        settle(app);
+        check(app.update_step() == UpdateStep::Failed &&
+                  app.update_message().find("did not pass its check") != std::string::npos &&
+                  app.update_prompt_shown() && read(image) == old_image && !path_is_file(download) &&
+                  !app.quit_requested(),
+              "a wrong digest: nothing applied, the download removed, the message shown: " + app.update_message());
+        png = path_join(shots, "19d-Play-update-failed.png");
+        app.frame(png.c_str());
+        opened.clear();
+        app.update_answer(UpdateAnswer::ReleasePage);
+        pump(app, 3);
+        check(!app.update_prompt_shown() && app.update_step() == UpdateStep::None && opened.size() == 1,
+              "after a failure, Release page still opens the release's page");
+    }
+    // No digest from GitHub: refused before anything is downloaded.
+    write(release, flow_release_json("0.5.0", new_image, "null"));
+    {
+        App app(window, renderer, location, img);
+        start(app);
+        app.update_answer(UpdateAnswer::UpdateNow);
+        check(app.update_step() == UpdateStep::Failed &&
+                  app.update_message().find("no SHA-256") != std::string::npos && !path_is_file(download) &&
+                  read(image) == old_image,
+              "a package without a digest: nothing downloaded or applied: " + app.update_message());
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, true);
+        pump(app, 1);
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, false);
+        pump(app, 3);
+        check(!app.update_prompt_shown() && app.update_step() == UpdateStep::None, "Escape is Close");
+    }
+
+    // The whole flow into the AppImage: Enter (Update now is the default), downloaded, verified, swapped, the new
+    // image started with the launcher's arguments, this one quitting.
+    write(release, flow_release_json("0.5.0", new_image, flow_digest(new_image)));
+    const std::string marker = path_join(files, "appimage-relaunched.txt");
+    set_fake_mode(SELF_TEST_UPDATE_MODE); // the new image is this executable: it writes the marker
+    {
+        AppOptions run = img;
+        run.args = { "relaunched", marker };
+        App app(window, renderer, location, run);
+        start(app);
+        push_key(window, SDL_SCANCODE_RETURN, SDL_KMOD_NONE, true);
+        pump(app, 1);
+        push_key(window, SDL_SCANCODE_RETURN, SDL_KMOD_NONE, false);
+        pump(app, 1);
+        check(app.update_step() != UpdateStep::None, "Enter is Update now (the default button)");
+        settle(app);
+        check(app.quit_requested() && ends_with_text(read(image), SELF_TEST_NEW_MARK) && !path_is_file(download),
+              "the AppImage updated: the new image in place, the download gone, the launcher quits: " +
+                  app.update_message());
+    }
+    std::string said;
+    for (int t = 0; t < 20000 && said.empty(); t += 50) {
+        said = read(marker);
+        SDL_Delay(50);
+    }
+    check(said.find("relaunched") != std::string::npos, "the new AppImage was started with the arguments: " + said);
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "APPIMAGE");
+    // The relaunched launcher: its stamp is the release it installed, so the check finds nothing newer.
+    {
+        AppOptions after = o;
+        after.version = "0.5.0";
+        App app(window, renderer, location, after);
+        start(app);
+        check(app.update_check().state() == UpdateCheck::State::UpToDate && !app.update_prompt(),
+              "the relaunched launcher (stamp 0.5.0) is not prompted again: " + app.update_check().summary());
+    }
+
+    // A fake Windows folder: the release's zip (made with the self-test's tar) unpacked over it, the running
+    // launcher's file renamed to .old, the new launcher started; it removes the .old at its start.
+    const std::string install = path_join(files, "install"), package = path_join(files, "package");
+    const std::string top = std::string(GAME_ID) + "-0.5.0-windows-x86_64", zip = path_join(files, "release.zip");
+    path_make_dir(install, nullptr);
+    path_make_dir(path_join(package, top), nullptr);
+    write(path_join(install, GAME_EXE), "old game");
+    write(path_join(install, "notes.txt"), "the user's notes");
+    write(path_join(path_join(package, top), GAME_EXE), "new game");
+    write(path_join(path_join(package, top), "README.txt"), "new readme");
+    const std::string tar = self_test_tar();
+    check(self_test_copy_self(path_join(install, LAUNCHER_EXE), "") &&
+              self_test_copy_self(path_join(path_join(package, top), LAUNCHER_EXE), SELF_TEST_NEW_MARK) &&
+              self_test_make_zip(tar, package, top, zip),
+          "the fake Windows folder and the release's zip, made with " + tar);
+    write(release, flow_release_json("0.5.0", zip, flow_digest(zip)));
+    set_env(ENV_SELFTEST_CURL_DOWNLOAD, zip);
+    const std::string marker2 = path_join(files, "folder-relaunched.txt");
+    {
+        AppOptions win = o;
+        win.update_system = [install, tar] {
+            UpdateSystem sys;
+            sys.kind = UpdateKind::WindowsFolder;
+            sys.install_dir = install;
+            sys.tar = tar;
+            return sys;
+        };
+        win.args = { "relaunched", marker2 };
+        App app(window, renderer, location, win);
+        start(app);
+        check(app.update_now_offered() && app.update_plan().kind == UpdateKind::WindowsFolder,
+              "a Windows folder: Update now offered: " + app.update_now_unavailable());
+        app.update_answer(UpdateAnswer::UpdateNow);
+        settle(app);
+        check(app.quit_requested() && ends_with_text(read(path_join(install, LAUNCHER_EXE)), SELF_TEST_NEW_MARK) &&
+                  read(path_join(install, GAME_EXE)) == "new game" &&
+                  read(path_join(install, "notes.txt")) == "the user's notes" &&
+                  !path_is_file(app.update_plan().download) && !path_is_dir(app.update_plan().staging),
+              "the folder updated: the new launcher and game, the user's file kept, no download, no staging: " +
+                  app.update_message());
+    }
+    said.clear();
+    for (int t = 0; t < 30000 && said.empty(); t += 50) {
+        said = read(marker2);
+        SDL_Delay(50);
+    }
+    check(said.find("relaunched") != std::string::npos && said.find("old gone") != std::string::npos,
+          "the folder's new launcher was started and removed the .old: " + said);
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), SELF_TEST_GAME_ENV);
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), ENV_SELFTEST_CURL_DOWNLOAD);
+    set_env(ENV_SELFTEST_CURL_REPLY, "offline");
+}
+
 static void test_window(const std::string &root) {
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
@@ -1927,6 +2193,7 @@ static void test_window(const std::string &root) {
     test_play(window, root);
     test_mods_window(window, root);
     test_update_window(window, root);
+    test_update_flow(window, root);
     gui_close(window, renderer);
 }
 
