@@ -116,6 +116,9 @@ static PortMod fl_mod = { .id = "fast_loading", .version = "0.1", .options = fl_
 static PortMod *mods_all[MODS_MAX];
 static int mods_count;
 
+static void ff_apply(void);
+static void mods_status(void);
+
 static void mods_init(void) {
     int i, n = game_mod_count();
     if (mods_count != 0) {
@@ -261,8 +264,28 @@ void port_mods_settings(const PortJson *settings) {
     }
 }
 
+/* An enabled mod's binding options as hotkey actions (input.c; after port_input_settings, which starts the table). */
+static void mod_register_bindings(PortMod *mod) {
+    int k;
+    for (k = 0; k < mod->option_count; k++) {
+        if (mod->options[k].type == PORT_MOD_BINDING) {
+            char where[128], *name;
+            snprintf(where, sizeof(where), "mods.%s.%s", mod->id, mod->options[k].id);
+            name = strdup(where + 5);
+            if (name == NULL) {
+                port_fatal("mods: out of memory");
+            }
+            mod->values[k].action = port_input_action(name, mod->values[k].json, where, mod->options[k].def);
+        }
+    }
+}
+
+static int mod_restart_only(const PortMod *mod) {
+    return mod->applies != NULL && strcmp(mod->applies, "restart") == 0;
+}
+
 void port_mods_start(int active) {
-    int m, k;
+    int m;
     mods_init();
     ff.base_pace = port_pace_get();
     ff.t0 = port_clock_ns();
@@ -274,22 +297,47 @@ void port_mods_start(int active) {
         if (!mod->enabled) {
             continue;
         }
-        for (k = 0; k < mod->option_count; k++) {
-            if (mod->options[k].type == PORT_MOD_BINDING) {
-                char where[128], *name;
-                snprintf(where, sizeof(where), "mods.%s.%s", mod->id, mod->options[k].id);
-                name = strdup(where + 5);
-                if (name == NULL) {
-                    port_fatal("mods: out of memory");
-                }
-                mod->values[k].action = port_input_action(name, mod->values[k].json, where, mod->options[k].def);
-            }
-        }
+        mod_register_bindings(mod);
         port_log("mods: %s on", mod->id);
         if (mod->start != NULL) {
             mod->start(mod);
         }
     }
+}
+
+/* The settings' `mods` section again, live (the in-game menu wrote the file; runtime/live.c, after
+ * port_input_settings started the hotkey table over): every mod's values are re-read; a mod switched on gets its
+ * hotkeys and its start, one switched off has its frame stop; a mod whose `applies` is "restart" keeps its state
+ * (logged: the next start). Every enabled mod's bindings are registered again, since the table was. */
+void port_mods_apply(const PortJson *settings) {
+    int m, was[MODS_MAX];
+    for (m = 0; m < mods_count; m++) {
+        was[m] = mods_all[m]->enabled;
+    }
+    port_mods_settings(settings);
+    for (m = 0; m < mods_count; m++) {
+        PortMod *mod = mods_all[m];
+        if (mod->enabled != was[m] && mod_restart_only(mod)) {
+            port_log("mods: %s %s at the next start (it applies at the start)", mod->id, mod->enabled ? "on" : "off");
+            mod->enabled = was[m];
+        }
+        if (!mod->enabled) {
+            if (was[m]) {
+                port_log("mods: %s off", mod->id);
+            }
+            continue;
+        }
+        mod_register_bindings(mod);
+        if (!was[m]) {
+            port_log("mods: %s on", mod->id);
+            if (mod->start != NULL) {
+                mod->start(mod);
+            }
+        }
+    }
+    ff.wanted = ff.toggled = 0; /* fast-forward's bindings start over */
+    ff_apply();
+    mods_status();
 }
 
 /* The window's title: the mods that are on (fast-forward, then every enabled mod's status text). Set when it changes. */
@@ -404,8 +452,12 @@ void port_mods_print_registry(FILE *f) {
     fputs("[", f);
     for (m = 0; m < mods_count; m++) {
         const PortMod *mod = mods_all[m];
-        fprintf(f, "%s\n  { \"id\": \"%s\", \"version\": \"%s\", \"kind\": \"builtin\", \"requires_port\": %d, "
-                   "\"options\": [", m ? "," : "", mod->id, mod->version, PSXSTACK_API);
+        fprintf(f, "%s\n  { \"id\": \"%s\", \"version\": \"%s\", \"kind\": \"builtin\", \"requires_port\": %d, ",
+                m ? "," : "", mod->id, mod->version, PSXSTACK_API);
+        if (mod_restart_only(mod)) {
+            fputs("\"applies\": \"restart\", ", f); /* the manifest says it too (docs/LAUNCHER.md "Mod manifest") */
+        }
+        fputs("\"options\": [", f);
         for (k = 0; k < mod->option_count; k++) {
             const PortModOption *o = &mod->options[k];
             fprintf(f, "%s\n    { \"id\": \"%s\", \"type\": \"%s\", \"default\": %s, \"applies\": \"%s\"", k ? "," : "",

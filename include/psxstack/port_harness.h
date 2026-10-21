@@ -120,6 +120,9 @@ const char *port_filter_choices(int quoted);
  * 0 with the reason in `err` when it is malformed. */
 int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
 void port_video_set_filter(const PortFilter *f);
+/* The window's settings changed live (the menu; runtime/live.c): the scale, fullscreen, the filter and the sub-pixel
+ * mode; nothing without a window. */
+void port_video_apply(int scale, int fullscreen, const PortFilter *filter, int subpixel);
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */
@@ -184,7 +187,8 @@ void port_audio_close(void);
 void port_audio_pause(int paused); /* the device paused (the pump's pause); nothing rendered meanwhile */
 /* The device muted (fast-forward): its queue cleared, then the samples rendered but not queued; unmuted, the queue
  * starts again from its target. The WAV and the SPU never change. */
-void port_audio_set_mute(int mute);
+void port_audio_set_mute(int mute);      /* fast-forward's mute */
+void port_audio_set_user_mute(int mute); /* audio.mute changed in the menu (live.c): either source mutes */
 
 /* ---- mods.c: the built-in mods (docs/LAUNCHER.md "Mod manifest", "Mod runtime") ----
  * port_mods_settings: the settings' `mods` section (NULL: every mod off) read against the registry; a bad value fails
@@ -194,6 +198,9 @@ void port_audio_set_mute(int mute);
  * the registry as JSON (--print-mods), what tests/port/settings.py compares with port/mods/<id>/mod.json. */
 void port_mods_settings(const struct PortJson *mods);
 void port_mods_start(int active);
+void port_mods_apply(const struct PortJson *mods); /* the section again, live (runtime/live.c) */
+/* The settings file re-read and applied live (runtime/live.c; the in-game menu wrote it): 1 when it was read. */
+int port_live_apply(void);
 void port_mods_frame(void);
 void port_mods_print(FILE *f, int level);
 void port_mods_print_registry(FILE *f);

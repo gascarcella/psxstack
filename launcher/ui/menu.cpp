@@ -24,6 +24,7 @@
 #include "imgui_impl_sdlrenderer3.h"
 
 #include "psxstack_game_gen.h" // the game's title and env prefix (GAME_CONTRACT.md "The generated header")
+#include "input.h"
 #include "paths.h"
 #include "screens.h"
 #include "style.h"
@@ -53,6 +54,7 @@ struct Menu {
     int drawn = 0;         // presents with the menu since it was shown (ImGui sizes a window on its first frame)
     psxstack::Screens screens;
     bool has_settings = false; // the game was started with --config: the shared screens have a file to edit
+    bool from_launcher = false; // <PREFIX>_LAUNCHER: the launcher started the game and comes back when it quits
     int page = PAGE_GAME;
     int start_page = PAGE_GAME; // <PREFIX>_PORT_MENU_SCREEN
 };
@@ -79,6 +81,7 @@ bool menu_open_common(SDL_Window *window) {
     if (const char *shot = SDL_getenv(env_name("_PORT_MENU_SHOT").c_str())) {
         mn.shot = shot;
     }
+    mn.from_launcher = SDL_getenv(env_name("_LAUNCHER").c_str()) != nullptr;
     if (const char *page = SDL_getenv(env_name("_PORT_MENU_SCREEN").c_str())) {
         for (int i = 0; i < PAGE_COUNT; i++) {
             if (SDL_strcasecmp(page, PAGE_NAMES[i]) == 0) {
@@ -147,11 +150,15 @@ int menu_draw_game() {
         action = PORT_MENU_RESUME;
     }
     ImGui::PopStyleColor(3);
-    if (ImGui::Button("Quit", button)) {
+    if (ImGui::Button(mn.from_launcher ? "Quit to launcher" : "Quit", button)) {
         action = PORT_MENU_QUIT;
     }
     ImGui::Spacing();
-    ImGui::TextDisabled("The menu hotkey returns to the game.");
+    // The hotkey's own name: the settings' binding, else the default (the screens' Settings know both).
+    const psxstack::Binding menu_key = mn.screens.settings().values.hotkey_for("menu");
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s returns to the game.", psxstack::binding_label(menu_key).c_str());
+    ImGui::PopTextWrapPos();
     if (!mn.has_settings) {
         ImGui::Spacing();
         ImGui::PushTextWrapPos(0);
@@ -217,6 +224,13 @@ int menu_draw() {
     ImGui::End();
     ImGui::PopStyleVar();
     return action;
+}
+
+// The file the screens just wrote, applied by the runtime (runtime/live.c).
+void menu_apply_saved() {
+    if (mn.screens.take_saved()) {
+        port_live_apply();
+    }
 }
 
 bool menu_ready_to_draw() {
@@ -309,6 +323,7 @@ void port_menu_show(int on) {
         if (!mn.screens.last_error().empty()) {
             port_log("menu: the settings could not be saved: %s", mn.screens.last_error().c_str());
         }
+        menu_apply_saved();
     }
     port_log("menu: %s", mn.shown ? "shown" : "hidden");
 }
@@ -335,6 +350,7 @@ int port_menu_frame(void) {
     int action = menu_draw();
     ImGui::Render();
     mn.screens.end_frame();
+    menu_apply_saved();
     mn.frame_built = true;
     return action;
 }

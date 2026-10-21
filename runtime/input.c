@@ -40,6 +40,7 @@
  * It ends the run with status 0 when every check passed, 6 when one failed; with
  * a script it only logs the result and the script runs on, so its log can be compared with a run without the test. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "json.h"
@@ -905,6 +906,31 @@ static int input_test_menu_before(void) {
     return 0;
 }
 
+/* <PREFIX>_PORT_MENU_LIVE_FILE=PATH (the test of the live apply with a change: tests/hello_test.py --menu): that file's
+ * text written over the settings file before it is re-read, as the menu's save would; the menu hotkey pressed at
+ * the next poll is the file's binding, since the step reads the action's trigger then. */
+static void input_test_live_file(void) {
+    const char *path = getenv(PSXSTACK_GAME_ENV_PREFIX "_PORT_MENU_LIVE_FILE");
+    FILE *in, *out;
+    char buf[4096];
+    size_t n;
+    if (path == NULL) {
+        return;
+    }
+    in = fopen(path, "rb");
+    out = in != NULL ? fopen(port_settings.file, "wb") : NULL;
+    if (in == NULL || out == NULL) {
+        port_log("input test: live file %s: cannot copy over %s", path, port_settings.file);
+        port_exit(6, "input test failed");
+    }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        fwrite(buf, 1, n, out);
+    }
+    fclose(in);
+    fclose(out);
+    port_log("input test: live file %s in place of the settings", path);
+}
+
 static void input_test_menu_paused(void) {
     if (input_test_menu != 2) {
         return;
@@ -913,6 +939,19 @@ static void input_test_menu_paused(void) {
     case 1:
         input_test_state_set(port_action_menu, 0);
         input_test_menu_seen = port_menu_shown();
+        break;
+    case 2:
+        /* the settings applied live as the menu does after a save (runtime/live.c): the hotkey table starts over,
+         * and the menu hotkey pressed at the next poll must still close the menu */
+        if (port_settings_loaded) {
+            int ok;
+            input_test_live_file(); /* <PREFIX>_PORT_MENU_LIVE_FILE: another settings file put in place first */
+            ok = port_live_apply();
+            port_log("input test: the settings re-applied live in the menu: %s", ok ? "passed" : "FAILED (not re-read)");
+            if (!ok) {
+                port_exit(6, "input test failed");
+            }
+        }
         break;
     case 3:
         input_test_state_set(port_action_menu, 1);

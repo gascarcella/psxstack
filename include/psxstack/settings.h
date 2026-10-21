@@ -44,6 +44,7 @@ extern int port_settings_loaded; /* --config was given */
  * value of the wrong type or out of range ends the run with status 64 and a message naming the key; an unknown key is
  * logged and ignored (a newer launcher's), and the `launcher` object is the launcher's own, never read. */
 void port_settings_load(const char *path);
+int port_settings_reload(void); /* the file again, live (runtime/live.c); 0 and a log line when it is bad: nothing changed */
 /* `s` (the effective settings: main.c's values after the command line) as a settings file, every key written,
  * absolute paths, `input` and `launcher` as given, `mods` resolved (port_mods_print): `--print-settings`. Loading its output gives the same output (the round trip). */
 void port_settings_print(FILE *f, const PortSettings *s);

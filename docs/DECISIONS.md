@@ -242,4 +242,7 @@ units and the runtime stay C and a build without the option links `runtime/menu.
 pump's pause, so the game is held exactly as the pause key holds it, and draws from inside the present on both paths
 (SDL_Renderer, SDL_GPU). Rejected: hosting the game inside the launcher's process (the game's main never returns,
 `port_exit` is `exit`, the state is global, and the contract wants single binaries); a C menu in the runtime (a copy
-of the launcher). The launcher's window stays the entry: it picks and verifies the disc.
+of the launcher). The launcher's window stays the entry: it picks and verifies the disc. A change made in the menu
+is written to the settings file first and the runtime then re-reads that file (`runtime/live.c`): one source of
+truth, the same file the launcher writes, and the runtime's own parser checks it again, under a guard that logs a bad
+file instead of exiting.

@@ -30,6 +30,7 @@ constexpr const char *WINDOW_TITLE = PSXSTACK_GAME_TITLE " launcher";
 // the self-test's (launcher/README.md "The self-test").
 constexpr const char *ENV_GAME = PSXSTACK_GAME_ENV_PREFIX "_GAME";
 constexpr const char *ENV_CONFIG_DIR = PSXSTACK_GAME_ENV_PREFIX "_CONFIG_DIR";
+constexpr const char *ENV_LAUNCHER = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER"; // set for the game it starts (the in-game menu's Quit says "to launcher")
 constexpr const char *ENV_SELFTEST_FAKE_GAME = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_FAKE_GAME";
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";

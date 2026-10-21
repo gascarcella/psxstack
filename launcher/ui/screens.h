@@ -40,6 +40,12 @@ public:
     void flush();
     void mark_dirty() { dirty_ = true; }
     const std::string &last_error() const { return error_; }
+    // True once after a save wrote the file (the in-game menu then applies it live).
+    bool take_saved() {
+        bool s = saved_;
+        saved_ = false;
+        return s;
+    }
 
     void draw_settings();
     void draw_controls();
@@ -61,6 +67,7 @@ public:
 
 private:
     void draw_restart_note();
+    void restart_mark();
     void draw_filter(float label_w);
     void draw_names_table(bool pad);
     void draw_hotkeys();
@@ -79,6 +86,7 @@ private:
     SettingsDir location_;
     SettingsFile settings_;
     bool dirty_ = false;
+    bool saved_ = false;
     bool in_game_ = false;
     std::string error_; // the last save error
 

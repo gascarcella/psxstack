@@ -151,6 +151,7 @@ void Screens::draw_settings() {
                 dirty_ = true;
             }
         }
+        restart_mark();
     }
     ImGui::TextDisabled("Renderer");
     ImGui::SameLine(label_w);
@@ -163,6 +164,7 @@ void Screens::draw_settings() {
         s.renderer = "gpu";
         dirty_ = true;
     }
+    restart_mark();
     if (s.renderer == "gpu") {
         char res[64];
         ImGui::TextDisabled("Resolution");
@@ -171,6 +173,7 @@ void Screens::draw_settings() {
         SDL_snprintf(res, sizeof(res), "x%d  (%d x %d)", s.internal_scale, 320 * s.internal_scale,
                      240 * s.internal_scale);
         dirty_ |= ImGui::SliderInt("##internal_scale", &s.internal_scale, 1, 8, res, ImGuiSliderFlags_AlwaysClamp);
+        restart_mark();
         ImGui::Indent(label_w);
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("SDL_GPU (Vulkan; Direct3D 12 on Windows). x1 is the Software picture, pixel for pixel; above it the game is drawn "
@@ -222,6 +225,10 @@ void Screens::draw_settings() {
     dirty_ |= ImGui::Checkbox("##mute", &s.mute);
 
     section_title("Memory cards");
+    if (in_game_) {
+        ImGui::TextDisabled("(restart)");
+        ImGui::SetItemTooltip("Takes effect when the game starts again");
+    }
     for (int i = 0; i < 2; i++) {
         MemoryCard &c = s.memcard[i];
         ImGui::PushID(i);
@@ -440,6 +447,9 @@ void Screens::draw_mod(const ModManifest &m) {
         dirty_ = true;
     }
     ImGui::EndDisabled();
+    if (m.restart) {
+        restart_mark();
+    }
     if (m.kind == "data") {
         draw_data_mod(m, values);
         return;
@@ -1026,6 +1036,7 @@ void Screens::flush() {
     std::string err;
     if (settings_.save(&err)) {
         error_.clear();
+        saved_ = true;
     } else {
         error_ = err;
     }
@@ -1035,9 +1046,19 @@ void Screens::flush() {
 void Screens::draw_restart_note() {
     if (in_game_) {
         ImGui::PushStyleColor(ImGuiCol_Text, rgb(ACCENT));
-        ImGui::TextWrapped("Changes are saved to the settings file and take effect when the game starts again.");
+        ImGui::TextWrapped("Changes are saved as you make them and apply at once, except those marked (restart), which "
+                           "take effect when the game starts again.");
         ImGui::PopStyleColor();
         ImGui::Spacing();
+    }
+}
+
+// "(restart)" after a label, in the game, for a setting the runtime cannot apply live.
+void Screens::restart_mark() {
+    if (in_game_) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(restart)");
+        ImGui::SetItemTooltip("Takes effect when the game starts again");
     }
 }
 

@@ -51,6 +51,7 @@ struct ModManifest {
     bool textures = false;
     std::string textures_dir = "textures", textures_filter = "linear";
     int requires_port = 0;
+    bool restart = false; // applies: "restart": switching it on or off takes effect at the next start (the in-game menu)
     std::vector<ModOption> options;
     std::vector<ModPreset> presets;
     std::string error; // why it cannot be used ("" = fine); the mod is listed, not editable

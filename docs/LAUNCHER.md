@@ -182,6 +182,7 @@ live in the settings file, never in the manifest.
 | `kind` | yes | `builtin` (code in the game, from the game's build) or `data` (files: "Data mods") |
 | `textures` | data mods | `{ "dir": "textures", "filter": "linear" }`, both optional: the mod is a texture pack (RUNTIME.md "Texture packs"), its PNGs under `dir`, filtered `linear` or `nearest` |
 | `requires_port` | no | Integer: the stack's mod interface the mod needs (`PSXSTACK_API`, GAME_CONTRACT.md "Compatibility and versions"; 1 now) |
+| `applies` | no | `live` (default) or `restart`: whether the in-game menu can switch the mod on or off while the game runs ("In-game menu"); `restart` for a mod whose `start` patches the game or must run before the window opens, and the record's `applies` says the same |
 | `options` | no | A list of options |
 | `presets` | no | A list of presets: `{ "id", "name", "description" (optional), "values": { "<option id>": value } }`. The launcher shows a button per preset (pressed while all its values are in place) that sets those values; the game never sees a preset, only the values |
 
@@ -240,7 +241,7 @@ only kind of data so far is `textures`, a texture pack (RUNTIME.md "Texture pack
 The runtime's `mods.c` holds the registry of built-in mods the game's adapter provides (GAME_CONTRACT.md "4. The adapter
 units": ids, versions, option types, defaults, ranges, `start`/`frame` callbacks), reads their values from
 `mods.<mod id>`, registers each enabled mod's `binding` options as hotkey actions (named `<mod id>.<option>`), and runs
-them at every vsync. `<id> --print-mods` prints the registry as JSON; a game's tests require every manifest to agree
+them at every vsync; the in-game menu re-reads the section live (`port_mods_apply`, "In-game menu"). `<id> --print-mods` prints the registry as JSON; a game's tests require every manifest to agree
 with it.
 
 **Rules for a mod that changes the game's behaviour:**
@@ -297,18 +298,28 @@ at a time), where leaving the game for the launcher's window is a chore.
   (`launcher/ui/screens.cpp`, the one implementation both draw), over the settings file the game was started with
   (`--config`: the runtime's `settings.c` read it; the menu reads it again through the launcher's `SettingsFile` and
   writes it as the launcher would, keeping every member it does not edit) and the mods beside the executable plus the
-  user's data mods (`--mods-dir`). A change is saved when no widget is in use (and when the menu closes) and takes
-  effect at the next start, as every page says; applying what the runtime can live is issue #74's next phase. A
-  game started without `--config` has the Game page alone. The disc stays the launcher's window's.
+  user's data mods (`--mods-dir`). A change is saved when no widget is in use (and when the menu closes), and the
+  runtime then re-reads the file and applies it (`runtime/live.c` `port_live_apply`): the window's scale and
+  fullscreen, the hardware renderer's filter and sub-pixel mode, `audio.mute`, the pad map and every hotkey (the
+  table starts over, the enabled mods' bindings registered again) and the mods (`port_mods_apply`: one switched on
+  gets its hotkeys and its `start`, one switched off has its `frame` stop, its options re-read). What waits for the
+  next start is marked **(restart)** on the page: the disc, the renderer and its internal scale, the rate, the memory
+  cards, the data mods, and a mod whose manifest says `"applies": "restart"` ("Mod manifest"). A file that does not
+  read back is logged and changes nothing. A game started without `--config` has the Game page alone; one the
+  launcher started (`<PREFIX>_LAUNCHER` in its environment) says Quit *to launcher*. The disc stays the launcher's
+  window's.
 - **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled by the window's height: 1 at
   480 lines, up to 4, so the menu reads the same on a 640x480 window and a 1280x800 handheld screen.
 - **The test:** `--input-test` ends with the menu's round trip (its hotkey at a vsync, the menu shown in the pause's
   polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
   window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
   back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names.
-  `tests/hello_test.py --menu` builds `examples/hello` that way and runs both on SDL's offscreen driver with a
-  settings file of its own, the picture its Settings page; CI's `launcher` job runs it and keeps the picture. The
-  screens' logic is the launcher self-test's.
+  The round trip also re-applies the settings live at its second poll, as the menu does after a save, and with
+  `<PREFIX>_PORT_MENU_LIVE_FILE=PATH` that file is put in place of the settings first (the hotkey pressed next is the
+  file's binding, so a rebinding must take). `tests/hello_test.py --menu` builds `examples/hello` that way and runs
+  both on SDL's offscreen driver with a settings file of its own (the live file rebinds the menu hotkey and switches
+  fast-forward on), the picture its Settings page; CI's `launcher` job runs it and keeps the picture. The screens'
+  logic is the launcher self-test's.
 - **The release:** a game that ships the menu links libstdc++ and libgcc statically with
   `-DPSXSTACK_MENU_STATIC_RUNTIME=ON`, as the launcher does (`launcher/README.md` "Releases").
 

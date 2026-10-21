@@ -206,6 +206,9 @@ bool GameRun::start(const std::vector<std::string> &args, const std::string &wor
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_NULL);
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_APP);
     SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
+    // The game knows the launcher started it (brand.h ENV_LAUNCHER): its menu's Quit comes back here. Set in SDL's
+    // own environment, which the child inherits (the self-test's fake-game mode lives there too).
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), ENV_LAUNCHER, "1", true);
     proc_ = SDL_CreateProcessWithProperties(props);
     SDL_DestroyProperties(props);
     if (proc_ == nullptr) {

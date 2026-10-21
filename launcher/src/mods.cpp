@@ -215,6 +215,16 @@ ModManifest mod_manifest_load(const std::string &dir) {
         m.error = "mod.json: id \"" + id + "\" is not its directory's name (" + m.id + ")";
         return m;
     }
+    std::string applies;
+    if (!get_string(j, "applies", false, &applies, &err, "")) {
+        m.error = "mod.json: " + err;
+        return m;
+    }
+    if (!applies.empty() && applies != "live" && applies != "restart") {
+        m.error = "mod.json: applies: live or restart";
+        return m;
+    }
+    m.restart = applies == "restart";
     const Json *rp = j.find("requires_port");
     if (rp != nullptr) {
         m.requires_port = rp->as_int(-1, 0, 1 << 30);

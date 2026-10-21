@@ -81,14 +81,22 @@ def menu_check(build, env):
     cfg = build / "cfg"
     cfg.mkdir(exist_ok=True)
     (cfg / "settings.json").write_text('{ "schema": 1 }\n')
+    # The live apply with a change (runtime/input.c HELLO_PORT_MENU_LIVE_FILE): a second file, put in place while the
+    # menu is up, rebinds the menu hotkey and switches fast-forward on; the round trip then closes the menu with the
+    # new key, and the mod's "on" line must follow.
+    (cfg / "live.json").write_text('{ "schema": 1, "input": { "hotkeys": { "menu": "F10" } }, '
+                                   '"mods": { "fast_forward": { "enabled": true } } }\n')
     run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot),
-                   HELLO_PORT_MENU_SCREEN="settings")
+                   HELLO_PORT_MENU_SCREEN="settings", HELLO_PORT_MENU_LIVE_FILE=str(cfg / "live.json"))
     r = subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--mods-dir", str(cfg / "mods"),
                         "--input-test", "--fps", "0"], capture_output=True, text=True, env=run_env, timeout=600)
     lines = r.stderr.strip().splitlines()
     menu = next((l for l in lines if "input test: the menu:" in l), "(no menu line)")
-    ok = r.returncode == 0 and "the menu: passed" in menu
-    print(("ok   " if ok else "FAIL ") + f"the input self-test with the menu: status {r.returncode}; {menu}")
+    live = next((l for l in lines if "re-applied live in the menu:" in l), "(no live line)")
+    ff_on = any(l.endswith("mods: fast_forward on") for l in lines)
+    ok = r.returncode == 0 and "the menu: passed" in menu and "live in the menu: passed" in live and ff_on
+    print(("ok   " if ok else "FAIL ") + f"the input self-test with the menu: status {r.returncode}; {menu}; {live}; "
+          f"fast-forward {'switched on live' if ff_on else 'NOT switched on'}")
     if not ok:
         print("\n".join(lines[-15:]))
     if shot.exists() and shot.stat().st_size > 1000 and shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n":
