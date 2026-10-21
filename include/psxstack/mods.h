@@ -39,9 +39,12 @@ typedef struct PortMod {
     const char *(*status)(struct PortMod *mod); /* the window title's text while on ("skip dialogues"), NULL for none */
     int enabled;
     PortModValue values[PORT_MOD_MAX_OPTIONS];
-    const char *applies; /* "restart": switching the mod on or off takes effect at the next start (its start patches
-                          * the game, or must run before the window opens); NULL or "live": the in-game menu switches
-                          * it live (on: its hotkeys registered and start called; off: its frame stops) */
+    const char *applies; /* "live": the in-game menu switches the mod on and off and changes its options while the
+                          * game runs (on, and an option changed: start, which must then be a setter the engine may
+                          * run again; off: stop); "restart": only at the next start (its start patches the game, or
+                          * must run before the window opens). NULL: "live" when the mod has no start, or a start and a
+                          * stop; else "restart". The registry (--print-mods) prints the value in force. */
+    void (*stop)(struct PortMod *mod); /* switched off live: undo what start set (the game's flag); NULL: none */
 } PortMod;
 
 #endif /* PSXSTACK_MODS_H */

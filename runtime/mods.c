@@ -76,7 +76,7 @@ void port_fast_forward_request(int on) {
 
 static PortMod ff_mod = { .id = "fast_forward", .version = "0.1", .options = ff_options,
                           .option_count = (int)(sizeof(ff_options) / sizeof(ff_options[0])), .start = ff_start,
-                          .frame = ff_frame };
+                          .frame = ff_frame, .applies = "live" }; /* off: port_mods_apply clears its request */
 
 /* ---- fast_loading (docs/RUNTIME.md "Faster loading"): runtime only, no game C. While it is enabled the CD's data
  * reads (psyq/libcd.c: ReadN/ReadS and CdRead without the XA bit) run at `speed` times the drive's rate with their
@@ -106,9 +106,18 @@ static void fl_start(struct PortMod *mod) {
     fl_frame(mod);
 }
 
+static void fl_stop(struct PortMod *mod) {
+    (void)mod;
+    if (fl_applied != 1) {
+        fl_applied = 1;
+        port_disc_fast_loading(1);
+        port_log("fast loading: off at frame %ld", port_frames);
+    }
+}
+
 static PortMod fl_mod = { .id = "fast_loading", .version = "0.1", .options = fl_options,
                           .option_count = (int)(sizeof(fl_options) / sizeof(fl_options[0])), .start = fl_start,
-                          .frame = fl_frame };
+                          .frame = fl_frame, .stop = fl_stop };
 
 /* ---- The registry: the runtime's fast_forward and fast_loading, then the game's mods (psxstack/game.h game_mods),
  * in that order for the settings, --print-mods and the manifests. */
@@ -280,8 +289,12 @@ static void mod_register_bindings(PortMod *mod) {
     }
 }
 
+/* A mod the menu cannot switch live (mods.h `applies`): said so, or a start it could not undo (no stop). */
 static int mod_restart_only(const PortMod *mod) {
-    return mod->applies != NULL && strcmp(mod->applies, "restart") == 0;
+    if (mod->applies != NULL) {
+        return strcmp(mod->applies, "restart") == 0;
+    }
+    return mod->start != NULL && mod->stop == NULL;
 }
 
 void port_mods_start(int active) {
@@ -307,29 +320,48 @@ void port_mods_start(int active) {
 
 /* The settings' `mods` section again, live (the in-game menu wrote the file; runtime/live.c, after
  * port_input_settings started the hotkey table over): every mod's values are re-read; a mod switched on gets its
- * hotkeys and its start, one switched off has its frame stop; a mod whose `applies` is "restart" keeps its state
- * (logged: the next start). Every enabled mod's bindings are registered again, since the table was. */
+ * hotkeys and its start, one switched off its stop (its frame stops), one that stays on with other values its start
+ * again (a setter: mods.h); a mod the menu cannot switch (mod_restart_only) keeps its state and its values, logged:
+ * the next start. Every enabled mod's bindings are registered again, since the table was. */
 void port_mods_apply(const PortJson *settings) {
-    int m, was[MODS_MAX];
+    int m, k, was[MODS_MAX];
+    double values[MODS_MAX][PORT_MOD_MAX_OPTIONS];
     for (m = 0; m < mods_count; m++) {
         was[m] = mods_all[m]->enabled;
+        for (k = 0; k < mods_all[m]->option_count; k++) {
+            values[m][k] = mods_all[m]->values[k].number;
+        }
     }
     port_mods_settings(settings);
     for (m = 0; m < mods_count; m++) {
         PortMod *mod = mods_all[m];
-        if (mod->enabled != was[m] && mod_restart_only(mod)) {
-            port_log("mods: %s %s at the next start (it applies at the start)", mod->id, mod->enabled ? "on" : "off");
+        int changed = 0;
+        for (k = 0; k < mod->option_count; k++) {
+            changed |= mod->options[k].type != PORT_MOD_BINDING && mod->values[k].number != values[m][k];
+        }
+        if (mod_restart_only(mod) && (mod->enabled != was[m] || (changed && was[m]))) {
+            port_log("mods: %s: %s at the next start (it applies at the start)", mod->id,
+                     mod->enabled != was[m] ? (mod->enabled ? "on" : "off") : "the new values");
             mod->enabled = was[m];
+            for (k = 0; k < mod->option_count; k++) {
+                mod->values[k].number = values[m][k];
+            }
+            if (!mod->enabled) {
+                continue;
+            }
         }
         if (!mod->enabled) {
             if (was[m]) {
                 port_log("mods: %s off", mod->id);
+                if (mod->stop != NULL) {
+                    mod->stop(mod);
+                }
             }
             continue;
         }
         mod_register_bindings(mod);
-        if (!was[m]) {
-            port_log("mods: %s on", mod->id);
+        if (!was[m] || changed) {
+            port_log("mods: %s %s", mod->id, was[m] ? "values changed" : "on");
             if (mod->start != NULL) {
                 mod->start(mod);
             }
@@ -454,10 +486,8 @@ void port_mods_print_registry(FILE *f) {
         const PortMod *mod = mods_all[m];
         fprintf(f, "%s\n  { \"id\": \"%s\", \"version\": \"%s\", \"kind\": \"builtin\", \"requires_port\": %d, ",
                 m ? "," : "", mod->id, mod->version, PSXSTACK_API);
-        if (mod_restart_only(mod)) {
-            fputs("\"applies\": \"restart\", ", f); /* the manifest says it too (docs/LAUNCHER.md "Mod manifest") */
-        }
-        fputs("\"options\": [", f);
+        /* the value in force (mods.h: said, or from the callbacks); a manifest with "applies" says the same */
+        fprintf(f, "\"applies\": \"%s\", \"options\": [", mod_restart_only(mod) ? "restart" : "live");
         for (k = 0; k < mod->option_count; k++) {
             const PortModOption *o = &mod->options[k];
             fprintf(f, "%s\n    { \"id\": \"%s\", \"type\": \"%s\", \"default\": %s, \"applies\": \"%s\"", k ? "," : "",

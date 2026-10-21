@@ -4,6 +4,7 @@
   "name": "Fast-forward",
   "version": "0.1",
   "kind": "builtin",
+  "applies": "live",
   "requires_port": 1,
   "description": "Runs the game faster while a key is held, or until it is pressed again. The game itself is unchanged: only the wall clock is faster.",
   "options": [
