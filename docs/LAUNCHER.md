@@ -62,7 +62,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
   "input": {
     "keyboard": { "cross": "X", "start": ["Return", "Keypad Enter"] },
     "gamepad":  { "cross": "south", "up": ["dpup", "lefty-"] },
-    "hotkeys":  { "pause": "P", "fullscreen": "F11" }
+    "hotkeys":  { "pause": "P", "fullscreen": "F11", "save_state": "F5", "load_state": "F9" }
   },
   "mods": {
     "fast_forward":   { "enabled": true, "hold": "Tab" },
@@ -129,7 +129,9 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
   L2/R2, the D-pad and the left stick the D-pad. The launcher mirrors these defaults for display
   (`launcher/src/input.cpp`).
 - **`hotkeys`**: the port's own actions -> a binding. Actions: `pause` (default `"P"`), `fullscreen` (default
-  `"F11"`). A mod's bindings are its options, under `mods.<id>`, not here.
+  `"F11"`), `save_state` (default `"F5"`: the whole game to the quick slot, `quick.state` beside this file) and
+  `load_state` (default `"F9"`: on from the slot; docs/RUNTIME.md "Save states"). A mod's bindings are its options,
+  under `mods.<id>`, not here.
 - **A binding** is a string or a list; each element is one trigger, any of which fires the action (at most 8). A
   trigger is one input (a string) or a chord (a list of 1 to 4 inputs, all held). An input is a key name, or `"pad:"`
   + a gamepad input name. `""` or `[]`: unbound. Examples: `"F2"`; `["F2", "pad:guide"]`;

@@ -34,6 +34,16 @@ void port_script_state(PortState *s);    /* script.c: the script's progress (res
 void port_fiber_state(PortState *s);     /* fiber.c: the fiber table and every suspended fiber's stack */
 
 /* ---- The runtime's side (savestate.c) */
+/* The quick slot (the save_state and load_state hotkeys, pump.c; docs/LAUNCHER.md "Input bindings"): one file,
+ * main.c's --quick-state FILE (default quick.state beside the settings file, or in the current directory).
+ * port_savestate_quick_save: while the game runs (paused 0) the slot is written at this vsync's end (the capture
+ * point); while paused (1), now, as of the last vsync's end. port_savestate_quick_load: the slot read and checked
+ * now; 1 when it is ready to apply (the caller ends its pause, if any, and calls port_savestate_load_request). Neither
+ * is fatal: a slot that cannot be written, or was saved by another binary, is logged and the game goes on. */
+void port_savestate_quick_path(const char *path);
+const char *port_savestate_quick_get(void);
+void port_savestate_quick_save(int paused);
+int port_savestate_quick_load(void);
 /* Options (main.c): --save-state WHEN:FILE (WHEN a frame number, or a script checkpoint's name: the end of the frame
  * in which it ran; repeatable; 0 when malformed), --save-state-exit (exit 0 once every save is written),
  * --load-state FILE. port_savestate_wanted: any of them. */

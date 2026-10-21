@@ -147,13 +147,14 @@ void port_input_frame(void);
 
 /* ---- input.c: the settings' input section and the hotkey actions (docs/LAUNCHER.md "Input bindings") ----
  * port_input_settings: the pad map (the defaults, then `input.keyboard`/`input.gamepad`) and the port's own actions
- * (`input.hotkeys`: pause, fullscreen); `input` may be NULL (the defaults: the bare binary). Before port_input_init.
+ * (`input.hotkeys`: pause, fullscreen, save_state, load_state); `input` may be NULL (the defaults: the bare binary).
+ * Before port_input_init.
  * port_input_action: registers an action with its `binding` (a PortJson in the settings' binding grammar; NULL: `default_json`, the
  * same grammar as JSON text) and returns its id; a bad binding fails the settings naming `where`. pressed: a trigger
  * completed at this vsync's poll; held: a trigger is complete. Both 0 headless and during --input-test.
  * port_input_poll_paused: the events and the actions only, nothing to the pad (pump.c's pause). */
 struct PortJson;
-extern int port_action_pause, port_action_fullscreen;
+extern int port_action_pause, port_action_fullscreen, port_action_save_state, port_action_load_state;
 void port_input_settings(const struct PortJson *input);
 int port_input_action(const char *name, const struct PortJson *binding, const char *where, const char *default_json);
 void port_input_check_binding(const struct PortJson *binding, const char *where); /* fails the settings if bad */

@@ -354,7 +354,8 @@ static void test_input(const std::string &root) {
     Settings d;
     check(d.keys_for("start") == std::vector<std::string>({ "Return", "Keypad Enter" }) &&
               d.pad_for("up") == std::vector<std::string>({ "dpup", "lefty-" }) &&
-              d.hotkey_for("fullscreen") == Binding({ { "F11" } }),
+              d.hotkey_for("fullscreen") == Binding({ { "F11" } }) && d.hotkey_for("save_state") == Binding({ { "F5" } }) &&
+              d.hotkey_for("load_state") == Binding({ { "F9" } }),
           "the defaults");
     for (const PadButton &pb : pad_buttons()) {
         for (const std::string &k : d.keys_for(pb.id)) {

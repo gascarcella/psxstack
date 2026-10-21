@@ -62,6 +62,8 @@ const std::vector<HotkeyAction> &hotkey_actions() {
     static const std::vector<HotkeyAction> actions = {
         { "pause", "Pause", "Stops and resumes the game" },
         { "fullscreen", "Fullscreen", "Switches between the window and the full screen" },
+        { "save_state", "Save state", "Saves the whole game to the quick slot (quick.state beside the settings file)" },
+        { "load_state", "Load state", "Goes on from the quick slot (saved by this same build of the game)" },
     };
     return actions;
 }
@@ -72,6 +74,12 @@ Binding default_hotkey(const std::string &action) {
     }
     if (action == "fullscreen") {
         return { { "F11" } };
+    }
+    if (action == "save_state") {
+        return { { "F5" } };
+    }
+    if (action == "load_state") {
+        return { { "F9" } };
     }
     return {};
 }

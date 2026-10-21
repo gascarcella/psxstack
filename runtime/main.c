@@ -56,7 +56,8 @@ static void usage(const char *argv0) {
             "          [--subpixel off|on|perspective]\n"
             "          [--filter NAME[:KEY=V,...]]\n"
             "          [--spu-trace FILE] [--wav FILE] [--mute] [--debug SOCKET] [--debug-hold] [--crash-dir DIR]\n"
-            "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--version]\n"
+            "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--quick-state FILE]\n"
+            "          [--version]\n"
             "  --config JSON    the settings file (docs/LAUNCHER.md; what the launcher starts the game\n"
             "                   with): the disc, the window, the memory cards (default card1.mcd and card2.mcd beside\n"
             "                   the file), the watchdog (default off); the options below override it\n"
@@ -86,8 +87,9 @@ static void usage(const char *argv0) {
             "  --trace          log every tick, overlay resolve and Psy-Q stub call\n"
             "  --window         show the display in a window (SDL3; a build with -DPSXSTACK_SDL=ON), real time;\n"
             "                   keys: arrows, X cross, C circle, Z square, S triangle, Enter START, Backspace SELECT,\n"
-            "                   Q/E L1/R1, 1/3 L2/R2, F11 fullscreen, P pause; gamepads too (runtime/input.c;\n"
-            "                   rebindable in the settings); with --script the script owns the pad\n"
+            "                   Q/E L1/R1, 1/3 L2/R2, F11 fullscreen, P pause, F5/F9 save/load the quick state;\n"
+            "                   gamepads too (runtime/input.c; rebindable in the settings); with --script the\n"
+            "                   script owns the pad\n"
             "  --scale N        the window's size: 320*N x 240*N (default 2; implies --window)\n"
             "  --fullscreen     a fullscreen window (implies --window)\n"
             "  --fps N          the window's pace and the nominal rate: N vsyncs per second (default "
@@ -132,6 +134,8 @@ static void usage(const char *argv0) {
             "  --save-state-exit  exit 0 once every --save-state is written\n"
             "  --load-state F   start from the state F instead of the power-on: the same binary only; with the\n"
             "                   script that saved it, the script goes on from there\n"
+            "  --quick-state F  the quick slot the save_state (F5) and load_state (F9) hotkeys use in window mode\n"
+            "                   (default quick.state beside the settings file, or in the current directory)\n"
             "  --crash-dir DIR  where a crash report goes (crash-<time>.txt; docs/PORT.md \"Crash report\"); default:\n"
             "                   the current directory\n"
             "  --version        print the build's version and commit, and exit\n",
@@ -164,6 +168,7 @@ int main(int argc, char **argv) {
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
     int subpixel = 1, no_game = 0;
     const char *config = NULL;
+    const char *quick_state = NULL;
     PortFilter filter = PORT_FILTER_DEFAULTS;
     int print_settings = 0, print_mods = 0, script_mods = 0;
     long fps = -1;
@@ -275,6 +280,8 @@ int main(int argc, char **argv) {
             port_savestate_set_exit();
         } else if (strcmp(argv[i], "--load-state") == 0 && i + 1 < argc) {
             port_savestate_set_load(argv[++i]);
+        } else if (strcmp(argv[i], "--quick-state") == 0 && i + 1 < argc) {
+            quick_state = argv[++i];
         } else if (strcmp(argv[i], "--crash-dir") == 0 && i + 1 < argc) {
             crash_dir = argv[++i];
         } else if (strcmp(argv[i], "--version") == 0) {
@@ -491,8 +498,22 @@ int main(int argc, char **argv) {
                                         * accepts the client there (pump.c port_pause) */
         }
     }
-    if (port_savestate_wanted() || debug != NULL) {
-        port_savestate_arm(port_savestate_wanted()); /* the game on its own stack: a state can hold it (savestate.c) */
+    if (window) {
+        /* the quick slot (the save_state/load_state hotkeys): beside the settings file, as the memory cards */
+        if (quick_state == NULL && config != NULL) {
+            size_t n = strlen(port_settings.dir);
+            char *p = malloc(n + 2 + sizeof("quick.state"));
+            if (p == NULL) {
+                port_fatal("out of memory");
+            }
+            sprintf(p, "%s%squick.state", port_settings.dir, n > 0 && port_path_is_sep(port_settings.dir[n - 1]) ? "" : "/");
+            quick_state = p;
+        }
+        port_savestate_quick_path(quick_state != NULL ? quick_state : "quick.state");
+    }
+    if (port_savestate_wanted() || debug != NULL || window) {
+        /* the game on its own stack: a state can hold it (savestate.c); a window's run for the hotkeys' quick slot */
+        port_savestate_arm(port_savestate_wanted());
     }
     port_pump_init();
     port_log("start: max-frames %ld, watchdog %d s, %ld Hz", port_max_frames, port_watchdog_sec, port_rate);
