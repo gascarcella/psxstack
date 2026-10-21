@@ -31,8 +31,9 @@ checkout beside this repo links its built tools instead of building them: `scrip
 ../dw2003recomp/tools`. For a desktop window, SDL3 needs the X11/Wayland `-dev` headers at its build (`scripts/setup.sh
 sdl3`); without them only the offscreen driver exists (the self-test's).
 
-Two files of the runtime are compiled into the launcher as they are, never changed for it: `runtime/json.c` (the
-strict JSON reader) and `runtime/sha1.c`.
+Three files of the runtime are compiled into the launcher as they are, never changed for it: `runtime/json.c` (the
+strict JSON reader), `runtime/sha1.c` and `runtime/sha256.c` (a downloaded release's check; `tests/sha256_test.py`
+tests it on its own).
 
 **Windows:** `cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/windows-x86_64.cmake
 -DCMAKE_BUILD_TYPE=Release` after `scripts/setup.sh llvm-mingw sdl3-windows imgui`: `<id>-launcher.exe` and its PDB.
@@ -196,6 +197,22 @@ Later, the Release page, Skip and a newer release after it, the setting off with
 prompt waiting for a running game, curl missing, a cut answer, a development build and a description without a
 repository (pictures of the Settings screen's part).
 
+The self-update (`selftest_update.cpp`, in `DIR/launcher-self-test/update/`, no network): SHA-256 of fixture files (the
+FIPS 180-4 examples) and the digest check (right, capitals, wrong, malformed, missing file); the plan's answers (no
+`$APPIMAGE`, an image that is gone, a folder without the launcher, no tar, a tar path that names nothing, a read-only
+folder, the PATH search over an empty directory); the AppImage swap with a copy of the launcher as the image and as the
+new one (a wrong digest and a folder turned read-only change nothing; then the new image is in place and runs, which it
+can only if it was made executable); the Windows folder swap on a fake install from a zip (on Linux too: the same file
+operations with the Linux names), where a wrong digest, a file tar cannot read, a zip without the game, a missing tar, a
+file where the release has a folder and a move that fails halfway (POSIX: a read-only subfolder) each leave the install
+byte for byte as it was, then the swap (the release's files in, the user's files kept, the old launcher as `.old`) and
+the cleanup; and **the running launcher**: a copy of the launcher in a fixture folder applies a release to its own folder
+(its running executable renamed to `.old`), starts the new one and exits, and the new one removes the `.old` at its
+start. The zips are made and read by `$<PREFIX>_SELFTEST_TAR` (CI's Linux job: bsdtar), else bsdtar on PATH or
+Windows' tar.exe, else the launcher itself as a stand-in tar (stored zips): Wine has no tar.exe, and a Unix bsdtar
+started from Wine is neither waited for nor gives its status, so under Wine the folder swap runs with the stand-in.
+The read-only cases are POSIX only (a Windows folder's read-only flag does not stop writes).
+
 Optional, with a game and its disc: `<PREFIX>_SELFTEST_DISC=path/to/game.cue` also checks the real disc;
 `<PREFIX>_SELFTEST_GAME=path/to/<id>` also probes the real game and, with the disc, runs it 300 frames from the
 launcher's command (offscreen, unthrottled), which must end with status 0 and the disc checked. The file it probes has
@@ -226,7 +243,9 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/input.cpp`, `input.h` | The PS1 buttons, the game's default bindings, the binding grammar, the input prompt |
 | `src/mods.cpp`, `mods.h` | The manifests (reading, checking), the user's values in `mods.<mod id>` |
 | `src/paths.cpp`, `paths.h` | Paths and files through SDL's calls only (no POSIX; `/` and `\` and drive letters alike) |
+| `src/update_apply.cpp`, `update_apply.h` | A downloaded release applied: the plan, the SHA-256 check, the AppImage and Windows folder swaps, the relaunch, the cleanup at start (docs/LAUNCHER.md "Applying one") |
 | `src/selftest.cpp`, `selftest.h` | The self-test; `tests/fixtures/mods/` its manifests and `tests/fixtures/updates/` GitHub's answers, compiled in by CMake |
+| `src/selftest_update.cpp` | The self-test's part for `update_apply`, its child processes and its stand-in tar |
 | `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
 | `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |

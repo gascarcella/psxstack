@@ -22,7 +22,7 @@ Code cites this file as `docs/LAUNCHER.md "<heading>"`; keep the headings stable
   watchdog off.
 - The disc's SHA-1 check stays the game's (the runtime's `disc.c`, `sha1.c`), against the discs the description lists.
   The launcher compiles `runtime/sha1.c` and `runtime/json.c` in as they are, to verify the disc before storing it and
-  to read JSON with the same parser.
+  to read JSON with the same parser, and `runtime/sha256.c` to verify a downloaded release ("Applying one").
 - Exit statuses the launcher reports: 0 normal, 1 a fatal error, 4 the watchdog, 64 bad options or settings, a
   signal; on Windows an unhandled exception's code instead of a signal (`0xC0000005` an access violation, ..., named
   by `game_exit_text`), and `abort()` is status 3 there too. On any of them but 0 the game may have written a crash
@@ -313,6 +313,43 @@ does not download the package itself: its action is the release's page in the br
   without it; **Release page** then opens the repository's latest release), no network (curl's own error), an HTTP
   error (404: the repository has no release; 403: GitHub's limit of 60 requests an hour from one address without an
   account), an answer that is not a release (not JSON, no tag, a tag that is not `vX.Y.Z`).
+
+### Applying one
+
+How a downloaded release replaces the running install (`launcher/src/update_apply.{h,cpp}`); the download and the
+prompt are the caller's. Every step that fails leaves the old install as it was and says what failed: a damaged
+download, a folder that is not writable, no tar, a zip tar cannot read, a zip without the two executables, a file where
+the release has a folder, a move that did not happen. The user's data is never in the install (settings, cards, logs,
+crash reports and data mods are in the settings directory, "Settings directory").
+
+- **The plan** (`update_plan`) comes first, before anything is downloaded, so the UI can say whether the launcher can
+  update itself or must send the player to the release page:
+  - Linux: only from an AppImage, the running image `$APPIMAGE` (set by the AppImage runtime), in a writable folder.
+    A development or unpacked build has no self-update.
+  - Windows: the launcher's folder holds `<id>-launcher.exe` and is writable, and a tar was found:
+    `%SystemRoot%\System32\tar.exe` first (bsdtar, Windows 10 1803 and later), then `tar.exe` on PATH (a GNU tar
+    there, such as Git's, reads no zip).
+  - The download goes into the settings directory: `<id>-update.AppImage` or `<id>-update.zip`.
+- **The check**: the file's SHA-256 (`runtime/sha256.c`, read in chunks) against the asset's `digest` in GitHub's
+  release API, `sha256:<hex>`, before anything is touched; `update_apply` checks it again itself.
+- **AppImage**: the new image is copied beside the running one as `.<name>.update` (the same filesystem; the download
+  may be on another), made executable and renamed over the old one: one rename, so the folder holds either image
+  whole. The running launcher keeps the old image mounted until it exits.
+- **Windows folder**: the staging folder is `<id>-update.tmp\` inside the install folder (the same volume, so every
+  move is a rename). The zip is copied there and unpacked with `tar -xf package.zip -C new` in that folder (relative
+  paths only). The release is the zip's one top folder (`<id>-<version>-windows-x86_64\`, the package's layout) or its
+  top, and must hold `<id>-launcher.exe` and `<id>.exe`. Each of its files then replaces the install's: the running
+  `<id>-launcher.exe` cannot be overwritten but can be renamed, so it becomes `<id>-launcher.exe.old`; every other
+  replaced file (the game is not running) moves into the staging folder's `old\` first. Missing folders are created;
+  files the release does not have (a mod the player added beside the game, notes) stay. The moves are journaled: a
+  failure moves everything back (should that fail too, the staging folder keeps what could not be put back and the
+  message says where). At the end the staging folder goes, the replaced files with it.
+- **The relaunch**: the new launcher (the image; `<id>-launcher.exe`) is started detached with the arguments the
+  caller passes (its own, such as `--config-dir`), the download is removed, and the caller exits at once. When the
+  start fails the update stays and the message asks the player to start the launcher again.
+- **At start** (`update_cleanup_at_start`, from `main()`): a `<id>-launcher.exe.old` beside the launcher is removed
+  (retried for about a second while the old launcher exits; else at the next start), and so are a stale staging folder
+  (unless its `old\` holds files: a failed rollback's) and an AppImage's leftover temporary file.
 
 ## In-game menu
 

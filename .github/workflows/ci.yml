@@ -105,8 +105,12 @@ jobs:
           echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
       - name: Build
         run: cmake -S launcher -B build/launcher -G Ninja && cmake --build build/launcher
+      # The self-update's folder swap unpacks its zips with bsdtar, as Windows' tar.exe is (GNU tar reads no zip);
+      # DW3_SELFTEST_TAR makes the self-test use it rather than its stand-in.
+      - name: bsdtar
+        run: command -v bsdtar || (sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libarchive-tools)
       - name: Self-test (offscreen)
-        run: SDL_VIDEO_DRIVER=offscreen build/launcher/dw2003-launcher --self-test build/selftest
+        run: SDL_VIDEO_DRIVER=offscreen DW3_SELFTEST_TAR="$(command -v bsdtar)" build/launcher/dw2003-launcher --self-test build/selftest
       - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's picture (tests/hello_test.py --menu)"
         run: python3 tests/hello_test.py --menu
       - name: Self-test pictures
@@ -155,6 +159,8 @@ jobs:
           cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" \
                 -DCMAKE_BUILD_TYPE=Release
           cmake --build build/launcher-win
+      # Wine has no tar.exe (and a Unix bsdtar started from Wine is not waited for), so the self-update's folder swap
+      # runs there with the self-test's stand-in tar: the moves, the running launcher renamed to .old, the relaunch.
       - name: Self-test under Wine
         run: |
           mkdir -p build/selftest-win

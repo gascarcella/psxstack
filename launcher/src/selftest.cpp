@@ -23,6 +23,7 @@
 #include "paths.h"
 #include "settings.h"
 #include "update.h"
+#include "update_apply.h"
 
 namespace psxstack {
 
@@ -694,6 +695,9 @@ int self_test_fake_game(const char *mode, int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         config |= std::strcmp(argv[i], "--config") == 0;
         print |= std::strcmp(argv[i], "--print-settings") == 0;
+    }
+    if (std::strcmp(mode, "update") == 0) { // the self-update's child processes (selftest_update.cpp)
+        return self_test_update_child(argc, argv);
     }
     if (std::strcmp(mode, "old") == 0) { // a game before --config: rejects it like any unknown option
         if (config) {
@@ -1966,6 +1970,7 @@ bool self_test_run(const std::string &dir) {
     test_update_rules();
     test_update_settings(path_join(root, "update-settings"));
     test_http(path_join(root, "http"));
+    self_test_update(path_join(root, "update"), &checks, &failures);
     test_window(root);
     std::fprintf(stderr, "self-test: %d of %d checks passed; pictures in %s\n", checks - failures, checks,
                  path_join(root, "screens").c_str());

@@ -12,6 +12,7 @@
 #include "brand.h"
 #include "selftest.h"
 #include "settings.h"
+#include "update_apply.h"
 
 static void usage(const char *argv0) {
     std::fprintf(stderr,
@@ -58,6 +59,7 @@ int main(int argc, char **argv) {
     if (!self_test.empty()) {
         return psxstack::self_test_run(self_test) ? 0 : 1;
     }
+    psxstack::update_cleanup_at_start(); // what a self-update left behind (docs/LAUNCHER.md "Applying one")
 
     psxstack::SettingsDir location = psxstack::settings_dir_choose(psxstack::dir_lookup_from_system(config_dir));
     if (location.dir.empty()) {
