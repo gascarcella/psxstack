@@ -68,7 +68,7 @@ launcher and the game's adapter use by these exact names:
 | Macro | Value |
 |---|---|
 | `PSXSTACK_GAME_ID`, `PSXSTACK_GAME_ID_UPPER`, `PSXSTACK_GAME_TITLE` | `id` (and upper-cased), `title`, as string literals |
-| `PSXSTACK_GAME_ENV_PREFIX` | `env_prefix`, default `id` upper-cased; the launcher's variables are `<PREFIX>_GAME`, `<PREFIX>_CONFIG_DIR`, `<PREFIX>_LAUNCHER_FAKE_GAME`, `<PREFIX>_LAUNCHER_FAKE_CURL`, `<PREFIX>_SELFTEST_DISC`, `<PREFIX>_SELFTEST_GAME`, `<PREFIX>_SELFTEST_VIDEO_DRIVER` |
+| `PSXSTACK_GAME_ENV_PREFIX` | `env_prefix`, default `id` upper-cased; the launcher's variables are `<PREFIX>_GAME`, `<PREFIX>_CONFIG_DIR`, `<PREFIX>_LAUNCHER_FAKE_GAME`, `<PREFIX>_LAUNCHER_FAKE_CURL`, `<PREFIX>_LAUNCHER_UPDATE_NOW`, `<PREFIX>_SELFTEST_DISC`, `<PREFIX>_SELFTEST_GAME`, `<PREFIX>_SELFTEST_VIDEO_DRIVER` |
 | `PSXSTACK_GAME_RATE`, `PSXSTACK_GAME_RATE_COUNT`, `PSXSTACK_GAME_RATES`, `PSXSTACK_GAME_RATE_NOTE` | The nominal rate (50 or 60), the rates offered (an `int` array initializer, the nominal one among them), the note shown for a rate other than the nominal (`""` when none) |
 | `PSXSTACK_GAME_RAM_BASE`, `PSXSTACK_GAME_RAM_SIZE` | `memory.ram`, as `u` constants |
 | `PORT_SLOT_COUNT`; `PORT_SLOT<n>_BASE`, `PORT_SLOT<n>_SIZE`, `PORT_SLOT<n>_NAME` for n = 1.. | `memory.slots`, in order: slot n is `tier` n in the hook macros |

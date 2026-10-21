@@ -153,12 +153,28 @@ When the description names the game's GitHub repository (`launcher.updates.githu
 latest release at start, on a worker thread (`src/update.cpp`; docs/LAUNCHER.md "Updates"), through the system's
 `curl` run as a child process (`src/http.cpp`: Linux and Windows alike; Windows 10 1803 and later ship `curl.exe`).
 A release newer than the launcher's version stamp (an exact `X.Y.Z`: a development build is only told the latest)
-brings up a prompt over the Play screen, never while the game runs: **Release page** (the browser), **Later**
-(Escape), **Skip this version** (`launcher.updates.skipped`: not offered again, a newer one is). The Settings screen
-has the checkbox "Check for updates when the launcher starts", the launcher's version, the last check's result,
-**Check now** (whatever the checkbox says; it only reports) and **Release page**. `--no-update-check` skips the check
-at start for one run. Without curl the check says so, and **Release page** opens the repository's latest release.
-`$<PREFIX>_LAUNCHER_FAKE_CURL` names a program to run in curl's place (the self-test's stand-in).
+brings up a prompt over the Play screen, never while the game runs: **Update now** (the default), **Release page**
+(the browser), **Later** (Escape), **Skip this version** (`launcher.updates.skipped`: not offered again, a newer one
+is). The Settings screen has the checkbox "Check for updates when the launcher starts", the launcher's version, the
+last check's result, **Update now**, **Check now** (whatever the checkbox says; it only reports) and **Release page**.
+`--no-update-check` skips the check at start for one run. Without curl the check says so, and **Release page** opens
+the repository's latest release. `$<PREFIX>_LAUNCHER_FAKE_CURL` names a program to run in curl's place (the
+self-test's stand-in).
+
+**Update now** (`src/app.cpp` over `src/update_apply.cpp`; docs/LAUNCHER.md "Update now", "Applying one") is offered
+when the install can update itself: on Linux an AppImage (`$APPIMAGE`) in a writable folder, on Windows the release's
+folder, writable, with Windows' `tar.exe`; otherwise a line says why and Release page is the action. It downloads this
+platform's package into the settings directory with a progress bar and Cancel, checks its SHA-256 against the digest
+GitHub gives for the asset (none given: nothing is downloaded), swaps it in (the AppImage renamed over the old one; the
+folder's files moved in, the running launcher renamed to `.old` and removed at the next start), starts the new launcher
+with the same arguments and quits. A failure leaves the install as it was, removes the download and shows why, with
+Release page and Close.
+
+To try the whole flow against the real releases: build with an older stamp (`PSXSTACK_VERSION=v0.1.0 cmake --build
+...`), copy the launcher into a scratch folder as `<id>-0.1.0-x86_64.AppImage` and start it there with
+`APPIMAGE=<that file> <PREFIX>_LAUNCHER_UPDATE_NOW=1 SDL_VIDEO_DRIVER=offscreen ... --config-dir <scratch>/settings`:
+the check at start answers its prompt with Update now, and the log says each step. The new launcher runs detached with
+no output (and offscreen it stays up: stop it).
 
 ## Keys
 
@@ -195,7 +211,14 @@ version, a cut answer), `launcher.updates` in the file, `src/http.cpp` (a GET, c
 download with its progress, a cancel, a wrong size), then in the window: the prompt over Play (a picture), Escape as
 Later, the Release page, Skip and a newer release after it, the setting off with Check now, `--no-update-check`, the
 prompt waiting for a running game, curl missing, a cut answer, a development build and a description without a
-repository (pictures of the Settings screen's part).
+repository (pictures of the Settings screen's part). Then **Update now** in the window, the stand-in "downloading"
+fixture packages (`<PREFIX>_SELFTEST_CURL_DOWNLOAD` is its answer for a download, the release's JSON being the
+check's): the line instead of the button when the plan is not possible (no `$APPIMAGE`), the progress and Cancel on a
+slow download (no check started meanwhile, the file removed, the install unchanged), a wrong digest and a missing one
+(nothing applied, the message, Release page still works), the whole flow into a fake AppImage install (`$APPIMAGE` at a
+copy of the launcher; Enter presses Update now) and into a fake Windows folder (a copy of the launcher, the release's
+zip made with the self-update's tar), each ending with the new launcher (a marked copy) started with the arguments
+given and this one quitting, and the relaunched stamp not prompted again (pictures of the prompt's steps).
 
 The self-update (`selftest_update.cpp`, in `DIR/launcher-self-test/update/`, no network): SHA-256 of fixture files (the
 FIPS 180-4 examples) and the digest check (right, capitals, wrong, malformed, missing file); the plan's answers (no

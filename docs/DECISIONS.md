@@ -258,3 +258,11 @@ patched. Without curl the check says so and the launcher still offers the releas
 curl's output (`-w`'s HTTP status, the `curl: (N)` error line) rather than the exit status, which SDL does not give for
 a process created without a console window on Windows. An environment variable puts a stand-in in curl's place, so the
 self-test and CI never touch the network.
+
+The self-update (**Update now**, docs/LAUNCHER.md "Update now", "Applying one") trusts what the check trusts: the
+package is GitHub's release asset, downloaded over curl's TLS and checked against the SHA-256 `digest` GitHub's API
+gives for it (no digest: no update); there is no signature of our own to manage. It replaces only what the release
+ships, in place, the way each platform allows: the AppImage is one rename over the running image; on Windows the
+running launcher cannot be overwritten but can be renamed (`.old`, removed at the next start), the zip is unpacked
+with Windows' own `tar.exe` (no unzip code of ours), and every move is journaled and undone on a failure. Where that is
+not possible (a development build, an unwritable folder, no tar) the launcher says why and offers the release page.

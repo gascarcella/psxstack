@@ -282,8 +282,11 @@ directory's `mods/` in priority order, "Data mods"). Build, run, details and the
 ## Updates
 
 A game whose description names its GitHub repository (`launcher.updates.github`, GAME_CONTRACT.md "1. game.json") gets
-an update check in the launcher; without one there is no network call and nothing of it on the screens. The launcher
-does not download the package itself: its action is the release's page in the browser.
+an update check in the launcher; without one there is no network call and nothing of it on the screens. In order:
+the check at start finds a newer release ("The check"), a prompt offers it, **Update now** downloads this platform's
+package and verifies it ("Update now"), and the package replaces the install and the new launcher starts ("Applying
+one"). Where the launcher cannot update itself (a development build, a folder it cannot write), the prompt's action is
+the release's page in the browser.
 
 ### The check
 
@@ -300,19 +303,49 @@ does not download the package itself: its action is the release's page in the br
   `<id>-<version>-windows-x86_64.zip`), is kept with its size, URL and SHA-256 (the asset's `digest`); a release
   without it is still reported.
 - **The prompt:** when the check at start finds a newer release, a modal over the Play screen (never while the game
-  runs; it waits until the game has ended): "<title> X.Y.Z is available (you have A.B.C)." with **Release page** (the
-  release's page in the browser), **Later** (or Escape: asked again at the next start) and **Skip this version**
-  (writes `launcher.updates.skipped`: that release and older ones are not offered again, a newer one is). Check now
-  only reports, on the Settings screen.
+  runs; it waits until the game has ended): "<title> X.Y.Z is available (you have A.B.C)." with **Update now** (first,
+  the default: Enter; only when this install can update itself, "Update now"), **Release page** (the release's page in
+  the browser), **Later** (or Escape: asked again at the next start) and **Skip this version** (writes
+  `launcher.updates.skipped`: that release and older ones are not offered again, a newer one is). When the install
+  cannot update itself, a line says why ("This build cannot update itself. ..."; the plan's reason, "Applying one")
+  and Release page is the action. Check now only reports, on the Settings screen.
 - **The Settings screen** ("Updates"): the checkbox "Check for updates when the launcher starts"
   (`launcher.updates.check`), the launcher's version, the last check's result and time, the skipped release
-  (**Forget** clears it), **Check now** and **Release page**. The launcher's window only: the shared Settings screen
+  (**Forget** clears it), **Update now** when a newer release was found and the install can update itself (else the
+  line saying why), **Check now** and **Release page**. The launcher's window only: the shared Settings screen
   (`launcher/ui/screens.cpp`) leaves a place after "Memory cards" that its host fills (`Screens::set_settings_extra`),
   and the in-game menu fills none, so the game's menu has no update check.
 - **Failures** are reported in words and never retried by themselves: curl missing (Windows 10 before 1803, a Linux
   without it; **Release page** then opens the repository's latest release), no network (curl's own error), an HTTP
   error (404: the repository has no release; 403: GitHub's limit of 60 requests an hour from one address without an
   account), an answer that is not a release (not JSON, no tag, a tag that is not `vX.Y.Z`).
+
+### Update now
+
+On the main loop, polled each frame like the disc check (`launcher/src/app.cpp`); never while the game runs, and no
+update check is started while it goes on (Check now is disabled).
+
+1. **The plan** (`update_plan(update_system(), <settings dir>)`, made when the launcher starts and again at the press):
+   whether this install can update itself and where the package goes ("Applying one"). Not possible: the line instead
+   of the button. The release must also have this platform's package, and GitHub must give its `digest`: without one
+   nothing is downloaded (a download that cannot be verified is never applied) and the prompt says so.
+2. **The download:** the release asset's `browser_download_url` through curl to the plan's file in the settings
+   directory (`HttpDownload`: the asset's size is the expected one, a different size is a failure), with a progress bar
+   in the prompt ("1.7 of 5.5 MB") and **Cancel** (or Escape), which kills curl, removes the partial file and closes
+   the prompt as Later.
+3. **The check:** `update_verify` of the file against `sha256:<the asset's digest>`.
+4. **The swap** (`update_apply` with the plan, the file, the digest and the launcher's own arguments, argv without
+   the program's name: `--config-dir`, `--game`, `--no-update-check` as given). The settings are saved first. When it
+   started the new launcher (`exit_now`), this one quits through its normal path. The new launcher is not prompted
+   again: its version stamp is the release it installed, so its check finds nothing newer.
+
+A failure at any step (curl's error, a wrong size, a digest that does not match, the swap's own failures) leaves the
+old install as it was, removes the downloaded file and shows the message in the prompt with **Release page** and
+**Close** (Escape); Update now can be pressed again from the Settings screen. If the swap succeeded but the new
+launcher could not be started, the prompt says so (the update is in place; start the launcher again).
+
+`$<PREFIX>_LAUNCHER_UPDATE_NOW=1` makes the check at start answer its own prompt with Update now: for a test run of
+the whole flow against the real releases (launcher/README.md "Updates").
 
 ### Applying one
 
