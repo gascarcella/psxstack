@@ -182,7 +182,7 @@ live in the settings file, never in the manifest.
 | `kind` | yes | `builtin` (code in the game, from the game's build) or `data` (files: "Data mods") |
 | `textures` | data mods | `{ "dir": "textures", "filter": "linear" }`, both optional: the mod is a texture pack (RUNTIME.md "Texture packs"), its PNGs under `dir`, filtered `linear` or `nearest` |
 | `requires_port` | no | Integer: the stack's mod interface the mod needs (`PSXSTACK_API`, GAME_CONTRACT.md "Compatibility and versions"; 1 now) |
-| `applies` | no | `live` (default) or `restart`: whether the in-game menu can switch the mod on or off while the game runs ("In-game menu"); `restart` for a mod whose `start` patches the game or must run before the window opens, and the record's `applies` says the same |
+| `applies` | no | `live` (default) or `restart`: whether the in-game menu can switch the mod on or off and change its options while the game runs ("In-game menu"); `restart` for a mod whose `start` patches the game or must run before the window opens. The registry prints the value in force (a `PortMod` with a `start` and no `stop` is `restart` unless it says `live`), so a manifest that names it must agree |
 | `options` | no | A list of options |
 | `presets` | no | A list of presets: `{ "id", "name", "description" (optional), "values": { "<option id>": value } }`. The launcher shows a button per preset (pressed while all its values are in place) that sets those values; the game never sees a preset, only the values |
 
@@ -256,6 +256,10 @@ with it.
    `port_overlay_init()` (the reset's snapshot); a later write breaks the reset check and is undone by a reset.
 5. A run with a mod on needs its own expected results: a game's random generator usually steps once a frame, so any
    skipping shifts later rolls (as a faster player would).
+6. **`start` is a setter and `stop` undoes it** ("In-game menu"): `start` sets the mod's `port_mod_*` flag and reads
+   its options into the runtime's variables, and the engine may run it again when the options change in the menu;
+   `stop` clears the flag (and anything else `start` set). A mod with a `start` and no `stop`, or whose `start` must
+   run before the window opens (widescreen), says `applies: "restart"` (the engine assumes it) and the menu marks it.
 
 **The pace split** (the runtime's `pump.c`): `port_rate` is the nominal rate (50 or 60: the vsyncs per second the game
 is made for, which sets the audio's samples per vsync); the pace (`port_pace_set`; 0 = unthrottled) is the wall
@@ -302,7 +306,8 @@ at a time), where leaving the game for the launcher's window is a chore.
   runtime then re-reads the file and applies it (`runtime/live.c` `port_live_apply`): the window's scale and
   fullscreen, the hardware renderer's filter and sub-pixel mode, `audio.mute`, the pad map and every hotkey (the
   table starts over, the enabled mods' bindings registered again) and the mods (`port_mods_apply`: one switched on
-  gets its hotkeys and its `start`, one switched off has its `frame` stop, its options re-read). What waits for the
+  gets its hotkeys and its `start`, one switched off its `stop`, one that stays on with other values its `start`
+  again, since a mod's `start` is a setter: "Mod runtime" rule 6). What waits for the
   next start is marked **(restart)** on the page: the disc, the renderer and its internal scale, the rate, the memory
   cards, the data mods, and a mod whose manifest says `"applies": "restart"` ("Mod manifest"). A file that does not
   read back is logged and changes nothing. A game started without `--config` has the Game page alone; one the

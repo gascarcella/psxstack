@@ -4,6 +4,7 @@
   "name": "Faster loading",
   "version": "0.1",
   "kind": "builtin",
+  "applies": "live",
   "requires_port": 1,
   "description": "Makes the CD drive read the game's files faster, so loads between screens are shorter. Movies and their sound keep the drive's normal speed. The game runs fewer frames while it loads, so later random events can differ from a run without the mod.",
   "options": [
