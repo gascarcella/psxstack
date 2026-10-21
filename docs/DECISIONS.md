@@ -221,3 +221,14 @@ and every shared library. The state starts at 0, not C's 1 (on the PS1 it is in 
 game's emulator records are a few million draws from 0, over a billion from 1), is cleared by the console's reset and
 held by save states; a game's adapter reads it through `port_rand_seed()` (`hooks.h`), the runtime's `port_*` like
 the other calls an adapter makes.
+
+## Faster loading: the data reads only; movies keep the drive's rate (2026-10-21)
+A faster drive is a runtime mod (`fast_loading`, beside fast_forward: no game code, every game gets it) rather than a
+setting, so the launcher shows and explains it like the other mods. It speeds up the data reads only (ReadN/ReadS
+and CdRead without the XA bit), and `--cd-speed instant` now does the same: the movie stream and the reads with the
+XA bit keep the realistic drive. A movie player shows the frames as the drive delivers them and the SPU's CD input
+plays the XA audio as it arrives, so a faster drive ran the video at the decoder's speed and overflowed the XA FIFO
+(the first game's title demo: 1,784 stream frames where the drive gives 483 in the same vsyncs, 3.6 M audio frames
+dropped). Emulators that offer a read speed-up likewise leave audio reads at 1x. The mod changes the game's run (a
+load ends in fewer vsyncs) where fast-forward only changes the wall clock; the frame log of a run without it is
+unchanged.

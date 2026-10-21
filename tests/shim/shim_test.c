@@ -435,6 +435,37 @@ static void test_cd(void) {
               buf[3 * 2048] == 0, "CdRead: 3 sectors in %d ticks (the seek, then 3 a tick at double speed)", t);
         check(CdReadSync(0, NULL) == 0, "CdReadSync(0) after the end: 0");
     }
+    /* the data reads' timing (the fast_loading mod; --cd-speed instant): 6 sectors far from the head, so the seek
+     * counts; the same read with the XA bit (0x40) keeps the drive's rate, whatever the timing */
+    {
+        static const struct { int timing, speed, mode; const char *what; } cases[] = {
+            { PSYQ_CD_REALISTIC, 1, 0x80, "realistic" },       { PSYQ_CD_REALISTIC, 4, 0x80, "data speed 4" },
+            { PSYQ_CD_INSTANT, 1, 0x80, "instant" },           { PSYQ_CD_REALISTIC, 4, 0xC0, "data speed 4, XA bit" },
+            { PSYQ_CD_INSTANT, 1, 0xC0, "instant, XA bit" },
+        };
+        static u8 six[6 * 2048];
+        int ticks[5], k;
+        for (k = 0; k < 5; k++) {
+            psyq_cd_set_timing(cases[k].timing);
+            psyq_cd_set_data_speed(cases[k].speed);
+            CdIntToPos(0, &loc);
+            CdControlB(0x02, (u8 *)&loc, NULL);
+            CdRead(1, (u32 *)six, 0x80);
+            CdReadSync(0, NULL); /* the head at sector 1 */
+            CdIntToPos(22, &loc);
+            CdControlB(0x02, (u8 *)&loc, NULL);
+            CdRead(6, (u32 *)six, cases[k].mode);
+            for (t = 0; CdReadSync(1, NULL) > 0 && t < 100; t++) {
+                psyq_vsync_tick();
+            }
+            ticks[k] = t;
+        }
+        psyq_cd_set_timing(PSYQ_CD_REALISTIC);
+        psyq_cd_set_data_speed(1);
+        check(ticks[1] < ticks[0] && ticks[2] <= ticks[1] && ticks[2] <= 1 && ticks[3] == ticks[0] && ticks[4] == ticks[0],
+              "6 sectors: %d ticks realistic, %d at data speed 4, %d instant; with the XA bit %d and %d (the drive's)",
+              ticks[0], ticks[1], ticks[2], ticks[3], ticks[4]);
+    }
     CdIntToPos(ISO_SECTORS - 1, &loc);
     CdControlB(0x02, (u8 *)&loc, NULL);
     CdRead(3, (u32 *)buf, 0x80);

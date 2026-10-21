@@ -29,7 +29,7 @@ GAME_CONTRACT.md "5. The build inputs"); the command-line options, the per-frame
 | `runtime/` | The runtime: `main.c` (options, setup), `arena.c`, `overlay.c`, `pump.c`, `reset.c`, `disc.c`, `memcard.c`, `video.c`, `render_gpu.c`, `input.c`, `audio.c` and `spu*.c`, `script.c`, `framelog.c`, `settings.c`, `mods.c` (the engine and the fast_forward mod), `crash.c`, `debug.c`, `savestate.c`, `fiber.c` (a game's own tasks), `platform.c`, `json.c`, `sha1.c` |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` compiles it alone and checks its coverage of a game |
 | `shaders/` | The hardware renderer's HLSL, compiled to SPIR-V (and for Windows to DXIL) by DXC at build time and embedded (`cmake/embed.cmake`) |
-| `mods/fast_forward/` | The one mod every game has (its manifest; the code is in `runtime/mods.c`) |
+| `mods/fast_forward/`, `mods/fast_loading/` | The stack's own mods, which every game has (their manifests; the code is in `runtime/mods.c`) |
 | `cmake/psxstack.cmake` | `psxstack_add_game()`: the whole build (below, "What the build generates") |
 | `tools/game_gen.py` | The game description (`game.json`) to `psxstack_game_gen.h` and CMake variables |
 | `tools/port_gen.py` | The generators the build runs: the override headers, the units' compile launcher (the overlay sections), the overlay address tables, the state tables, the post-link check |
@@ -191,7 +191,9 @@ PS1's copy into the slot:
   LIBSND's sequencer tick), then `port_frame` (`runtime/pump.c`): the CD tick, the frame log, the window's input or
   the script's step, screenshots and the window's present.
 - **CD timing** is modelled in vsync ticks (`--cd-speed realistic`: 3 sectors per tick at double speed after a seek;
-  `instant`: no seek, up to 75 per tick).
+  `instant`: no seek, up to 75 per tick). `instant` and the fast_loading mod's speed-up apply to the data reads only;
+  the movie stream and the reads with the XA bit keep the realistic drive, which paces a movie's frames and its CD
+  audio (`psyq/libcd.c`).
 - **Real time** applies only with a window: vsyncs are paced to the nominal rate against `CLOCK_MONOTONIC`. Pacing
   changes only the time between vsyncs, so a window run's log and record equal the headless run's.
 - **Frame rate:** the description's `video.rate` (50 PAL, 60 NTSC): the pace, the audio's samples per vsync and the
@@ -524,7 +526,7 @@ with or without an output device.
 ## Settings and mods
 `<game> --config FILE` reads the settings file the launcher writes (disc, window, audio, memory cards, input bindings,
 mods); without `--config` the binary depends on nothing on the machine. The mods' engine is `runtime/mods.c`: the
-stack's fast_forward and the game's mods (`game_mods`), their manifests (`mods/<id>/mod.json`, the stack's and the
+stack's fast_forward and fast_loading and the game's mods (`game_mods`), their manifests (`mods/<id>/mod.json`, the stack's and the
 game's directories) copied beside the binary; they are off under `--script` unless `--script-mods`. Formats and
 behaviour: `docs/LAUNCHER.md`, `docs/RUNTIME.md` "The settings file" and "The mods".
 

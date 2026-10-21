@@ -19,6 +19,9 @@
  * port_disc_set_speed: "instant" or "realistic" (the default: the drive's double speed, seek time); 0 = unknown. */
 void port_disc_open(const char *path, int check_sha1);
 int port_disc_set_speed(const char *speed);
+/* disc.c: the fast_loading mod's speed-up of the data reads (psyq_cd_set_data_speed): `multiple` times the drive's
+ * rate, 0 = instant, 1 = back to port_disc_set_speed's timing. */
+void port_disc_fast_loading(int multiple);
 
 /* ---- framelog.c / state.c: the per-frame log, checkpoints, the record (tests/replay's shape) ----
  * port_framelog_open: either path may be NULL (no log / no record). The log is text, one line per frame and one per
