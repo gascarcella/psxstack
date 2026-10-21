@@ -16,7 +16,8 @@ What psxstack borrows and ships, and what it only uses as a tool.
 
 ## Tools (pinned by `scripts/setup.sh`, never shipped in the repository)
 - **SDL3** (zlib): the window, input, audio and SDL_GPU; linked statically into the binaries a game ships.
-- **Dear ImGui** (MIT): the launcher's screens; compiled into the launcher.
+- **Dear ImGui** (MIT): the launcher's screens; compiled into the launcher, and into a game built with the in-game menu
+  (`PSXSTACK_MENU`; `cmake/imgui.cmake`).
 - **DirectX Shader Compiler** (LLVM Release License / NCSA; Microsoft's parts MIT): compiles the hardware renderer's
   HLSL to SPIR-V (and for Windows to DXIL, signed by its `libdxil.so`) at build time; the output is ours, DXC is not
   shipped.

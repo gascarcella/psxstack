@@ -21,6 +21,7 @@ typedef void (*RenderDestFn)(int ow, int oh, int rect[4]);
  * (Wayland), so video.c calls this first. */
 int render_gpu_open(SDL_Window *window, char *why, size_t why_size);
 int render_gpu_active(void);
+SDL_GPUDevice *render_gpu_device(void); /* the device (the overlay draws on it: menu.h); NULL when closed */
 /* "vulkan, NVIDIA GeForce ..." for the log; "" when closed. */
 const char *render_gpu_describe(void);
 /* The rasteriser: its VRAM target (1024 x 512 at the internal scale 1..8: a VRAM pixel is scale x scale target

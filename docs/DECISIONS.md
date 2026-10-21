@@ -232,3 +232,14 @@ plays the XA audio as it arrives, so a faster drive ran the video at the decoder
 dropped). Emulators that offer a read speed-up likewise leave audio reads at 1x. The mod changes the game's run (a
 load ends in fewer vsyncs) where fast-forward only changes the wall clock; the frame log of a run without it is
 unchanged.
+
+## The launcher's screens inside the game's window (2026-10-21)
+On a handheld (the Steam Deck's gamescope shows one window at a time) the two processes are a chore: the launcher
+hides its window, the game opens its own, and every settings or mods change means leaving the game. The launcher's
+UI now also lives inside the game as the in-game menu (issue #74; docs/LAUNCHER.md "In-game menu"): a game built with
+`PSXSTACK_MENU` compiles `launcher/ui/` (C++17 over Dear ImGui) into its binary and links as C++, while the game's
+units and the runtime stay C and a build without the option links `runtime/menu.c`'s stubs. The menu rides on the
+pump's pause, so the game is held exactly as the pause key holds it, and draws from inside the present on both paths
+(SDL_Renderer, SDL_GPU). Rejected: hosting the game inside the launcher's process (the game's main never returns,
+`port_exit` is `exit`, the state is global, and the contract wants single binaries); a C menu in the runtime (a copy
+of the launcher). The launcher's window stays the entry: it picks and verifies the disc.

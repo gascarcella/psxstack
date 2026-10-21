@@ -3,6 +3,7 @@
 
     python3 tests/hello_test.py [--build DIR] [--record]
     python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine [--gpu]
+    python3 tests/hello_test.py --menu [--build DIR]
 
 Configures and builds examples/hello (cmake, ninja, the host gcc and binutils; no SDL, no disc), checks `--version`
 names it, runs it for 40 vsyncs with a screenshot at vsync 30 (the software GPU: the same bytes on every machine) and
@@ -60,6 +61,38 @@ def script_check(runner, exe, build, env):
     return ok
 
 
+def menu_check(build, env):
+    """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
+    imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
+    the picture of the menu up (HELLO_PORT_MENU_SHOT, launcher/ui/menu.cpp) at build/menu.png."""
+    for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
+        if not shutil.which(tool, path=env["PATH"]):
+            print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
+            return 2
+    if not (build / "CMakeCache.txt").exists():
+        subprocess.run(["cmake", "-S", str(ROOT / "examples/hello"), "-B", str(build), "-G", "Ninja",
+                        "-DPSXSTACK_SDL=ON", "-DPSXSTACK_MENU=ON"], check=True, env=env, stdout=subprocess.DEVNULL)
+    subprocess.run(["cmake", "--build", str(build)], check=True, env=env, stdout=subprocess.DEVNULL)
+    exe, shot = build / "hello", build / "menu.png"
+    shot.unlink(missing_ok=True)
+    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot))
+    r = subprocess.run([str(exe), "--input-test", "--fps", "0"], capture_output=True, text=True, env=run_env,
+                       timeout=600)
+    lines = r.stderr.strip().splitlines()
+    menu = next((l for l in lines if "input test: the menu:" in l), "(no menu line)")
+    ok = r.returncode == 0 and "the menu: passed" in menu
+    print(("ok   " if ok else "FAIL ") + f"the input self-test with the menu: status {r.returncode}; {menu}")
+    if not ok:
+        print("\n".join(lines[-15:]))
+    if shot.exists() and shot.stat().st_size > 1000 and shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n":
+        print(f"ok   the menu's picture: {shot} ({shot.stat().st_size} bytes)")
+    else:
+        print("FAIL no PNG of the menu")
+        ok = False
+    print("hello: " + ("pass" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--build", default=str(ROOT / "build/hello"))
@@ -67,9 +100,17 @@ def main():
     ap.add_argument("--exe", help="test this build of hello instead of building one")
     ap.add_argument("--wine", action="store_true", help="run --exe through wine (a Windows build)")
     ap.add_argument("--gpu", action="store_true", help="also the hardware renderer's picture (an SDL build)")
+    ap.add_argument("--menu", action="store_true",
+                    help="the window and the in-game menu instead: the input self-test offscreen and the menu's picture")
     args = ap.parse_args()
     env = dict(os.environ)
     runner = []
+    if args.menu:
+        venv = ROOT / "tools/venv/bin"
+        if venv.exists():
+            env["PATH"] = f"{venv}:{env['PATH']}"
+        return menu_check(Path(args.build if args.build != str(ROOT / "build/hello") else ROOT / "build/hello-menu"),
+                          env)
     if args.exe:
         exe = Path(args.exe).resolve()
         build = exe.parent

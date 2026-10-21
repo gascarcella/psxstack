@@ -15,7 +15,8 @@
  * The settings (`input.keyboard`, `input.gamepad`: a PS1 button -> a name or a list of names) replace a button's
  * keyboard or gamepad entries. Hotkeys (`input.hotkeys`, and the mods' binding options through port_input_action):
  * a binding is a list of triggers, a trigger one input or a chord of up to INPUT_CHORD inputs, all held
- * (docs/LAUNCHER.md "Input bindings"). Defaults: pause P, fullscreen F11.
+ * (docs/LAUNCHER.md "Input bindings"). Defaults: pause P, fullscreen F11, save_state F5, load_state F9, menu Escape or
+ * Back+Start on a gamepad (the in-game menu, menu.h: the menu in a pause).
  *
  * Hotkeys never reach the pad: a trigger that completes (all its inputs held) latches until every one of its inputs is
  * released, and a latched trigger's inputs are masked out of the pad (so a single-key hotkey is never seen by the game,
@@ -33,13 +34,17 @@
  * map's bits for the inputs held (none for a hotkey's: masked; with a script: nothing sent at all) and a hotkey step
  * must have fired its action (the actions do nothing during the test). Without --config it tests the defaults; with
  * one, the settings' map and hotkeys. Then (without a script) the pause: its key pressed, released and pressed again
- * while paused; the pause must poll without a vsync and give back the game. It ends the run with status 0 when every check passed, 6 when one failed; with
+ * while paused; the pause must poll without a vsync and give back the game; the quick slot's round trip; then the
+ * menu's (a build with PSXSTACK_MENU, menu.h): its hotkey pressed at a vsync, the menu must be shown in the pause's
+ * polls (the second present with it up is the <PREFIX>_PORT_MENU_SHOT picture), the hotkey again gives back the game.
+ * It ends the run with status 0 when every check passed, 6 when one failed; with
  * a script it only logs the result and the script runs on, so its log can be compared with a run without the test. */
 #include <stdio.h>
 #include <string.h>
 
 #include "json.h"
 #include "port_harness.h"
+#include "menu.h"
 #include "port_runtime.h"
 #include "psyq.h"
 #include "savestate.h"
@@ -115,6 +120,7 @@ static struct {
 } input_actions[INPUT_MAX_ACTIONS];
 static int input_action_count;
 int port_action_pause = -1, port_action_fullscreen = -1, port_action_save_state = -1, port_action_load_state = -1;
+int port_action_menu = -1;
 static int input_test;      /* --input-test running */
 static int input_test_mute; /* the actions do nothing for their consumers (the test's steps) */
 
@@ -360,7 +366,7 @@ void port_input_settings(const PortJson *input) {
             port_settings_fail("input.hotkeys", "an object (an action -> a binding)");
         }
         for (i = 0; hotkeys != NULL && i < hotkeys->count; i++) {
-            static const char *const actions[] = { "pause", "fullscreen", "save_state", "load_state", NULL };
+            static const char *const actions[] = { "pause", "fullscreen", "save_state", "load_state", "menu", NULL };
             const char *const *a;
             for (a = actions; *a != NULL && strcmp(*a, hotkeys->keys[i]) != 0; a++) {
             }
@@ -376,6 +382,10 @@ void port_input_settings(const PortJson *input) {
                                                "input.hotkeys.save_state", "\"F5\"");
     port_action_load_state = port_input_action("load_state", port_json_get(hotkeys, "load_state"),
                                                "input.hotkeys.load_state", "\"F9\"");
+    /* the menu (menu.h): Escape, or Back (SELECT) held with Start on a gamepad (the chord's first input reaches
+     * the pad until it is complete: "Input bindings") */
+    port_action_menu = port_input_action("menu", port_json_get(hotkeys, "menu"), "input.hotkeys.menu",
+                                         "[\"Escape\", [\"pad:back\", \"pad:start\"]]");
 }
 
 #ifdef PSXSTACK_SDL
@@ -627,6 +637,12 @@ static int input_test_state_polls;
 static long input_test_state_frame;
 static char input_test_state_path[4096];
 static int input_test_state_before(void);
+static int input_test_menu;    /* the menu's round trip: 1 press the hotkey, 2 in the pause's polls, 3 resumed */
+static int input_test_menu_polls, input_test_menu_seen;
+static long input_test_menu_frame;
+static int input_test_menu_before(void);
+static void input_test_menu_paused(void);
+static int input_test_finish(void);
 
 static int input_test_needs_pad(int step) {
     int k;
@@ -641,7 +657,7 @@ static int input_test_needs_pad(int step) {
 /* Before the poll: this frame's step (a press or its release). */
 static void input_test_before(void) {
     int k, i, masked;
-    if (input_test_pause_before() || input_test_state_before()) {
+    if (input_test_pause_before() || input_test_state_before() || input_test_menu_before()) {
         return;
     }
     if (port_frames < 2 || input_test_step >= input_test_count) {
@@ -766,7 +782,7 @@ static int input_test_pause_before(void) {
         }
         port_log("input test: the quick slot: skipped (%s)",
                  !port_savestate_armed ? "save states are off in this run" : "no slot, or a hotkey unbound");
-        port_exit(0, "input test passed");
+        return input_test_finish();
     }
     return 0;
 }
@@ -843,10 +859,67 @@ static int input_test_state_before(void) {
                  "follows)",
                  ok ? "passed" : "FAILED", input_test_state_polls, input_test_state_frame,
                  f != NULL ? "written" : "NOT written", port_frames);
-        port_exit(ok ? 0 : 6, ok ? "input test passed" : "input test failed");
+        if (!ok) {
+            port_exit(6, "input test failed");
+        }
+        input_test_state = 0;
+        return input_test_finish();
     }
     default:
         return 0;
+    }
+}
+
+/* After the quick slot's round trip (or its skip): the menu's, when this build has the menu and a hotkey for it
+ * (1: it starts at the next vsync); else the test is over. */
+static int input_test_finish(void) {
+    if (port_menu_compiled() && input_actions[port_action_menu].count > 0) {
+        input_test_menu = 1;
+        return 1;
+    }
+    port_log("input test: the menu: skipped (%s)",
+             !port_menu_compiled() ? "not in this build (PSXSTACK_MENU)" : "its hotkey is unbound");
+    port_exit(0, "input test passed");
+}
+
+/* The menu's round trip: the menu hotkey's first trigger pressed at a vsync (the pump pauses at its end with the
+ * menu up), released at the first poll of the pause, where the menu must be shown (the second poll's present is
+ * the <PREFIX>_PORT_MENU_SHOT picture), pressed again at the third (the pump closes the menu and goes on), released at
+ * the next vsync, which must follow the paused one: three polls, the menu seen, no menu after. */
+static int input_test_menu_before(void) {
+    if (input_test_menu == 1) {
+        input_test_state_set(port_action_menu, 1);
+        input_test_menu_frame = port_frames;
+        input_test_menu = 2;
+        return 1;
+    }
+    if (input_test_menu == 3) {
+        int ok = input_test_menu_polls == 3 && input_test_menu_seen && !port_menu_shown() &&
+                 port_frames == input_test_menu_frame + 1;
+        input_test_state_set(port_action_menu, 0);
+        port_log("input test: the menu: %s (%d polls paused at frame %ld, the menu %s, %s after, frame %ld follows)",
+                 ok ? "passed" : "FAILED", input_test_menu_polls, input_test_menu_frame,
+                 input_test_menu_seen ? "shown" : "NOT shown", port_menu_shown() ? "still up" : "closed", port_frames);
+        port_exit(ok ? 0 : 6, ok ? "input test passed" : "input test failed");
+    }
+    return 0;
+}
+
+static void input_test_menu_paused(void) {
+    if (input_test_menu != 2) {
+        return;
+    }
+    switch (++input_test_menu_polls) {
+    case 1:
+        input_test_state_set(port_action_menu, 0);
+        input_test_menu_seen = port_menu_shown();
+        break;
+    case 3:
+        input_test_state_set(port_action_menu, 1);
+        input_test_menu = 3;
+        break;
+    default:
+        break;
     }
 }
 
@@ -904,6 +977,7 @@ void port_input_init(int test) {
 static void input_poll(void) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
+        port_menu_event(&e); /* the menu's own navigation while it is shown; the keys below still count */
         switch (e.type) {
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -956,6 +1030,7 @@ void port_input_poll_paused(void) {
     if (input_test) {
         input_test_paused();
         input_test_state_paused();
+        input_test_menu_paused();
     }
     input_poll();
 }

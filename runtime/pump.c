@@ -25,13 +25,17 @@
  * The quick slot (the `save_state` and `load_state` hotkeys, input.c; savestate.c port_savestate_quick_*): a save
  * while the game runs is written at the vsync's end (the capture point), while paused as of the last vsync's end; a
  * load goes through main as the debug channel's does (port_savestate_load_request longjmps there, the state is
- * applied, the game resumes at the saved vsync's end), and a game that was paused is paused again right there. */
+ * applied, the game resumes at the saved vsync's end), and a game that was paused is paused again right there.
+ *
+ * The in-game menu (menu.h; the `menu` hotkey) is a pause with the menu shown: its polls build the menu's frame and
+ * the window presents it; Resume or the hotkey again leaves the pause, Quit ends the run. */
 #include <stdlib.h>
 #include <string.h>
 
 #include "platform.h"
 #include "port_harness.h"
 #include "port_runtime.h"
+#include "menu.h"
 #include "psyq.h"
 #include "savestate.h"
 
@@ -107,6 +111,10 @@ static void port_frame(void) {
         if (port_input_pressed(port_action_pause)) {
             pump_pause_wanted = 1;
         }
+        if (port_input_pressed(port_action_menu)) {
+            pump_pause_wanted = 1; /* the menu (menu.h) is up for the pause; a build without it: a plain pause */
+            port_menu_show(1);
+        }
         if (port_input_pressed(port_action_save_state)) {
             port_savestate_quick_save(0); /* at the capture point below */
         }
@@ -168,17 +176,33 @@ static void port_pause(void) {
     while (pump_pause_wanted) {
         if (port_window) {
             port_input_poll_paused();
-            if (port_input_pressed(port_action_pause)) {
-                pump_pause_wanted = 0;
-                break;
-            }
-            if (port_input_pressed(port_action_save_state)) {
-                port_savestate_quick_save(1); /* as of the vsync this pause follows */
-            }
-            if (port_input_pressed(port_action_load_state) && port_savestate_quick_load()) {
-                pump_load_wanted = pump_load_repause = 1; /* out of the pause first: pump_load re-pauses */
-                pump_pause_wanted = 0;
-                break;
+            if (port_menu_shown()) {
+                /* the menu's frame (its own navigation; the hotkeys below are the game's, not taken here); the
+                 * refresh presents the last picture with the menu over it */
+                int request = port_menu_frame();
+                if (request == PORT_MENU_QUIT) {
+                    port_exit(0, "quit from the menu");
+                }
+                if (request == PORT_MENU_RESUME || port_input_pressed(port_action_menu)) {
+                    port_menu_show(0);
+                    pump_pause_wanted = 0;
+                    break;
+                }
+            } else {
+                if (port_input_pressed(port_action_menu) && port_menu_compiled()) {
+                    port_menu_show(1); /* the menu over a plain pause */
+                } else if (port_input_pressed(port_action_pause) || port_input_pressed(port_action_menu)) {
+                    pump_pause_wanted = 0;
+                    break;
+                }
+                if (port_input_pressed(port_action_save_state)) {
+                    port_savestate_quick_save(1); /* as of the vsync this pause follows */
+                }
+                if (port_input_pressed(port_action_load_state) && port_savestate_quick_load()) {
+                    pump_load_wanted = pump_load_repause = 1; /* out of the pause first: pump_load re-pauses */
+                    pump_pause_wanted = 0;
+                    break;
+                }
             }
             port_video_refresh();
         }

@@ -51,6 +51,7 @@
 #include "render_gpu.h"
 #include "render_gpu_textures.h"
 #endif
+#include "menu.h"
 
 #define VIDEO_MAX_W 640 /* screen pixels: the GPU's widest mode */
 #define VIDEO_MAX_H 576 /* lines: PAL, interlaced */
@@ -286,6 +287,9 @@ void port_video_open(int scale, int fullscreen) {
         if (video_renderer == NULL) {
             port_fatal("SDL_CreateRenderer: %s", SDL_GetError());
         }
+        port_menu_open_renderer(video_window, video_renderer); /* the in-game menu (menu.h), when compiled in */
+    } else {
+        port_menu_open_gpu(video_window, render_gpu_device());
     }
     port_window = 1;
     video_start_ns = SDL_GetTicksNS();
@@ -405,6 +409,7 @@ static void video_present(void) {
         video_dest(ow, oh, &dst);
         SDL_RenderTexture(video_renderer, video_texture, NULL, &dst);
     }
+    port_menu_render_renderer(video_renderer); /* the menu over the picture, while it is shown */
     video_readback();
     SDL_RenderPresent(video_renderer);
     video_presents++;
@@ -453,6 +458,7 @@ void port_video_quit(void) {
     if (video_checks > 0) {
         port_log("gpu vram check: %ld checks, %ld with differences", video_checks, video_checks_failed);
     }
+    port_menu_close(); /* its ImGui objects live on the renderer or the device: first */
     render_gpu_tex_close();
     render_gpu_close(); /* the device too: destroyed before SDL_Quit, its claim before the window */
     if (video_texture != NULL) {

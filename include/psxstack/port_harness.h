@@ -158,6 +158,7 @@ void port_input_frame(void);
  * port_input_poll_paused: the events and the actions only, nothing to the pad (pump.c's pause). */
 struct PortJson;
 extern int port_action_pause, port_action_fullscreen, port_action_save_state, port_action_load_state;
+extern int port_action_menu; /* the in-game menu (menu.h): opens the menu in a pause, closes it */
 void port_input_settings(const struct PortJson *input);
 int port_input_action(const char *name, const struct PortJson *binding, const char *where, const char *default_json);
 void port_input_check_binding(const struct PortJson *binding, const char *where); /* fails the settings if bad */

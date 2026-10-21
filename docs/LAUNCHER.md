@@ -27,8 +27,9 @@ Code cites this file as `docs/LAUNCHER.md "<heading>"`; keep the headings stable
   signal; on Windows an unhandled exception's code instead of a signal (`0xC0000005` an access violation, ..., named
   by `game_exit_text`), and `abort()` is status 3 there too. On any of them but 0 the game may have written a crash
   report ("Crash report").
-- The launcher's screens use the same SDL3 + `SDL_Renderer` as the game, so they could later be drawn inside the
-  game's window.
+- The launcher's screens use the same SDL3 and Dear ImGui as the game's **in-game menu** ("In-game menu"): a game
+  built with `PSXSTACK_MENU` draws the launcher's UI (`launcher/ui/`) inside its own window while it is paused, so
+  on a handheld the launcher's window is needed once, for the disc.
 
 ## Settings directory
 
@@ -129,9 +130,10 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
   L2/R2, the D-pad and the left stick the D-pad. The launcher mirrors these defaults for display
   (`launcher/src/input.cpp`).
 - **`hotkeys`**: the port's own actions -> a binding. Actions: `pause` (default `"P"`), `fullscreen` (default
-  `"F11"`), `save_state` (default `"F5"`: the whole game to the quick slot, `quick.state` beside this file) and
-  `load_state` (default `"F9"`: on from the slot; docs/RUNTIME.md "Save states"). A mod's bindings are its options,
-  under `mods.<id>`, not here.
+  `"F11"`), `save_state` (default `"F5"`: the whole game to the quick slot, `quick.state` beside this file),
+  `load_state` (default `"F9"`: on from the slot; docs/RUNTIME.md "Save states") and `menu` (default `["Escape",
+  ["pad:back", "pad:start"]]`: the in-game menu, "In-game menu"; in a build without it, a plain pause). A mod's
+  bindings are its options, under `mods.<id>`, not here.
 - **A binding** is a string or a list; each element is one trigger, any of which fires the action (at most 8). A
   trigger is one input (a string) or a chord (a list of 1 to 4 inputs, all held). An input is a key name, or `"pad:"`
   + a gamepad input name. `""` or `[]`: unbound. Examples: `"F2"`; `["F2", "pad:guide"]`;
@@ -269,6 +271,38 @@ the described discs' SHA-1s are accepted), **Play** (starts the game; on an erro
 report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
 two, renderer, mute, memory cards), **Controls** (keyboard, gamepad, hotkeys), **Mods** (an on/off switch per mod and a
 page generated from its manifest; the data mods in the settings directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
+
+## In-game menu
+
+A game configured with `-DPSXSTACK_MENU=ON` (with `PSXSTACK_SDL`; `scripts/setup.sh imgui`) has the launcher's UI
+inside its own window: `launcher/ui/` (C++17 over Dear ImGui, `cmake/imgui.cmake`) is compiled into the game, which
+then links as C++; the game's units and the runtime stay C, and a build without the option links the do-nothing
+stubs of `runtime/menu.c`, so the runtime's call sites need no `#ifdef`. The C API is `include/psxstack/menu.h`
+(`port_menu_*`). It is for handhelds and the couch (Steam Deck: gamescope shows one window at a time), where leaving
+the game for the launcher's window is a chore.
+
+- **The `menu` hotkey** (`input.hotkeys.menu`; default Escape, or Back held with Start on a gamepad: the chord's
+  first input reaches the pad until it is complete, "Input bindings") opens the menu in a pause of the pump
+  (`runtime/pump.c`: the game held between two vsyncs, the audio device paused, the watchdog re-armed). While it is
+  up, the pause's polls build the menu's frame and the window presents the last picture with the menu over it, on
+  either present path: `SDL_Renderer` (`imgui_impl_sdlrenderer3`, before `SDL_RenderPresent`) or the hardware
+  renderer (`imgui_impl_sdlgpu3`: a pass over the swapchain texture in the present's command buffer, before its
+  submit). The window's events go to ImGui as well as to the runtime's keys (`runtime/input.c`): the menu navigates
+  with the keyboard, the mouse and every gamepad; the pause, save and load hotkeys do not act while it is up. The
+  hotkey again, or **Resume**, closes it and the game goes on; **Quit** ends the run with status 0.
+- **This phase** draws the game's title, Resume and Quit (issue psxstack#74). The screens follow: Settings, Controls
+  and Mods editing the same `settings.json` the launcher does, applied live where the runtime can and with a note
+  where a restart is needed (the disc, the renderer, the rate, the memory cards); the launcher's window stays the
+  place for the disc.
+- **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled by the window's height: 1 at
+  480 lines, up to 4, so the menu reads the same on a 640x480 window and a 1280x800 handheld screen.
+- **The test:** `--input-test` ends with the menu's round trip (its hotkey at a vsync, the menu shown in the pause's
+  polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
+  window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
+  back with the menu in it). `tests/hello_test.py --menu` builds `examples/hello` that way and runs both on SDL's
+  offscreen driver; CI's `launcher` job runs it and keeps the picture.
+- **The release:** a game that ships the menu links libstdc++ and libgcc statically with
+  `-DPSXSTACK_MENU_STATIC_RUNTIME=ON`, as the launcher does (`launcher/README.md` "Releases").
 
 ## Crash report
 

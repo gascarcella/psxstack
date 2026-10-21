@@ -20,9 +20,11 @@
 #       [CONFIGURE_DEPENDS <file>...]               # files whose change reruns the configure (the inputs' sources)
 #       [RC <file.rc>])                             # Windows: the game's resource script (default: the stack's template)
 #
-# Options (cache): PSXSTACK_SDL (the window; needs tools/sdl3 and tools/dxc), PSXSTACK_SANITIZE, PSXSTACK_M32,
-# PSXSTACK_PSYQ_WERROR, PSXSTACK_ALLOW_UNRESOLVED, PSXSTACK_UNIT_OVERRIDES, PSXSTACK_DXC, PSXSTACK_PYTHON,
-# PSXSTACK_TOOLS_DIR, PSXSTACK_VERSION_ROOT (the repository `git describe` names the build after).
+# Options (cache): PSXSTACK_SDL (the window; needs tools/sdl3 and tools/dxc), PSXSTACK_MENU (the in-game menu,
+# launcher/ui/, C++ and Dear ImGui linked into the game; needs PSXSTACK_SDL and tools/imgui),
+# PSXSTACK_MENU_STATIC_RUNTIME, PSXSTACK_SANITIZE, PSXSTACK_M32, PSXSTACK_PSYQ_WERROR, PSXSTACK_ALLOW_UNRESOLVED,
+# PSXSTACK_UNIT_OVERRIDES, PSXSTACK_DXC, PSXSTACK_PYTHON, PSXSTACK_TOOLS_DIR, PSXSTACK_VERSION_ROOT (the repository
+# `git describe` names the build after).
 #
 # What it builds: tools/game_gen.py -> gen/include/psxstack_game_gen.h (configure time); tools/port_gen.py overrides
 # (the override headers); the units as an object library compiled through port_gen.py rename (each object's
@@ -37,6 +39,8 @@ option(PSXSTACK_ALLOW_UNRESOLVED "Link with --unresolved-symbols=ignore-all (a b
 option(PSXSTACK_SANITIZE "Build with -fsanitize=address,undefined" OFF)
 option(PSXSTACK_M32 "Build a 32-bit binary (-m32, gcc-multilib): its --log must equal the 64-bit build's" OFF)
 option(PSXSTACK_SDL "The window (runtime/video.c, input.c) over SDL3 (tools/sdl3: scripts/setup.sh sdl3 dxc)" OFF)
+option(PSXSTACK_MENU "The in-game menu (launcher/ui/, Dear ImGui; needs PSXSTACK_SDL and scripts/setup.sh imgui)" OFF)
+option(PSXSTACK_MENU_STATIC_RUNTIME "With PSXSTACK_MENU: link libstdc++ and libgcc statically (the release)" OFF)
 option(PSXSTACK_PSYQ_WERROR "-Werror for the shim too (the runtime always has it)" ON)
 set(PSXSTACK_UNIT_OVERRIDES "" CACHE STRING
     "Experiments: units to build from another file, as <unit path>=<path> entries (the game's tree is untouched)")
@@ -61,6 +65,10 @@ if(GIT_FOUND)
     endif()
 endif()
 list(REMOVE_DUPLICATES PSXSTACK_TOOL_DIRS)
+include("${CMAKE_CURRENT_LIST_DIR}/imgui.cmake")   # psxstack_imgui_target(), for PSXSTACK_MENU
+if(PSXSTACK_MENU)
+    enable_language(CXX)   # at file scope (a function cannot): the game's project() may say C alone
+endif()
 
 if(PSXSTACK_PYTHON)
     set(_psx_python "${PSXSTACK_PYTHON}")
@@ -425,6 +433,26 @@ function(psxstack_add_game target)
         add_custom_target(${target}_shaders DEPENDS ${SHADER_HEADERS})
         add_dependencies(${target} ${target}_shaders)
         target_include_directories(${target} PRIVATE "${GEN}/shaders")
+
+        # ---- The in-game menu (PSXSTACK_MENU; include/psxstack/menu.h, docs/LAUNCHER.md "In-game menu"): the
+        # launcher's UI (launcher/ui/, C++17 over Dear ImGui, cmake/imgui.cmake) compiled into the game, which then
+        # links as C++. The game's units and the runtime stay C; runtime/menu.c's stubs make way for it.
+        if(PSXSTACK_MENU)
+            psxstack_imgui_target()
+            set(_ui "${PSXSTACK_ROOT}/launcher/ui/menu.cpp" "${PSXSTACK_ROOT}/launcher/ui/style.cpp")
+            target_sources(${target} PRIVATE ${_ui})
+            set_source_files_properties(${_ui} PROPERTIES COMPILE_OPTIONS "-Werror")
+            set_target_properties(${target} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+            target_compile_definitions(${target} PRIVATE PSXSTACK_MENU)
+            target_include_directories(${target} PRIVATE "${PSXSTACK_ROOT}/launcher/ui")
+            target_link_libraries(${target} PRIVATE psxstack_imgui)
+            if(PSXSTACK_MENU_STATIC_RUNTIME)
+                target_link_options(${target} PRIVATE -static-libstdc++ -static-libgcc)
+            endif()
+            message(STATUS "psxstack: ${target}: the in-game menu (PSXSTACK_MENU)")
+        endif()
+    elseif(PSXSTACK_MENU)
+        message(FATAL_ERROR "PSXSTACK_MENU needs the window: configure with -DPSXSTACK_SDL=ON too")
     endif()
     message(STATUS "psxstack: ${target}: ${n_units} units")
 endfunction()
