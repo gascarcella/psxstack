@@ -40,4 +40,11 @@ void text_fit_left(const char *prefix, const std::string &text) {
     ImGui::TextDisabled("%s%s", prefix, shown.c_str());
 }
 
+void section_title(const char *title) {
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, rgb(ACCENT));
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+}
+
 } // namespace psxstack

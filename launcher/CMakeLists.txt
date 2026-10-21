@@ -86,6 +86,14 @@ foreach(id fast_forward skip_dialogues every_type presets)
     string(TOUPPER "${id}" ID)
     string(APPEND fixtures "static const char ${ID}_MANIFEST[] = R\"json(${text})json\";\n")
 endforeach()
+# ... and the update check's GitHub answers (tests/fixtures/updates/<name>.json -> UPDATE_<NAME>_JSON).
+foreach(name release release_bad)
+    set(f "${PSXSTACK_ROOT}/tests/fixtures/updates/${name}.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${f}")
+    file(READ "${f}" text)
+    string(TOUPPER "${name}" NAME)
+    string(APPEND fixtures "static const char UPDATE_${NAME}_JSON[] = R\"json(${text})json\";\n")
+endforeach()
 file(CONFIGURE OUTPUT "${PSXSTACK_FIXTURES_H}" CONTENT "${fixtures}" @ONLY NEWLINE_STYLE UNIX)
 
 # ---- The executable: <id>-launcher.

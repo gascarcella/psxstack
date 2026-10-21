@@ -16,6 +16,8 @@ constexpr const char *GAME_TITLE = PSXSTACK_GAME_TITLE;
 constexpr const char *GAME_ABOUT = PSXSTACK_GAME_ABOUT;
 constexpr const char *GAME_DISC_HINT = PSXSTACK_GAME_DISC_HINT;
 constexpr const char *GAME_WEBSITE = PSXSTACK_GAME_WEBSITE;
+// The update check's repository, "owner/repo" (the description's launcher.updates.github); "" = no update check.
+constexpr const char *GAME_UPDATES_GITHUB = PSXSTACK_GAME_UPDATES_GITHUB;
 // The executables: the game's (`<id>`) and the launcher's own (`<id>-launcher`), with .exe on Windows.
 #ifdef _WIN32
 constexpr const char *GAME_EXE = PSXSTACK_GAME_ID ".exe";
@@ -32,6 +34,9 @@ constexpr const char *ENV_GAME = PSXSTACK_GAME_ENV_PREFIX "_GAME";
 constexpr const char *ENV_CONFIG_DIR = PSXSTACK_GAME_ENV_PREFIX "_CONFIG_DIR";
 constexpr const char *ENV_LAUNCHER = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER"; // set for the game it starts (the in-game menu's Quit says "to launcher")
 constexpr const char *ENV_SELFTEST_FAKE_GAME = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_FAKE_GAME";
+// The program run in place of curl (http.h; the self-test's stand-in), and the stand-in's answer.
+constexpr const char *ENV_FAKE_CURL = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_FAKE_CURL";
+constexpr const char *ENV_SELFTEST_CURL_REPLY = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_CURL_REPLY";
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";
 constexpr const char *ENV_SELFTEST_VIDEO_DRIVER = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_VIDEO_DRIVER";

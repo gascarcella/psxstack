@@ -13,8 +13,8 @@
 #include "style.h"
 #include "widgets.h"
 
-// The launcher's own version stamp (launcher/CMakeLists.txt, cmake/version.cmake): the Copy text's header.
-extern "C" const char launcher_version[];
+// The launcher's own version stamp (launcher/CMakeLists.txt, cmake/version.cmake): the Copy text's header
+// (launcher_version is declared in update.h).
 extern "C" const char launcher_commit[];
 
 namespace psxstack {
@@ -87,6 +87,17 @@ App::App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location
     screens_.load(location_, game_.empty() ? "" : path_join(path_dir(game_), "mods"),
                   location_.dir.empty() ? "" : game_mods_dir(location_.dir), !game_.empty());
     SDL_strlcpy(disc_input_, settings_.values.disc_path.c_str(), sizeof(disc_input_));
+    // The update check at start (docs/LAUNCHER.md "Updates"): when the description names a repository, the setting is
+    // on and --no-update-check was not given.
+    open_url_ = options.open_url;
+    update_.configure(options.update_repo, options.version);
+    if (update_.available() && options.update_check && settings_.values.update_check) {
+        update_.start();
+        update_auto_ = true;
+    }
+    if (update_.available()) {
+        screens_.set_settings_extra([this](float label_w) { draw_updates(label_w); });
+    }
     // First run, or the disc went away: start on the disc screen (docs/LAUNCHER.md "Launcher"). A disc set by hand (no
     // verified SHA-1, or its size changed) is checked right away.
     switch (disc_status()) {
@@ -297,6 +308,150 @@ void App::play() {
     SDL_HideWindow(window_);
 }
 
+// ---- the update check
+
+bool App::open_url(const std::string &url) {
+    std::fprintf(stderr, "launcher: opening %s\n", url.c_str());
+    if (open_url_) {
+        return open_url_(url);
+    }
+    return SDL_OpenURL(url.c_str());
+}
+
+void App::update_check_now() {
+    update_auto_ = false;
+    update_.start();
+}
+
+void App::update_poll() {
+    if (!update_.checking() || update_.poll() == UpdateCheck::State::Checking) {
+        return;
+    }
+    std::fprintf(stderr, "launcher: update check (%s): %s%s\n", update_.repo().c_str(), update_.summary().c_str(),
+                 update_.state() == UpdateCheck::State::NoCurl ? (" (" + update_.message() + ")").c_str() : "");
+    // Only the check at start prompts, once, and not for the release the user skipped (or an older one).
+    Version skipped;
+    const bool is_skipped = version_parse(settings_.values.update_skipped, &skipped) &&
+                            version_compare(update_.release().version, skipped) <= 0;
+    if (update_auto_ && update_.state() == UpdateCheck::State::Newer && !is_skipped) {
+        update_prompt_ = true;
+    }
+    update_auto_ = false;
+}
+
+void App::update_answer(UpdateAnswer a) {
+    switch (a) {
+    case UpdateAnswer::ReleasePage:
+        open_url(update_.release_page());
+        break;
+    case UpdateAnswer::Later:
+        break;
+    case UpdateAnswer::Skip:
+        settings_.values.update_skipped = update_.release().tag;
+        screens_.mark_dirty();
+        break;
+    }
+    update_prompt_ = false;
+}
+
+// The prompt: a modal over the Play screen, never while the game runs or a prompt for an input is open.
+void App::draw_update_prompt() {
+    static const char *const title = "Update available";
+    if (!update_prompt_ && !update_prompt_open_) {
+        return;
+    }
+    if (update_prompt_ && !update_prompt_open_ && screen_ == Screen::Play && !run_.running() &&
+        !screens_.capture().active() && !ImGui::IsPopupOpen(title)) {
+        ImGui::OpenPopup(title);
+        std::fprintf(stderr, "launcher: update prompt: %s %s is available (you have %s)\n", GAME_TITLE,
+                     version_text(update_.release().version).c_str(), update_.current().c_str());
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        update_prompt_open_ = false;
+        return;
+    }
+    update_prompt_open_ = true;
+    const Release &r = update_.release();
+    ImGui::Text("%s %s is available (you have %s).", GAME_TITLE, version_text(r.version).c_str(),
+                update_.current().c_str());
+    ImGui::TextDisabled("The release page has its packages and what changed.");
+    ImGui::Spacing();
+    if (ImGui::Button("Release page")) {
+        update_answer(UpdateAnswer::ReleasePage);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Later") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        update_answer(UpdateAnswer::Later);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Skip this version")) {
+        update_answer(UpdateAnswer::Skip);
+    }
+    if (!update_prompt_) {
+        ImGui::CloseCurrentPopup();
+        update_prompt_open_ = false;
+    }
+    ImGui::EndPopup();
+}
+
+// The Settings screen's part (only when the description names a repository): the launcher's own, drawn through the
+// shared screen's hook (Screens::set_settings_extra), so the in-game menu has none of it.
+void App::draw_updates(float label_w) {
+    Settings &s = settings_.values;
+    section_title("Updates");
+    ImGui::BeginDisabled(!settings_.writable());
+    ImGui::TextDisabled("At start");
+    ImGui::SameLine(label_w);
+    if (ImGui::Checkbox("Check for updates when the launcher starts", &s.update_check)) {
+        screens_.mark_dirty();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Version");
+    ImGui::SameLine(label_w);
+    ImGui::Text("%s", update_.current().c_str());
+    ImGui::TextDisabled("Last check");
+    ImGui::SameLine(label_w);
+    std::string when;
+    SDL_DateTime dt;
+    if (update_.checked_at() != 0 && !update_.checking() && SDL_TimeToDateTime(update_.checked_at(), &dt, true)) {
+        char buf[32];
+        SDL_snprintf(buf, sizeof(buf), " (at %02d:%02d)", dt.hour, dt.minute);
+        when = buf;
+    }
+    const bool bad = update_.state() == UpdateCheck::State::Failed || update_.state() == UpdateCheck::State::NoCurl;
+    const bool newer = update_.state() == UpdateCheck::State::Newer;
+    ImGui::PushStyleColor(ImGuiCol_Text,
+                          bad ? rgb(ERROR_RED) : newer ? rgb(ACCENT) : ImGui::GetStyle().Colors[ImGuiCol_Text]);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted((update_.summary() + when).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+    if (!s.update_skipped.empty()) {
+        ImGui::TextDisabled("Skipped");
+        ImGui::SameLine(label_w);
+        ImGui::Text("%s (not offered again; a newer release is)", s.update_skipped.c_str());
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!settings_.writable());
+        if (ImGui::SmallButton("Forget")) {
+            s.update_skipped.clear();
+            screens_.mark_dirty();
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::Indent(label_w);
+    ImGui::BeginDisabled(update_.checking());
+    if (ImGui::Button("Check now")) {
+        update_check_now();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Release page")) {
+        open_url(update_.release_page());
+    }
+    ImGui::Unindent(label_w);
+}
+
 void App::update_game() {
     if (!run_.running() || run_.poll()) {
         return;
@@ -367,6 +522,7 @@ void App::step_screen(int delta) {
 void App::frame(const char *screenshot) {
     update_disc_check();
     update_game();
+    update_poll();
     {
         std::lock_guard<std::mutex> lock(dialog_mutex_);
         if (dialog_done_) {
@@ -457,6 +613,7 @@ void App::draw() {
     }
     ImGui::EndChild();
     draw_status_bar();
+    draw_update_prompt();
     ImGui::End();
 }
 

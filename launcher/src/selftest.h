@@ -19,4 +19,11 @@ bool self_test_run(const std::string &dir);
 constexpr const char *SELF_TEST_GAME_ENV = ENV_SELFTEST_FAKE_GAME; // <PREFIX>_LAUNCHER_FAKE_GAME
 int self_test_fake_game(const char *mode, int argc, char **argv);
 
+// curl's stand-in (http.h): the self-test points $<PREFIX>_LAUNCHER_FAKE_CURL at this executable and sets
+// $<PREFIX>_SELFTEST_CURL_REPLY to what it answers: `[slow:]FILE` (the file as the body, or copied to -o's path; slow:
+// in small pieces with pauses), `offline` (curl's "could not resolve host"), `http:N` (curl -f's error for status N).
+// It honours -w's %{http_code} as curl does. main() calls it first, when the arguments start with -fsSL (http.cpp's
+// always do).
+int self_test_fake_curl(const char *reply, int argc, char **argv);
+
 } // namespace psxstack

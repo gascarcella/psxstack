@@ -8,14 +8,21 @@
 
 #include <SDL3/SDL.h>
 
+#ifdef SDL_PLATFORM_WINDOWS
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include "app.h"
 #include "disc.h"
 #include "game.h"
+#include "http.h"
 #include "input.h"
 #include "json_value.h"
 #include "mods.h"
 #include "paths.h"
 #include "settings.h"
+#include "update.h"
 
 namespace psxstack {
 
@@ -747,7 +754,97 @@ int self_test_fake_game(const char *mode, int argc, char **argv) {
         std::fprintf(stderr, "port: fatal: the stand-in's error");
         return 1;
     }
+    if (std::strcmp(mode, "wait") == 0) { // a game that runs for two seconds (the update prompt waits for it)
+        SDL_Delay(2000);
+    }
     std::puts("port: start");
+    return 0;
+}
+
+// ---- curl's stand-in (http.h)
+
+// Where the stand-in writes its arguments, one a line (the test reads them back); unset: nowhere.
+static const char *const SELF_TEST_CURL_ARGS_ENV = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_CURL_ARGS";
+
+int self_test_fake_curl(const char *reply, int argc, char **argv) {
+#ifdef SDL_PLATFORM_WINDOWS
+    _setmode(_fileno(stdout), _O_BINARY); // the body byte for byte, as curl writes it
+#endif
+    std::string out_path, write_out, url;
+    std::string args;
+    for (int i = 1; i < argc; i++) {
+        args += std::string(argv[i]) + "\n";
+        const std::string a = argv[i];
+        if ((a == "-o" || a == "-w") && i + 1 < argc) {
+            (a == "-o" ? out_path : write_out) = argv[i + 1];
+            args += std::string(argv[++i]) + "\n";
+        } else if ((a == "-A" || a == "-H" || a == "--max-time" || a == "--max-filesize" || a == "--connect-timeout" ||
+                    a == "--speed-limit" || a == "--speed-time") &&
+                   i + 1 < argc) {
+            args += std::string(argv[++i]) + "\n";
+        } else if (a.compare(0, 1, "-") != 0) {
+            url = a;
+        }
+    }
+    if (const char *log = SDL_getenv(SELF_TEST_CURL_ARGS_ENV)) {
+        write(log, args);
+    }
+    // -w: curl's escapes and %{http_code}, after the body.
+    auto finish = [&](const char *code) {
+        std::string w;
+        for (size_t i = 0; i < write_out.size(); i++) {
+            if (write_out.compare(i, 2, "\\n") == 0) {
+                w += '\n';
+                i++;
+            } else if (write_out.compare(i, 12, "%{http_code}") == 0) {
+                w += code;
+                i += 11;
+            } else {
+                w += write_out[i];
+            }
+        }
+        std::fwrite(w.data(), 1, w.size(), stdout);
+        std::fflush(stdout);
+    };
+    const std::string r = reply;
+    if (r == "offline") {
+        const size_t host = url.find("://") == std::string::npos ? 0 : url.find("://") + 3;
+        const std::string name = url.substr(host, url.find('/', host) - host);
+        std::fprintf(stderr, "curl: (6) Could not resolve host: %s\n", name.c_str());
+        finish("000");
+        return 6;
+    }
+    if (r.compare(0, 5, "http:") == 0) {
+        std::fprintf(stderr, "curl: (22) The requested URL returned error: %s\n", r.c_str() + 5);
+        finish(r.c_str() + 5);
+        return 22;
+    }
+    const bool slow = r.compare(0, 5, "slow:") == 0;
+    const std::string file = slow ? r.substr(5) : r;
+    std::string body, err;
+    if (!file_read(file, &body, &err)) {
+        std::fprintf(stderr, "curl: (37) Couldn't read %s\n", file.c_str());
+        finish("000");
+        return 37;
+    }
+    if (out_path.empty()) {
+        std::fwrite(body.data(), 1, body.size(), stdout);
+    } else if (SDL_IOStream *io = SDL_IOFromFile(out_path.c_str(), "wb")) {
+        // In pieces (with pauses when slow), so the launcher sees the file grow.
+        for (size_t at = 0; at < body.size(); at += 16384) {
+            SDL_WriteIO(io, body.data() + at, SDL_min((size_t)16384, body.size() - at));
+            SDL_FlushIO(io);
+            if (slow) {
+                SDL_Delay(25);
+            }
+        }
+        SDL_CloseIO(io);
+    } else {
+        std::fprintf(stderr, "curl: (23) Failure writing output to destination\n");
+        finish("200");
+        return 23;
+    }
+    finish("200");
     return 0;
 }
 
@@ -1233,6 +1330,506 @@ static void test_mods_window(SDL_Window *window, const std::string &root) {
     check(app.last_error().empty(), "no error in the status bar: " + app.last_error());
 }
 
+// ---- the update check (docs/LAUNCHER.md "Updates"): the version rules, GitHub's answer, curl through its stand-in,
+// the prompt and the Settings screen. Never the network: the stand-in answers.
+
+// The mouse over the page, its wheel turned down: the Settings screen scrolled to its end (the Updates part).
+static void scroll_page_down(SDL_Window *w, App &app) {
+    int width = 0, height = 0;
+    SDL_GetWindowSize(w, &width, &height);
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_EVENT_MOUSE_MOTION;
+    e.motion.windowID = SDL_GetWindowID(w);
+    e.motion.x = (float)width * 0.6f;
+    e.motion.y = (float)height * 0.5f;
+    SDL_PushEvent(&e);
+    pump(app, 2);
+    for (int i = 0; i < 4; i++) {
+        SDL_zero(e);
+        e.type = SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.windowID = SDL_GetWindowID(w);
+        e.wheel.y = -10.0f;
+        e.wheel.mouse_x = (float)width * 0.6f;
+        e.wheel.mouse_y = (float)height * 0.5f;
+        SDL_PushEvent(&e);
+        pump(app, 2);
+    }
+}
+
+static void set_env(const char *name, const std::string &value) {
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), name, value.c_str(), true);
+}
+
+static void replace_all(std::string *s, const std::string &from, const std::string &to) {
+    for (size_t at = s->find(from); at != std::string::npos; at = s->find(from, at + to.size())) {
+        s->replace(at, from.size(), to);
+    }
+}
+
+// The fixture's answer (tests/fixtures/updates/release.json) for this game, as release `version`.
+static std::string release_json(const std::string &version) {
+    std::string s = UPDATE_RELEASE_JSON;
+    replace_all(&s, "{id}", GAME_ID);
+    replace_all(&s, "0.5.0", version);
+    return s;
+}
+
+static HttpResult http_ok(const std::string &body) {
+    HttpResult r;
+    r.status = HttpResult::Status::Ok;
+    r.http_code = 200;
+    r.body = body;
+    return r;
+}
+
+static void test_update_rules() {
+    Version v;
+    check(version_parse("0.4.1", &v) && v.major == 0 && v.minor == 4 && v.patch == 1, "version 0.4.1");
+    check(version_parse("v10.20.30", &v) && v.major == 10 && v.minor == 20 && v.patch == 30, "version v10.20.30");
+    for (const char *bad : { "", "v", "0.4", "0.4.", "0.4.1-3-gabc1234", "0.4.1-dirty", "dev-abc1234", "dev-v0.4.1",
+                             "v0.4.1.2", "0.4.x", " 0.4.1", "V0.4.1", "1234567890.0.0", "unknown" }) {
+        check(!version_parse(bad, &v), std::string("not a release version: \"") + bad + "\"");
+    }
+    Version a, b;
+    version_parse("0.10.0", &a);
+    version_parse("0.9.9", &b);
+    check(version_compare(a, b) > 0 && version_compare(b, a) < 0 && version_compare(a, a) == 0,
+          "versions compare as three numbers (0.10.0 > 0.9.9)");
+    version_parse("1.0.0", &b);
+    check(version_compare(a, b) < 0 && version_text(b) == "1.0.0", "1.0.0 > 0.10.0");
+    check(update_asset_name("game", "0.5.0", false) == "game-0.5.0-x86_64.AppImage" &&
+              update_asset_name("game", "0.5.0", true) == "game-0.5.0-windows-x86_64.zip",
+          "the packages' names");
+    check(update_api_url("owner/game") == "https://api.github.com/repos/owner/game/releases/latest" &&
+              update_releases_url("owner/game") == "https://github.com/owner/game/releases/latest",
+          "the API's and the browser's URLs");
+
+    // GitHub's answer: the tag, the page, this platform's package (not the symbols' zip), the digest lower-cased.
+    for (bool windows : { false, true }) {
+        Release r;
+        std::string err;
+        const bool ok = update_parse_release(release_json("0.5.0"), GAME_ID, windows, &r, &err);
+        check(ok && r.tag == "v0.5.0" && version_text(r.version) == "0.5.0" && r.name == "game v0.5.0" &&
+                  r.html_url == "https://github.com/owner/game/releases/tag/v0.5.0",
+              "the release's tag, name and page: " + err);
+        const std::string name = update_asset_name(GAME_ID, "0.5.0", windows);
+        check(r.has_asset && r.asset.name == name &&
+                  r.asset.url == "https://github.com/owner/game/releases/download/v0.5.0/" + name &&
+                  r.asset.size == (windows ? 4740723 : 5814776) &&
+                  r.asset.sha256 == (windows ? "19c3513fae8a2cc9b6ca605ad379539604bd8e6d63a27116bf9afb36f6a78f57"
+                                             : "d73d2474cb751190a162326d4666a60aa1f0078aa65ebf8e39c8b52cc0f886a5"),
+              std::string("the package for ") + (windows ? "Windows" : "Linux") + ": its name, URL, size, SHA-256");
+    }
+    {
+        Release r;
+        std::string err;
+        check(update_parse_release(release_json("0.5.0"), "othergame", false, &r, &err) && !r.has_asset,
+              "a release without this game's package is still a release");
+        check(!update_parse_release(UPDATE_RELEASE_BAD_JSON, GAME_ID, false, &r, &err) &&
+                  err.find("\"nightly\"") != std::string::npos,
+              "a tag that is not vX.Y.Z is refused: " + err);
+        const std::string whole = release_json("0.5.0");
+        check(!update_parse_release(whole.substr(0, whole.size() / 2), GAME_ID, false, &r, &err) &&
+                  err.find("not a JSON object") != std::string::npos,
+              "a cut answer is refused: " + err);
+        check(!update_parse_release("[]", GAME_ID, false, &r, &err), "an answer that is not an object is refused");
+    }
+
+    // The outcome for a stamp: an update only for an exact X.Y.Z older than the release.
+    struct {
+        const char *current;
+        UpdateCheck::State want;
+    } cases[] = { { "0.4.1", UpdateCheck::State::Newer },
+                  { "0.5.0", UpdateCheck::State::UpToDate },
+                  { "0.6.0", UpdateCheck::State::UpToDate },
+                  { "dev-abc1234", UpdateCheck::State::DevBuild },
+                  { "0.4.1-3-gabc1234", UpdateCheck::State::DevBuild },
+                  { "0.4.1-dirty", UpdateCheck::State::DevBuild } };
+    for (const auto &c : cases) {
+        Release r;
+        std::string msg;
+        UpdateCheck::State s = UpdateCheck::evaluate(http_ok(release_json("0.5.0")), "owner/game", c.current, &r, &msg);
+        check(s == c.want && version_text(r.version) == "0.5.0",
+              std::string("the latest release against the stamp ") + c.current);
+    }
+    {
+        Release r;
+        std::string msg;
+        HttpResult no;
+        no.status = HttpResult::Status::NoCurl;
+        no.message = "curl could not be run";
+        check(UpdateCheck::evaluate(no, "owner/game", "0.4.1", &r, &msg) == UpdateCheck::State::NoCurl,
+              "no curl: its own outcome");
+        HttpResult nf;
+        nf.http_code = 404;
+        nf.message = "curl: (22) The requested URL returned error: 404";
+        check(UpdateCheck::evaluate(nf, "owner/game", "0.4.1", &r, &msg) == UpdateCheck::State::Failed &&
+                  msg.find("owner/game has no published release") != std::string::npos,
+              "HTTP 404: no release: " + msg);
+        nf.http_code = 403;
+        check(UpdateCheck::evaluate(nf, "owner/game", "0.4.1", &r, &msg) == UpdateCheck::State::Failed &&
+                  msg.find("try again later") != std::string::npos,
+              "HTTP 403: the rate limit: " + msg);
+        check(UpdateCheck::evaluate(http_ok("<html>"), "owner/game", "0.4.1", &r, &msg) == UpdateCheck::State::Failed,
+              "an answer that is not JSON fails the check");
+    }
+    // No repository: nothing to check.
+    UpdateCheck none;
+    none.configure("", "0.4.1");
+    none.start();
+    check(!none.available() && none.poll() == UpdateCheck::State::Idle, "no repository: no check");
+}
+
+static void test_update_settings(const std::string &root) {
+    std::string err;
+    path_make_dir(root, nullptr);
+    // launcher.updates read; written back with its other members; skipped removed when cleared.
+    write(path_join(root, SETTINGS_FILE),
+          R"({"schema":1,"launcher":{"last_dir":"/x","updates":{"check":false,"skipped":"v0.5.0","future":1}}})");
+    SettingsFile f;
+    f.load(root);
+    check(f.messages().empty() && !f.values.update_check && f.values.update_skipped == "v0.5.0",
+          "launcher.updates is read");
+    f.values.update_check = true;
+    f.values.update_skipped.clear();
+    check(f.save(&err), "saving launcher.updates: " + err);
+    Json j = Json::parse(read(f.path()), nullptr);
+    const Json *u = j.find("launcher") != nullptr ? j.find("launcher")->find("updates") : nullptr;
+    check(u != nullptr && u->find("check") != nullptr && u->find("check")->as_bool(false) &&
+              u->find("skipped") == nullptr && u->find("future") != nullptr &&
+              j.find("launcher")->find("last_dir")->as_string() == "/x",
+          "launcher.updates is written back (skipped gone, an unknown member and last_dir kept)");
+    // A file that never changed them gets none; bad values: a warning each.
+    write(path_join(root, SETTINGS_FILE), R"({"schema":1})");
+    f.load(root);
+    f.values.scale = 3;
+    check(f.save(&err) && Json::parse(read(f.path()), nullptr).find("launcher") == nullptr,
+          "the defaults write no launcher.updates");
+    write(path_join(root, SETTINGS_FILE), R"({"schema":1,"launcher":{"updates":{"check":"no","skipped":5}}})");
+    f.load(root);
+    check(f.messages().size() == 2 && f.values.update_check && f.values.update_skipped.empty(),
+          "bad launcher.updates values: a warning each, the defaults");
+    write(path_join(root, SETTINGS_FILE), R"({"schema":1,"launcher":{"updates":3}})");
+    f.load(root);
+    check(f.messages().size() == 1, "launcher.updates not an object: a warning");
+}
+
+// http.h through the stand-in: a GET, curl's failures, curl missing, a download with its progress and a cancel.
+static void test_http(const std::string &root) {
+    path_make_dir(root, nullptr);
+    const std::string body_file = path_join(root, "release.json"), args_file = path_join(root, "curl-args.txt");
+    write(body_file, release_json("0.5.0"));
+    set_env(ENV_FAKE_CURL, self_exe());
+    set_env(SELF_TEST_CURL_ARGS_ENV, args_file);
+    const std::string url = update_api_url("owner/game");
+
+    set_env(ENV_SELFTEST_CURL_REPLY, body_file);
+    HttpResult r = http_get(url, { "Accept: application/vnd.github+json" });
+    check(r.status == HttpResult::Status::Ok && r.http_code == 200 && r.body == release_json("0.5.0"),
+          "a GET: the body as it came, the status read from -w: " + r.message);
+    const std::string args = read(args_file);
+    check(args.find("-fsSL\n") != std::string::npos &&
+              args.find("-A\n" + http_user_agent() + "\n") != std::string::npos &&
+              args.find("-H\nAccept: application/vnd.github+json\n") != std::string::npos &&
+              args.find("--max-time\n10\n") != std::string::npos && args.find(url + "\n") != std::string::npos,
+          "curl's arguments: -fsSL, the User-Agent, the header, the timeout, the URL:\n" + args);
+    check(http_user_agent() == std::string(LAUNCHER_NAME) + "/" + launcher_version,
+          "the User-Agent names the launcher");
+
+    set_env(ENV_SELFTEST_CURL_REPLY, "offline");
+    r = http_get(url);
+    check(r.status == HttpResult::Status::Failed &&
+              r.message.find("Could not resolve host: api.github.com") != std::string::npos,
+          "no network: curl's own error: " + r.message);
+    set_env(ENV_SELFTEST_CURL_REPLY, "http:404");
+    r = http_get(url);
+    check(r.status == HttpResult::Status::Failed && r.http_code == 404 && r.message.find("404") != std::string::npos,
+          "an HTTP error: its status: " + r.message);
+    set_env(ENV_FAKE_CURL, path_join(root, "no-such-curl"));
+    r = http_get(url);
+    check(r.status == HttpResult::Status::NoCurl, "curl missing: its own outcome: " + r.message);
+    set_env(ENV_FAKE_CURL, self_exe());
+
+    // On a thread.
+    set_env(ENV_SELFTEST_CURL_REPLY, body_file);
+    HttpGet get;
+    get.start(url);
+    for (int t = 0; t < 20000 && get.poll() == HttpGet::State::Running; t += 5) {
+        SDL_Delay(5);
+    }
+    check(get.state() == HttpGet::State::Finished && get.result().status == HttpResult::Status::Ok &&
+              get.result().body == release_json("0.5.0"),
+          "a GET on a thread: " + get.result().message);
+
+    // A download: 256 KiB of every byte value, in pieces; the progress seen between 0 and 1; the file as sent.
+    std::string payload;
+    for (int i = 0; i < 256 * 1024; i++) {
+        payload += (char)((i * 7 + i / 256) & 0xFF);
+    }
+    const std::string payload_file = path_join(root, "package.bin"), out = path_join(root, "download/package.bin");
+    path_make_dir(path_join(root, "download"), nullptr);
+    write(payload_file, payload);
+    set_env(ENV_SELFTEST_CURL_REPLY, "slow:" + payload_file);
+    HttpDownload d;
+    d.start("https://example.invalid/package.bin", out, (int64_t)payload.size());
+    bool partial = false;
+    for (int t = 0; t < 30000 && d.poll() == HttpDownload::State::Running; t += 5) {
+        partial |= d.progress() > 0.0f && d.progress() < 1.0f;
+        SDL_Delay(5);
+    }
+    check(d.state() == HttpDownload::State::Finished && d.result().status == HttpResult::Status::Ok &&
+              read(out) == payload,
+          "a download: the whole file, byte for byte: " + d.result().message);
+    check(partial, "the download's progress is seen between 0 and 1");
+    check(read(args_file).find("-o\n" + out + "\n") != std::string::npos &&
+              read(args_file).find("--max-filesize\n") != std::string::npos,
+          "the download's arguments: -o and --max-filesize");
+    // Cancelled once it has started: the process is killed and the partial file removed.
+    d.start("https://example.invalid/package.bin", out, (int64_t)payload.size());
+    for (int t = 0; t < 20000 && d.received() == 0 && d.poll() == HttpDownload::State::Running; t += 5) {
+        SDL_Delay(5);
+    }
+    d.cancel();
+    for (int t = 0; t < 20000 && d.poll() == HttpDownload::State::Running; t += 5) {
+        SDL_Delay(5);
+    }
+    check(d.result().status == HttpResult::Status::Cancelled && !path_is_file(out),
+          "a cancelled download: its file removed: " + d.result().message);
+    // A size other than the expected one, and an HTTP error: Failed, no file left.
+    set_env(ENV_SELFTEST_CURL_REPLY, payload_file);
+    d.start("https://example.invalid/package.bin", out, (int64_t)payload.size() + 1);
+    for (int t = 0; t < 20000 && d.poll() == HttpDownload::State::Running; t += 5) {
+        SDL_Delay(5);
+    }
+    check(d.result().status == HttpResult::Status::Failed && d.result().message.find("bytes") != std::string::npos &&
+              !path_is_file(out),
+          "a download of the wrong size fails, its file removed: " + d.result().message);
+    set_env(ENV_SELFTEST_CURL_REPLY, "http:404");
+    d.start("https://example.invalid/package.bin", out, (int64_t)payload.size());
+    for (int t = 0; t < 20000 && d.poll() == HttpDownload::State::Running; t += 5) {
+        SDL_Delay(5);
+    }
+    check(d.result().status == HttpResult::Status::Failed && d.result().http_code == 404 && !path_is_file(out),
+          "a download's HTTP error: " + d.result().message);
+    SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), SELF_TEST_CURL_ARGS_ENV);
+    set_env(ENV_SELFTEST_CURL_REPLY, "offline");
+}
+
+// The flow in the window: the check at start, the prompt over Play (Escape is Later, the Release page, Skip and a
+// newer release), the setting off and Check now, --no-update-check, the game running, curl missing, a cut answer, a
+// development build, no repository; pictures of the prompt and of the Settings screen's part.
+static void test_update_window(SDL_Window *window, const std::string &root) {
+    const std::string dir = path_join(root, "updates-ui"), shots = path_join(root, "screens");
+    const std::string files = path_join(root, "updates-files");
+    path_make_dir(files, nullptr);
+    const std::string release = path_join(files, "release.json");
+    write(release, release_json("0.5.0"));
+    set_env(ENV_FAKE_CURL, self_exe());
+    set_env(ENV_SELFTEST_CURL_REPLY, release);
+    SettingsDir location;
+    location.dir = dir;
+    location.source = DirSource::Argument;
+    std::vector<std::string> opened;
+    AppOptions o;
+    o.update_repo = "owner/game";
+    o.version = "0.4.1";
+    o.open_url = [&](const std::string &u) {
+        opened.push_back(u);
+        return true;
+    };
+    o.echo_game = false;
+    SDL_Renderer *renderer = SDL_GetRenderer(window);
+    const auto wait_check = [&](App &app) {
+        pump_until(app, [&] { return !app.update_check().checking(); }, 20000);
+        pump(app, 3);
+    };
+    const auto skipped_in_file = [&] {
+        Json j = Json::parse(read(path_join(dir, SETTINGS_FILE)), nullptr);
+        const Json *l = j.find("launcher"), *u = l != nullptr ? l->find("updates") : nullptr;
+        const Json *s = u != nullptr ? u->find("skipped") : nullptr;
+        return s != nullptr ? s->as_string() : std::string();
+    };
+    std::string png;
+    {
+        App app(window, renderer, location, o);
+        check(app.update_check().checking(), "the update check starts with the launcher");
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::Newer && app.update_prompt() &&
+                  app.update_prompt_shown(),
+              "a newer release: the prompt over the Play screen: " + app.update_check().summary());
+        png = path_join(shots, "17-Play-update.png");
+        app.frame(png.c_str());
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, true);
+        pump(app, 1);
+        push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, false);
+        pump(app, 3);
+        check(!app.update_prompt() && !app.update_prompt_shown() && app.settings().values.update_skipped.empty(),
+              "Escape is Later: the prompt closes, nothing is written");
+        app.set_screen(Screen::Settings);
+        pump(app, 3);
+        scroll_page_down(window, app);
+        png = path_join(shots, "18-Settings-update.png");
+        app.frame(png.c_str());
+        check(opened.empty(), "no page opened by itself");
+    }
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_prompt_shown(), "Later is not remembered: the next start prompts again");
+        app.update_answer(UpdateAnswer::ReleasePage);
+        pump(app, 3);
+        check(!app.update_prompt_shown() && opened.size() == 1 &&
+                  opened.back() == "https://github.com/owner/game/releases/tag/v0.5.0",
+              "Release page opens the release's page");
+    }
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        app.update_answer(UpdateAnswer::Skip);
+        pump(app, 3);
+        app.flush();
+        check(!app.update_prompt_shown() && skipped_in_file() == "v0.5.0",
+              "Skip this version writes launcher.updates.skipped: " + skipped_in_file());
+    }
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::Newer && !app.update_prompt() &&
+                  !app.update_prompt_shown(),
+              "a skipped release is not offered again");
+    }
+    write(release, release_json("0.6.0"));
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_prompt_shown(), "a release newer than the skipped one is offered");
+        app.update_answer(UpdateAnswer::Later);
+        pump(app, 2);
+    }
+    // The setting off: no check at start; Check now still works, and only reports (no prompt).
+    {
+        SettingsFile f;
+        std::string err;
+        f.load(dir);
+        f.values.update_check = false;
+        check(f.save(&err), "turning the check off: " + err);
+    }
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        pump(app, 3);
+        check(app.update_check().state() == UpdateCheck::State::Idle && !app.update_prompt(),
+              "the setting off: no check at start");
+        app.update_check_now();
+        check(app.update_check().checking(), "Check now starts a check with the setting off");
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::Newer && !app.update_prompt(),
+              "Check now reports the release without a prompt: " + app.update_check().summary());
+        app.set_screen(Screen::Settings);
+        pump(app, 3);
+        scroll_page_down(window, app);
+        png = path_join(shots, "18b-Settings-update-off.png");
+        app.frame(png.c_str());
+        app.settings().values.update_check = true; // the checkbox: written back
+        app.settings().values.update_skipped.clear(); // the Forget button
+        app.flush();
+    }
+    {
+        SettingsFile f;
+        f.load(dir);
+        f.values.update_check = true;
+        f.values.update_skipped.clear();
+        std::string err;
+        check(f.save(&err), "the check back on: " + err);
+    }
+    // --no-update-check: none at start.
+    {
+        AppOptions no = o;
+        no.update_check = false;
+        App app(window, renderer, location, no);
+        pump(app, 3);
+        check(app.update_check().state() == UpdateCheck::State::Idle, "--no-update-check: no check at start");
+    }
+    // The game running: the prompt waits until it has ended.
+    {
+        AppOptions play = o;
+        play.game = self_exe();
+        set_fake_mode("wait");
+        App app(window, renderer, location, play);
+        app.set_screen(Screen::Play);
+        app.play();
+        check(app.game_run().running(), "the stand-in game runs: " + app.play_error());
+        pump_until(app, [&] { return !app.update_check().checking(); }, 20000);
+        pump(app, 3);
+        check(app.game_run().running() && app.update_prompt() && !app.update_prompt_shown(),
+              "no prompt while the game runs");
+        pump_until(app, [&] { return !app.game_run().running(); }, 20000);
+        pump(app, 3);
+        check(app.update_prompt_shown(), "the prompt once the game has ended");
+        SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), SELF_TEST_GAME_ENV);
+    }
+    // curl missing: said so, the release page offered; no prompt.
+    set_env(ENV_FAKE_CURL, path_join(files, "no-such-curl"));
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::NoCurl && !app.update_prompt() &&
+                  app.update_check().summary().find("curl was not found") != std::string::npos &&
+                  app.update_check().release_page() == "https://github.com/owner/game/releases/latest",
+              "curl missing: reported, the releases page offered: " + app.update_check().summary());
+        app.set_screen(Screen::Settings);
+        pump(app, 3);
+        scroll_page_down(window, app);
+        png = path_join(shots, "18c-Settings-update-no-curl.png");
+        app.frame(png.c_str());
+    }
+    set_env(ENV_FAKE_CURL, self_exe());
+    // A cut answer: the check failed, no prompt.
+    write(release, release_json("0.6.0").substr(0, 300));
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::Failed && !app.update_prompt(),
+              "a malformed answer: the check failed: " + app.update_check().summary());
+    }
+    // A development build: the latest is reported, never offered.
+    write(release, release_json("0.6.0"));
+    {
+        AppOptions dev = o;
+        dev.version = "dev-abc1234";
+        App app(window, renderer, location, dev);
+        app.set_screen(Screen::Play);
+        wait_check(app);
+        check(app.update_check().state() == UpdateCheck::State::DevBuild && !app.update_prompt() &&
+                  app.update_check().summary().find("development build") != std::string::npos,
+              "a development build: the latest reported, no prompt: " + app.update_check().summary());
+    }
+    // No repository in the description: no check, nothing of it on the screens.
+    {
+        AppOptions none = o;
+        none.update_repo = "";
+        App app(window, renderer, location, none);
+        app.set_screen(Screen::Settings);
+        pump(app, 3);
+        scroll_page_down(window, app);
+        check(!app.update_check().available() && app.update_check().state() == UpdateCheck::State::Idle &&
+                  !app.update_prompt(),
+              "no repository: no update check");
+        png = path_join(shots, "18d-Settings-no-repo.png");
+        app.frame(png.c_str());
+        check(app.last_error().empty(), "no error in the status bar: " + app.last_error());
+    }
+    set_env(ENV_SELFTEST_CURL_REPLY, "offline");
+}
+
 static void test_window(const std::string &root) {
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
@@ -1325,6 +1922,7 @@ static void test_window(const std::string &root) {
     }
     test_play(window, root);
     test_mods_window(window, root);
+    test_update_window(window, root);
     gui_close(window, renderer);
 }
 
@@ -1348,6 +1946,10 @@ bool self_test_run(const std::string &dir) {
             SDL_SetHint(SDL_HINT_VIDEO_DRIVER, driver);
         }
     }
+    // Never the network: every update check of the self-test asks curl's stand-in (this executable), which answers
+    // "could not resolve host" unless a test gives it an answer.
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), ENV_FAKE_CURL, self_exe().c_str(), true);
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), ENV_SELFTEST_CURL_REPLY, "offline", true);
     remove_tree(root);
     if (!path_make_dir(root, &err)) {
         std::fprintf(stderr, "self-test: %s\n", err.c_str());
@@ -1361,6 +1963,9 @@ bool self_test_run(const std::string &dir) {
     test_mods(path_join(root, "mods"));
     test_disc(path_join(root, "disc"));
     test_game(path_join(root, "game"));
+    test_update_rules();
+    test_update_settings(path_join(root, "update-settings"));
+    test_http(path_join(root, "http"));
     test_window(root);
     std::fprintf(stderr, "self-test: %d of %d checks passed; pictures in %s\n", checks - failures, checks,
                  path_join(root, "screens").c_str());

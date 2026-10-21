@@ -49,13 +49,6 @@ static float item_width(float label_w) {
                     ImGui::GetContentRegionAvail().x - label_w - ImGui::GetStyle().ItemSpacing.x);
 }
 
-static void section_title(const char *title) {
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, rgb(ACCENT));
-    ImGui::TextUnformatted(title);
-    ImGui::PopStyleColor();
-}
-
 // The hardware renderer's present filter (video.filter; under the GPU renderer only: the Software one shows the
 // picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (video.crt), a line of help for the choice.
 void Screens::draw_filter(float label_w) {
@@ -256,6 +249,10 @@ void Screens::draw_settings() {
     ImGui::PopTextWrapPos();
     ImGui::Unindent(label_w);
     ImGui::EndDisabled();
+
+    if (settings_extra_) {
+        settings_extra_(label_w);
+    }
 
     section_title("Settings file");
     if (fields_begin("where")) {

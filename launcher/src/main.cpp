@@ -15,18 +15,24 @@
 
 static void usage(const char *argv0) {
     std::fprintf(stderr,
-                 "usage: %s [--config-dir DIR] [--game PATH] [--self-test DIR]\n"
+                 "usage: %s [--config-dir DIR] [--game PATH] [--no-update-check] [--self-test DIR]\n"
                  "  --config-dir DIR  the settings directory (else $%s, portable.txt beside the launcher, a\n"
                  "                    settings.json in the current directory, the per-user directory)\n"
                  "  --game PATH       the game's executable (else $%s, %s beside the launcher,\n"
                  "                    ../port-sdl/%s from the launcher's directory)\n"
+                 "  --no-update-check no check for a newer release at start (Settings' Check now still works)\n"
                  "  --self-test DIR   run the self-test (it writes into DIR/launcher-self-test/, replacing it),\n"
                  "                    on any video driver (CI: SDL_VIDEO_DRIVER=offscreen); exit 0 = passed\n",
                  argv0, psxstack::SETTINGS_DIR_ENV, psxstack::ENV_GAME, psxstack::GAME_EXE, psxstack::GAME_EXE);
 }
 
 int main(int argc, char **argv) {
-    // The self-test starts this executable as a stand-in for the game (selftest.cpp).
+    // The self-test starts this executable as a stand-in for curl (http.h: its arguments start with -fsSL) and for the
+    // game (selftest.cpp).
+    if (const char *reply = SDL_getenv(psxstack::ENV_SELFTEST_CURL_REPLY); reply && argc > 1 &&
+                                                                          std::strcmp(argv[1], "-fsSL") == 0) {
+        return psxstack::self_test_fake_curl(reply, argc, argv);
+    }
     if (const char *mode = SDL_getenv(psxstack::SELF_TEST_GAME_ENV)) {
         return psxstack::self_test_fake_game(mode, argc, argv);
     }
@@ -37,6 +43,8 @@ int main(int argc, char **argv) {
             config_dir = argv[++i];
         } else if (std::strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
             options.game = argv[++i];
+        } else if (std::strcmp(argv[i], "--no-update-check") == 0) {
+            options.update_check = false;
         } else if (std::strcmp(argv[i], "--self-test") == 0 && i + 1 < argc) {
             self_test = argv[++i];
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {

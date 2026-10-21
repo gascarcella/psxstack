@@ -5,6 +5,7 @@
 // per frame, end_frame() after ImGui::Render (the save, once no widget is in use).
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,9 @@ public:
               bool game_found);
     // In the game's menu: every screen says that changes take effect at the next start.
     void set_in_game(bool on) { in_game_ = on; }
+    // A part of the Settings screen its host draws itself, after "Memory cards" (the launcher's Updates); given the
+    // label column's width. The in-game menu sets none.
+    void set_settings_extra(std::function<void(float label_w)> draw) { settings_extra_ = std::move(draw); }
 
     // True when the event belonged to the controls' prompt (it then does not reach ImGui).
     bool handle_event(const SDL_Event &e);
@@ -88,6 +92,7 @@ private:
     bool dirty_ = false;
     bool saved_ = false;
     bool in_game_ = false;
+    std::function<void(float)> settings_extra_;
     std::string error_; // the last save error
 
     // The controls: the "press a key" prompt and what it is for (section 0 keyboard, 1 gamepad, 2 hotkeys).

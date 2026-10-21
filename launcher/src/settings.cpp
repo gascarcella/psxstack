@@ -303,6 +303,14 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
     read_input(doc, &s, w);
     if (const Json *launcher = section(doc, "launcher", w)) {
         read_string(launcher, "launcher", "last_dir", &s.last_dir, w);
+        if (const Json *updates = launcher->find("updates")) {
+            if (!updates->is_object()) {
+                warn(w, "launcher.updates: expected an object; using the defaults");
+            } else {
+                read_bool(updates, "launcher.updates", "check", &s.update_check, w);
+                read_string(updates, "launcher.updates", "skipped", &s.update_skipped, w);
+            }
+        }
     }
     for (int i = 0; i < 2; i++) {
         const char *key = i == 0 ? "memcard1" : "memcard2";
@@ -356,8 +364,24 @@ void settings_to_json(const Settings &s, Json *doc) {
         doc->set(i == 0 ? "memcard1" : "memcard2", c.present ? Json::string(c.path) : Json());
     }
     write_input(s, doc);
-    if (!s.last_dir.empty() || doc->find("launcher") != nullptr) {
+    Json *launcher = doc->find("launcher");
+    if (!s.last_dir.empty() || (launcher != nullptr && launcher->find("last_dir") != nullptr)) {
         doc->member("launcher").set("last_dir", Json::string(s.last_dir));
+    }
+    // launcher.updates: written once it differs from the defaults (or is there already); its other members kept.
+    launcher = doc->find("launcher");
+    const Json *updates = launcher != nullptr ? launcher->find("updates") : nullptr;
+    if (!s.update_check || !s.update_skipped.empty() || updates != nullptr) {
+        if (updates != nullptr && !updates->is_object()) {
+            doc->member("launcher").erase("updates");
+        }
+        Json &u = doc->member("launcher").member("updates");
+        u.set("check", Json::boolean(s.update_check));
+        if (!s.update_skipped.empty()) {
+            u.set("skipped", Json::string(s.update_skipped));
+        } else {
+            u.erase("skipped");
+        }
     }
 }
 
