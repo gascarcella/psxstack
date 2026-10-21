@@ -35,12 +35,14 @@
  * one, the settings' map and hotkeys. Then (without a script) the pause: its key pressed, released and pressed again
  * while paused; the pause must poll without a vsync and give back the game. It ends the run with status 0 when every check passed, 6 when one failed; with
  * a script it only logs the result and the script runs on, so its log can be compared with a run without the test. */
+#include <stdio.h>
 #include <string.h>
 
 #include "json.h"
 #include "port_harness.h"
 #include "port_runtime.h"
 #include "psyq.h"
+#include "savestate.h"
 #include "settings.h"
 
 #ifdef PSXSTACK_SDL
@@ -112,7 +114,7 @@ static struct {
     int held, pressed; /* at the last poll: a trigger complete; a trigger completed */
 } input_actions[INPUT_MAX_ACTIONS];
 static int input_action_count;
-int port_action_pause = -1, port_action_fullscreen = -1;
+int port_action_pause = -1, port_action_fullscreen = -1, port_action_save_state = -1, port_action_load_state = -1;
 static int input_test;      /* --input-test running */
 static int input_test_mute; /* the actions do nothing for their consumers (the test's steps) */
 
@@ -358,7 +360,11 @@ void port_input_settings(const PortJson *input) {
             port_settings_fail("input.hotkeys", "an object (an action -> a binding)");
         }
         for (i = 0; hotkeys != NULL && i < hotkeys->count; i++) {
-            if (strcmp(hotkeys->keys[i], "pause") != 0 && strcmp(hotkeys->keys[i], "fullscreen") != 0) {
+            static const char *const actions[] = { "pause", "fullscreen", "save_state", "load_state", NULL };
+            const char *const *a;
+            for (a = actions; *a != NULL && strcmp(*a, hotkeys->keys[i]) != 0; a++) {
+            }
+            if (*a == NULL) {
                 port_log("settings: input.hotkeys.%s: unknown action, ignored", hotkeys->keys[i]);
             }
         }
@@ -366,6 +372,10 @@ void port_input_settings(const PortJson *input) {
     port_action_pause = port_input_action("pause", port_json_get(hotkeys, "pause"), "input.hotkeys.pause", "\"P\"");
     port_action_fullscreen = port_input_action("fullscreen", port_json_get(hotkeys, "fullscreen"),
                                                "input.hotkeys.fullscreen", "\"F11\"");
+    port_action_save_state = port_input_action("save_state", port_json_get(hotkeys, "save_state"),
+                                               "input.hotkeys.save_state", "\"F5\"");
+    port_action_load_state = port_input_action("load_state", port_json_get(hotkeys, "load_state"),
+                                               "input.hotkeys.load_state", "\"F9\"");
 }
 
 #ifdef PSXSTACK_SDL
@@ -610,6 +620,13 @@ static int input_test_pause_polls;
 static long input_test_pause_frame, input_test_pause_resumed;
 static int input_test_pause_before(void);
 static void input_test_paused(void);
+static int input_test_state;   /* the quick slot's round trip: 1 press save, 2 release, 3 press load, 4 loaded;
+                                * then paused: 5 press pause, 6 the pause's polls (save, load, re-paused, pause),
+                                * 7 resumed */
+static int input_test_state_polls;
+static long input_test_state_frame;
+static char input_test_state_path[4096];
+static int input_test_state_before(void);
 
 static int input_test_needs_pad(int step) {
     int k;
@@ -624,7 +641,7 @@ static int input_test_needs_pad(int step) {
 /* Before the poll: this frame's step (a press or its release). */
 static void input_test_before(void) {
     int k, i, masked;
-    if (input_test_pause_before()) {
+    if (input_test_pause_before() || input_test_state_before()) {
         return;
     }
     if (port_frames < 2 || input_test_step >= input_test_count) {
@@ -738,9 +755,129 @@ static int input_test_pause_before(void) {
         input_test_pause_set(0);
         port_log("input test: the pause: %s (%d polls paused at frame %ld, resumed at frame %ld)",
                  ok ? "passed" : "FAILED", input_test_pause_polls, input_test_pause_frame, input_test_pause_resumed);
-        port_exit(ok ? 0 : 6, ok ? "input test passed" : "input test failed");
+        input_test_pause = 0;
+        if (!ok) {
+            port_exit(6, "input test failed");
+        }
+        if (port_savestate_armed && port_savestate_quick_get() != NULL &&
+            input_actions[port_action_save_state].count > 0 && input_actions[port_action_load_state].count > 0) {
+            input_test_state = 1; /* then the quick slot's round trip */
+            return 1;
+        }
+        port_log("input test: the quick slot: skipped (%s)",
+                 !port_savestate_armed ? "save states are off in this run" : "no slot, or a hotkey unbound");
+        port_exit(0, "input test passed");
     }
     return 0;
+}
+
+/* The quick slot's round trip (after the pause's), running: the save_state hotkey's first trigger pressed at a
+ * vsync (the slot, a file of the test's own beside the real one, is written at its end), released at the next, where
+ * the file must exist; the load_state hotkey's pressed at the next (the load goes through main at its end), so the
+ * vsync after it is the saved one's successor again: the frame count went back. Then paused: the pause key at a
+ * vsync G; in the pause's polls, the pause key released, save pressed (the slot as of G's end) and released, load
+ * pressed (the pump leaves the pause, loads, and pauses again at G's end), released, the pause key again; the next
+ * vsync must be G + 1 after six polls. The file is removed. */
+static void input_test_state_set(int action, int down) {
+    const InputTrigger *tr = &input_actions[action].triggers[0];
+    int k;
+    for (k = 0; k < tr->n; k++) {
+        input_test_set(tr->ids[k], down);
+    }
+}
+
+static int input_test_state_before(void) {
+    FILE *f;
+    switch (input_test_state) {
+    case 1:
+        snprintf(input_test_state_path, sizeof(input_test_state_path), "%s.input-test", port_savestate_quick_get());
+        port_savestate_quick_path(input_test_state_path);
+        input_test_state_set(port_action_save_state, 1);
+        input_test_state_frame = port_frames;
+        input_test_state = 2;
+        return 1;
+    case 2:
+        input_test_state_set(port_action_save_state, 0);
+        f = fopen(input_test_state_path, "rb");
+        if (f == NULL) {
+            port_log("input test: the quick slot: FAILED (nothing at %s after the save_state hotkey)",
+                     input_test_state_path);
+            port_exit(6, "input test failed");
+        }
+        fclose(f);
+        input_test_state = 3;
+        return 1;
+    case 3:
+        input_test_state_set(port_action_load_state, 1);
+        input_test_state = 4;
+        return 1;
+    case 4: {
+        int ok = port_frames == input_test_state_frame + 1;
+        input_test_state_set(port_action_load_state, 0);
+        remove(input_test_state_path);
+        port_log("input test: the quick slot, running: %s (saved at the end of frame %ld, loaded by the load_state "
+                 "hotkey: frame %ld follows)",
+                 ok ? "passed" : "FAILED", input_test_state_frame, port_frames);
+        if (!ok) {
+            port_exit(6, "input test failed");
+        }
+        input_test_state = 5;
+        return 1;
+    }
+    case 5:
+        input_test_state_set(port_action_pause, 1);
+        input_test_state_frame = port_frames;
+        input_test_state = 6;
+        return 1;
+    case 7: {
+        int ok = port_frames == input_test_state_frame + 1 && input_test_state_polls == 6;
+        input_test_state_set(port_action_pause, 0);
+        f = fopen(input_test_state_path, "rb");
+        if (f == NULL) {
+            ok = 0;
+        } else {
+            fclose(f);
+        }
+        remove(input_test_state_path);
+        port_log("input test: the quick slot, paused: %s (%d polls paused at frame %ld, the slot %s, frame %ld "
+                 "follows)",
+                 ok ? "passed" : "FAILED", input_test_state_polls, input_test_state_frame,
+                 f != NULL ? "written" : "NOT written", port_frames);
+        port_exit(ok ? 0 : 6, ok ? "input test passed" : "input test failed");
+    }
+    default:
+        return 0;
+    }
+}
+
+/* The paused part's polls (port_input_poll_paused, from the pump's pause loop). */
+static void input_test_state_paused(void) {
+    if (input_test_state != 6) {
+        return;
+    }
+    switch (++input_test_state_polls) {
+    case 1:
+        input_test_state_set(port_action_pause, 0);
+        break;
+    case 2:
+        input_test_state_set(port_action_save_state, 1);
+        break;
+    case 3:
+        input_test_state_set(port_action_save_state, 0);
+        break;
+    case 4:
+        input_test_state_set(port_action_load_state, 1); /* the pump leaves the pause, loads, pauses again */
+        break;
+    case 5:
+        input_test_state_set(port_action_load_state, 0);
+        break;
+    case 6:
+        input_test_state_set(port_action_pause, 1);
+        input_test_state = 7;
+        break;
+    default:
+        break;
+    }
 }
 
 static void input_test_paused(void) {
@@ -818,6 +955,7 @@ void port_input_frame(void) {
 void port_input_poll_paused(void) {
     if (input_test) {
         input_test_paused();
+        input_test_state_paused();
     }
     input_poll();
 }

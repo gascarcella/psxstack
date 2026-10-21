@@ -131,7 +131,8 @@ buttons, the PlayStation layout): south cross, east circle, west square, north t
 shoulders L1/R1, triggers L2/R2, the D-pad and the left stick the D-pad. All of it is rebindable in the settings
 (`input.keyboard`, `input.gamepad`, `input.hotkeys`; docs/LAUNCHER.md "Input bindings"), and the mods add hotkeys. A
 hotkey never reaches the pad: a completed trigger masks its inputs until they are all released. **The pause** stops the
-game between two vsyncs (the window keeps presenting the last image, the audio device pauses) until the key again. Every change of the pad goes to the log's `I` lines and the
+game between two vsyncs (the window keeps presenting the last image, the audio device pauses) until the key again.
+**The quick state**: F5 saves the whole game to the quick slot, F9 goes on from it ("Save states" below). Every change of the pad goes to the log's `I` lines and the
 record's `inputs`, as a script's do. With `--script` the script owns the pad: the window's input never reaches it.
 Closing the window (or SIGINT/SIGTERM, which SDL turns into a quit) ends the run: `port_exit(0, "window closed")`, the
 log and the record written. `--input-test` checks the path: it injects every key of the map (`SDL_PushEvent`), then
@@ -327,13 +328,23 @@ and a later run of **the same binary** going on from it.
   read in progress follows the loading run's `--cd-speed`).
 - **Through the debug channel:** `save_state` and `load_state` (docs/PORT.md "Debug channel and the MCP server"; the MCP
   tools `state_save` and `state_load`): the same files.
+- **The hotkeys** (window mode; docs/LAUNCHER.md "Input bindings"): `save_state` (default `F5`) writes the quick slot
+  at the end of the vsync it is pressed in (while paused: as of the vsync the pause follows); `load_state` (default
+  `F9`) goes on from the slot, through the same path as the channel's load, and a game that was paused is paused again
+  at the loaded vsync. The slot is one file, overwritten: `--quick-state FILE`, default `quick.state` beside the
+  settings file (`--config`; where the memory cards are), or in the current directory without one. A slot this build
+  did not write, or one that cannot be written, is refused in the log and the game goes on. `--input-test` ends with
+  the slot's round trip (a file of its own beside the slot, removed): the save hotkey, the file, the load hotkey, the
+  saved vsync's successor again.
 - **The cost** (the first game, its first battle): about 8 MB, saved or loaded in under 0.1 s; the sanitizer build's
   is 27 MB (its sections carry ASan's redzones), 1.5 s, and needs `ASAN_OPTIONS=detect_stack_use_after_return=0`.
-- **When states are on:** with `--save-state`, `--load-state` or `--debug`, the game runs on a stack of the runtime's
-  (8 MB, static) instead of the main thread's; without them nothing of it exists but one branch in `port_frame`. A
+- **When states are on:** with `--save-state`, `--load-state`, `--debug` or a window (the hotkeys' quick slot), the
+  game runs on a stack of the runtime's (8 MB, static) instead of the main thread's; without them nothing of it
+  exists but one branch in `port_frame`. A
   game's fibers (docs/PORT.md "Fibers") always run on static stacks of the runtime's, so a state holds them in any
   case, and a load resumes the fiber the vsync ended on.
-  Under AddressSanitizer with its fake stacks on, `--debug` alone runs without states (logged).
+  Under AddressSanitizer with its fake stacks on, `--debug` alone or a window runs without states (logged; the
+  hotkeys say so in the log).
 
 **The state file.** A sequence of blocks, each `<tag length: 1 byte><tag><size: 8 bytes, host order><bytes>`, in an
 order fixed by the code: each module's sync function (`<module>_state(PortState *)`, `include/psxstack/savestate.h`)

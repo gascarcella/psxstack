@@ -38,7 +38,8 @@ struct HotkeyAction {
     const char *label;
     const char *description;
 };
-// The port's own actions (input.hotkeys): pause, fullscreen. A mod's bindings are its own options.
+// The port's own actions (input.hotkeys): pause, fullscreen, save_state, load_state. A mod's bindings are its own
+// options.
 const std::vector<HotkeyAction> &hotkey_actions();
 Binding default_hotkey(const std::string &action);
 

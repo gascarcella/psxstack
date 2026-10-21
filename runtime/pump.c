@@ -20,7 +20,12 @@
  * at the end of the vsync on which it is asked for (pump_pause_wanted) the game stops between two vsyncs: the window
  * keeps polling its events (the hotkeys, fullscreen, the close) and presenting the last image, the debug channel its
  * socket, the audio device is paused, the watchdog re-armed; the pause key again (or the channel's resume/step) goes
- * on with the next vsync, the schedule started over. Nothing of it reaches the game, the log or the record. */
+ * on with the next vsync, the schedule started over. Nothing of it reaches the game, the log or the record.
+ *
+ * The quick slot (the `save_state` and `load_state` hotkeys, input.c; savestate.c port_savestate_quick_*): a save
+ * while the game runs is written at the vsync's end (the capture point), while paused as of the last vsync's end; a
+ * load goes through main as the debug channel's does (port_savestate_load_request longjmps there, the state is
+ * applied, the game resumes at the saved vsync's end), and a game that was paused is paused again right there. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,10 +43,13 @@ long port_rate = PSXSTACK_GAME_RATE;        /* the nominal rate (vsyncs per seco
 static long pump_pace = PSXSTACK_GAME_RATE; /* the pace (vsyncs per second of the wall clock); 0: unthrottled */
 static int pump_pace_restart;
 static int pump_pause_wanted; /* the game is to be held (is held) between two vsyncs: the pause key, the channel */
+static int pump_load_wanted;  /* the quick slot is read and checked (the load_state hotkey): applied after the pause */
+static int pump_load_repause; /* it was asked for while paused: the loaded vsync is paused */
 static int port_watchdog_armed;
 static void port_frame(void);
 static void port_pace(void);
 static void port_pause(void);
+static void pump_load(void) __attribute__((noreturn));
 
 void port_pump_init(void) {
     psyq_set_vsync_pre_hook(port_audio_frame); /* the SPU's samples of the frame, before the game's handler */
@@ -99,12 +107,32 @@ static void port_frame(void) {
         if (port_input_pressed(port_action_pause)) {
             pump_pause_wanted = 1;
         }
+        if (port_input_pressed(port_action_save_state)) {
+            port_savestate_quick_save(0); /* at the capture point below */
+        }
+        if (port_input_pressed(port_action_load_state) && port_savestate_quick_load()) {
+            pump_load_wanted = 1;
+        }
     }
     PORT_SAVESTATE_POINT(); /* the end of the vsync: a state's context (runtime/savestate.c), before the pause */
     if (pump_pause_wanted) {
         port_pause();
     }
+    if (pump_load_wanted) {
+        pump_load();
+    }
     port_fiber_pump_point(); /* the switch a vblank handler asked for (port_fiber_preempt): the tick is done */
+}
+
+/* The quick slot's load (the load_state hotkey): once this vsync is complete (and its pause left), through main,
+ * which resumes the loaded state at its vsync's end; the pause the game was in holds there. */
+static void pump_load(void) {
+    pump_load_wanted = 0;
+    if (pump_load_repause) {
+        pump_load_repause = 0;
+        pump_pause_wanted = 1;
+    }
+    port_savestate_load_request();
 }
 
 void port_pump_pause_request(void) {
@@ -141,6 +169,14 @@ static void port_pause(void) {
         if (port_window) {
             port_input_poll_paused();
             if (port_input_pressed(port_action_pause)) {
+                pump_pause_wanted = 0;
+                break;
+            }
+            if (port_input_pressed(port_action_save_state)) {
+                port_savestate_quick_save(1); /* as of the vsync this pause follows */
+            }
+            if (port_input_pressed(port_action_load_state) && port_savestate_quick_load()) {
+                pump_load_wanted = pump_load_repause = 1; /* out of the pause first: pump_load re-pauses */
                 pump_pause_wanted = 0;
                 break;
             }

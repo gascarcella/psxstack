@@ -94,6 +94,7 @@ static size_t state_cur_size;
 static u8 *state_stack_lo;         /* the lowest byte of it the context needs, at the last capture */
 static u8 *state_stack_copy;       /* [state_stack_lo, top) at the last capture (a save while paused uses it) */
 static size_t state_stack_copy_n, state_stack_copy_cap;
+static long state_stack_copy_frame; /* the vsync the copy is of (a save while paused must be of this vsync) */
 #ifdef STATE_ASAN
 static const void *state_main_bottom; /* main's stack (AddressSanitizer's fiber switch back, at a reset) */
 static size_t state_main_size;
@@ -113,6 +114,8 @@ static const char *state_load_path;  /* --load-state, or the debug channel's loa
 static PortState state_loaded;        /* a validated state waiting to be applied (its data) */
 static int state_load_ready;
 static const char *state_checkpoint;  /* the checkpoint that ran in this frame (script.c) */
+static const char *state_quick_path;  /* the quick slot (--quick-state; the save_state/load_state hotkeys) */
+static int state_quick_due;           /* the save_state hotkey this frame: the slot is written at the capture point */
 
 /* ---- Raw copies: under AddressSanitizer a block may span its redzones (the game's sections, the game stack's
  * frames), which memcpy would report: byte by byte, uninstrumented, there. */
@@ -601,6 +604,7 @@ static void state_keep_stack(void) {
     }
     state_copy_raw(state_stack_copy, state_stack_lo, n);
     state_stack_copy_n = n;
+    state_stack_copy_frame = port_frames;
 }
 
 static int state_save_due(const StateSave *sv) {
@@ -628,8 +632,8 @@ void port_savestate_captured(void) {
     for (i = 0; i < state_save_count; i++) {
         due |= state_save_due(&state_saves[i]);
     }
-    if (due || port_debug_active) {
-        state_keep_stack(); /* the debug channel may save from the pause that follows */
+    if (due || state_quick_due || port_debug_active || port_pump_paused()) {
+        state_keep_stack(); /* the quick slot now, or the debug channel or the save_state hotkey from the pause that follows */
     }
     for (i = 0; i < state_save_count; i++) {
         StateSave *sv = &state_saves[i];
@@ -643,6 +647,13 @@ void port_savestate_captured(void) {
         left += !sv->done;
     }
     state_checkpoint = NULL;
+    if (state_quick_due) {
+        char err[512];
+        state_quick_due = 0;
+        if (!state_write(state_quick_path, err, sizeof(err))) {
+            port_log("state: quick save: %s", err);
+        }
+    }
     if (port_debug_active) {
         port_debug_state_point(); /* a save the channel asked for while the game ran */
     }
@@ -665,8 +676,8 @@ int port_savestate_save_now(const char *path, char *err, size_t err_size) {
         snprintf(err, err_size, "save states are off in this run (see its log)");
         return 0;
     }
-    if (state_stack_copy_n == 0) {
-        snprintf(err, err_size, "no vsync has ended yet");
+    if (state_stack_copy_n == 0 || state_stack_copy_frame != port_frames) {
+        snprintf(err, err_size, "no copy of this vsync's stack (no vsync has ended yet)");
         return 0;
     }
     return state_write(path, err, err_size);
@@ -695,4 +706,53 @@ void port_savestate_load_request(void) {
     port_log("state: loading %s: back to main", state_loaded.path);
     port_savestate_leave_stack();
     longjmp(port_reset_jmp, 2);
+}
+
+/* ---- The quick slot (pump.c: the save_state and load_state hotkeys) */
+
+void port_savestate_quick_path(const char *path) {
+    state_quick_path = path;
+}
+
+const char *port_savestate_quick_get(void) {
+    return state_quick_path;
+}
+
+static int state_quick_on(const char *what) {
+    if (!port_savestate_armed) {
+        port_log("state: quick %s: save states are off in this run (see its log)", what);
+        return 0;
+    }
+    if (state_quick_path == NULL) {
+        port_log("state: quick %s: no slot in this run", what);
+        return 0;
+    }
+    return 1;
+}
+
+void port_savestate_quick_save(int paused) {
+    char err[512];
+    if (!state_quick_on("save")) {
+        return;
+    }
+    if (!paused) {
+        state_quick_due = 1; /* written at this vsync's end, port_savestate_captured */
+        return;
+    }
+    if (!port_savestate_save_now(state_quick_path, err, sizeof(err))) {
+        port_log("state: quick save: %s", err);
+    }
+}
+
+int port_savestate_quick_load(void) {
+    char err[512];
+    long frame;
+    if (!state_quick_on("load")) {
+        return 0;
+    }
+    if (!port_savestate_load_prepare(state_quick_path, &frame, err, sizeof(err))) {
+        port_log("state: quick load: %s", err);
+        return 0;
+    }
+    return 1;
 }

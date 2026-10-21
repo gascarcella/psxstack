@@ -282,14 +282,15 @@ with fixture symbol files and no game.
 
 ## Save states
 A state is the whole machine at the end of a vsync; a later run of the same binary goes on from it
-(`--save-state WHEN:FILE`, `--load-state FILE`, the debug channel's `save_state`/`load_state`; the options and the file
-format are in docs/RUNTIME.md "Save states"). An emulator saves its emulated CPU; here the game is native code, so the
+(`--save-state WHEN:FILE`, `--load-state FILE`, the debug channel's `save_state`/`load_state`, the window's
+`save_state`/`load_state` hotkeys and their quick slot; the options and the file format are in docs/RUNTIME.md "Save
+states"). An emulator saves its emulated CPU; here the game is native code, so the
 state is the game's memory plus its own C stack and registers, and the design is about making those portable to
 another process:
 - **The game on a stack of its own.** At a vsync the game is deep in its call chain (its main loop, a `VSync` or a
   `PLATFORM_WAIT`, `psyq_vsync_tick`, `port_frame`), and those frames hold return addresses, frame pointers and
-  pointers to its globals, the arena and the stack itself. When states may be used (a state option, `--debug`) the
-  game runs on a static 8 MB array of `savestate.c` (a three-instruction stack switch per architecture: x86-64 SysV and
+  pointers to its globals, the arena and the stack itself. When states may be used (a state option, `--debug`, a
+  window) the game runs on a static 8 MB array of `savestate.c` (a three-instruction stack switch per architecture: x86-64 SysV and
   Win64, i386, AArch64), so the stack's address is fixed with the image. A game's fibers ("Fibers") are on static
   stacks of `fiber.c` in any case; the vsync may end on one of them (a task that ticked and was preempted), and the
   context is then on that stack.
@@ -496,7 +497,8 @@ same with it on or off.
 ## Input
 - **Window input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad,
   once per vsync. Bindings are by key position and SDL's positional (PlayStation-layout) gamepad buttons, rebindable
-  in the settings file; hotkeys (fullscreen, pause, the mods') never reach the pad. The mapping and defaults are in
+  in the settings file; hotkeys (fullscreen, pause, the quick state's save and load, the mods') never reach the pad.
+  The mapping and defaults are in
   `docs/RUNTIME.md` "The window".
 - **Scripted input** (`runtime/script.c`): `--script` replays a pad script (the first game's layer-2 format, `docs/RUNTIME.md`)
   with the same step engine as the emulator's runner; the script then owns the pad.
