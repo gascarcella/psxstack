@@ -51,6 +51,7 @@
 #include "render_gpu.h"
 #include "render_gpu_textures.h"
 #endif
+#include "menu.h"
 
 #define VIDEO_MAX_W 640 /* screen pixels: the GPU's widest mode */
 #define VIDEO_MAX_H 576 /* lines: PAL, interlaced */
@@ -248,6 +249,7 @@ static Uint64 video_start_ns;
 static long video_presents;
 static int video_gpu; /* the window presents through the hardware renderer */
 static int video_aspect[2] = { 4, 3 }; /* the presented picture's aspect: 4:3, or 16:9 at the display's pixel aspect */
+static int video_scale_set;             /* the scale the window was opened or last sized at (port_video_apply) */
 
 int port_video_available(void) {
     return 1;
@@ -286,8 +288,12 @@ void port_video_open(int scale, int fullscreen) {
         if (video_renderer == NULL) {
             port_fatal("SDL_CreateRenderer: %s", SDL_GetError());
         }
+        port_menu_open_renderer(video_window, video_renderer); /* the in-game menu (menu.h), when compiled in */
+    } else {
+        port_menu_open_gpu(video_window, render_gpu_device());
     }
     port_window = 1;
+    video_scale_set = scale;
     video_start_ns = SDL_GetTicksNS();
     port_log("window: SDL %d.%d.%d, video driver %s, renderer %s%s%s, %dx%d%s", SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
              SDL_VERSIONNUM_MINOR(SDL_GetVersion()), SDL_VERSIONNUM_MICRO(SDL_GetVersion()),
@@ -301,6 +307,36 @@ void port_video_toggle_fullscreen(void) {
     if (video_window != NULL) {
         SDL_SetWindowFullscreen(video_window, (SDL_GetWindowFlags(video_window) & SDL_WINDOW_FULLSCREEN) == 0);
     }
+}
+
+/* video.scale and video.fullscreen changed live (the menu, live.c): the fullscreen state follows; the window is
+ * sized to the scale when it changed and the window is not fullscreen (a fullscreen window keeps the size for when
+ * it leaves). The filter (video.filter, video.crt) and the sub-pixel mode follow through their setters. */
+void port_video_apply(int scale, int fullscreen, const PortFilter *filter, int subpixel) {
+    if (video_window == NULL) {
+        return;
+    }
+    if (fullscreen != ((SDL_GetWindowFlags(video_window) & SDL_WINDOW_FULLSCREEN) != 0)) {
+        SDL_SetWindowFullscreen(video_window, fullscreen != 0);
+    }
+    if (scale != video_scale_set) {
+        video_scale_set = scale;
+        if (!fullscreen) {
+            SDL_SetWindowSize(video_window, video_wide_wanted && video_gpu ? (240 * scale * 16 + 8) / 9 : 320 * scale,
+                              240 * scale);
+        }
+        port_log("window: scale %d (%dx%d)", scale, 320 * scale, 240 * scale);
+    }
+    if (memcmp(filter, &video_filter, sizeof(video_filter)) != 0) {
+        video_filter = *filter;
+        if (video_gpu) {
+            render_gpu_set_filter(&video_filter);
+        } else if (video_filter.kind != PORT_FILTER_NONE) {
+            port_log("filter: %s needs the GPU renderer (--renderer gpu); the picture is unfiltered",
+                     port_filter_names[video_filter.kind]);
+        }
+    }
+    port_video_set_subpixel(subpixel);
 }
 
 /* The image's place in the renderer's output (ow x oh pixels): 4:3 (video_aspect; a wide picture's 16:9), as tall as
@@ -405,6 +441,7 @@ static void video_present(void) {
         video_dest(ow, oh, &dst);
         SDL_RenderTexture(video_renderer, video_texture, NULL, &dst);
     }
+    port_menu_render_renderer(video_renderer); /* the menu over the picture, while it is shown */
     video_readback();
     SDL_RenderPresent(video_renderer);
     video_presents++;
@@ -453,6 +490,7 @@ void port_video_quit(void) {
     if (video_checks > 0) {
         port_log("gpu vram check: %ld checks, %ld with differences", video_checks, video_checks_failed);
     }
+    port_menu_close(); /* its ImGui objects live on the renderer or the device: first */
     render_gpu_tex_close();
     render_gpu_close(); /* the device too: destroyed before SDL_Quit, its claim before the window */
     if (video_texture != NULL) {
@@ -610,6 +648,13 @@ void port_video_open(int scale, int fullscreen) {
 }
 
 void port_video_toggle_fullscreen(void) {
+}
+
+void port_video_apply(int scale, int fullscreen, const PortFilter *filter, int subpixel) {
+    (void)scale;
+    (void)fullscreen;
+    (void)filter;
+    (void)subpixel;
 }
 
 static void video_present(void) {

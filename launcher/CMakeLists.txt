@@ -60,28 +60,10 @@ endforeach()
 find_package(SDL3 3.2 CONFIG REQUIRED HINTS ${PSXSTACK_SDL_HINTS})
 message(STATUS "SDL3 ${SDL3_VERSION}: ${SDL3_DIR}")
 
-# Dear ImGui: PSXSTACK_IMGUI_DIR when given, else the pinned clone (scripts/setup.sh imgui).
-set(PSXSTACK_IMGUI_DIR "" CACHE PATH "Dear ImGui's source directory (imgui.cpp, backends/)")
-if(NOT PSXSTACK_IMGUI_DIR)
-    foreach(d IN LISTS PSXSTACK_TOOL_DIRS)
-        if(EXISTS "${d}/imgui/imgui.cpp")
-            set(PSXSTACK_IMGUI_DIR "${d}/imgui")
-            break()
-        endif()
-    endforeach()
-endif()
-if(NOT EXISTS "${PSXSTACK_IMGUI_DIR}/imgui.cpp")
-    message(FATAL_ERROR "Dear ImGui not found: run scripts/setup.sh imgui (or set PSXSTACK_IMGUI_DIR)")
-endif()
-message(STATUS "Dear ImGui: ${PSXSTACK_IMGUI_DIR}")
-
-add_library(psxstack_imgui STATIC
-            "${PSXSTACK_IMGUI_DIR}/imgui.cpp" "${PSXSTACK_IMGUI_DIR}/imgui_draw.cpp" "${PSXSTACK_IMGUI_DIR}/imgui_tables.cpp"
-            "${PSXSTACK_IMGUI_DIR}/imgui_widgets.cpp" "${PSXSTACK_IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
-            "${PSXSTACK_IMGUI_DIR}/backends/imgui_impl_sdlrenderer3.cpp")
-target_include_directories(psxstack_imgui SYSTEM PUBLIC "${PSXSTACK_IMGUI_DIR}" "${PSXSTACK_IMGUI_DIR}/backends")
-target_compile_features(psxstack_imgui PUBLIC cxx_std_17)
-target_link_libraries(psxstack_imgui PUBLIC SDL3::SDL3)
+# Dear ImGui (cmake/imgui.cmake): PSXSTACK_IMGUI_DIR when given, else the pinned clone (scripts/setup.sh imgui); the
+# same target the game's in-game menu links (PSXSTACK_MENU).
+include("${PSXSTACK_ROOT}/cmake/imgui.cmake")
+psxstack_imgui_target()
 
 # ---- The launcher's version stamp (launcher_version, launcher_commit: the Copy text's header), from git describe at
 # every build (cmake/version.cmake rewrites the file only when it changed). PSXSTACK_VERSION_ROOT: the repository whose
@@ -107,15 +89,19 @@ endforeach()
 file(CONFIGURE OUTPUT "${PSXSTACK_FIXTURES_H}" CONTENT "${fixtures}" @ONLY NEWLINE_STYLE UNIX)
 
 # ---- The executable: <id>-launcher.
-file(GLOB PSXSTACK_LAUNCHER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+# ui/: what the game's in-game menu shares with the launcher (the style, the widgets, the Settings, Controls and
+# Mods screens), compiled into both; ui/menu.cpp is the menu itself, the game's alone.
+file(GLOB PSXSTACK_LAUNCHER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp")
+list(REMOVE_ITEM PSXSTACK_LAUNCHER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/ui/menu.cpp")
 set(PSXSTACK_LAUNCHER_SHARED "${PSXSTACK_ROOT}/runtime/json.c" "${PSXSTACK_ROOT}/runtime/sha1.c"
     "${PSXSTACK_LAUNCHER_VERSION_C}")
 add_executable(${PSXSTACK_LAUNCHER} ${PSXSTACK_LAUNCHER_SRCS} ${PSXSTACK_LAUNCHER_SHARED})
 add_dependencies(${PSXSTACK_LAUNCHER} psxstack_launcher_version)
 set_target_properties(${PSXSTACK_LAUNCHER} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
                       C_STANDARD 99)
-target_include_directories(${PSXSTACK_LAUNCHER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${PSXSTACK_GEN}"
-                           "${PSXSTACK_ROOT}/include/psxstack")
+target_include_directories(${PSXSTACK_LAUNCHER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/ui"
+                           "${PSXSTACK_GEN}" "${PSXSTACK_ROOT}/include/psxstack")
 target_link_libraries(${PSXSTACK_LAUNCHER} PRIVATE psxstack_imgui SDL3::SDL3)
 set_source_files_properties(${PSXSTACK_LAUNCHER_SRCS} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 # The release links the C++ runtime statically, so an AppImage needs only the C library of the player's system

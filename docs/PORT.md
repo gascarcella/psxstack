@@ -499,13 +499,15 @@ same with it on or off.
 ## Input
 - **Window input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad,
   once per vsync. Bindings are by key position and SDL's positional (PlayStation-layout) gamepad buttons, rebindable
-  in the settings file; hotkeys (fullscreen, pause, the quick state's save and load, the mods') never reach the pad.
-  The mapping and defaults are in
-  `docs/RUNTIME.md` "The window".
+  in the settings file; hotkeys (fullscreen, pause, the quick state's save and load, the in-game menu, the mods')
+  never reach the pad. The mapping and defaults are in `docs/RUNTIME.md` "The window".
+- **The in-game menu** (`include/psxstack/menu.h`, `launcher/ui/menu.cpp`; `docs/LAUNCHER.md` "In-game menu"): the
+  launcher's UI over Dear ImGui inside the game's window, shown by the pump's pause on the `menu` hotkey and drawn
+  by the present (`video.c`, `render_gpu.c`); a build without `PSXSTACK_MENU` links `runtime/menu.c`'s stubs.
 - **Scripted input** (`runtime/script.c`): `--script` replays a pad script (the first game's layer-2 format, `docs/RUNTIME.md`)
   with the same step engine as the emulator's runner; the script then owns the pad.
 - `--input-test` injects every binding through SDL (keys, a virtual gamepad, chords, hotkeys) and checks what reaches
-  the pad.
+  the pad, then the pause's, the quick slot's and the menu's round trips.
 
 ## Sound
 The SPU core (`runtime/spu.c`, `spu_dsp.c`), LIBSND (`psyq/libsnd*.c`), the XA path and the audio output

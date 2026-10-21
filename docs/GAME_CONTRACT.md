@@ -130,7 +130,8 @@ C the game compiles into the port alongside the runtime. It implements:
   writes, a script's `write_mem` and `poke_ps1`). The stack asks the adapter first and maps the arena itself for what the adapter does not. A game
   whose random index is LIBC2's `rand` state (the PS1's generator, the shim's: `psyq/libc2.c`) returns
   `port_rand_seed()` (`hooks.h`) from `game_state_random_index()`.
-- **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,
+- **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`; `applies`
+  `"restart"` for one the in-game menu cannot switch live, docs/LAUNCHER.md "In-game menu"): id,
   version, options, `start`/`frame` callbacks and an optional `status` (text for the window title). Their logic and
   hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
   the stack's own mods (fast-forward and faster loading, which every game gets) belong to the stack. The manifests (`mods/<id>/mod.json`) sit in the game

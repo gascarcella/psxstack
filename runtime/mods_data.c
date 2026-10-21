@@ -103,7 +103,15 @@ static int data_mod_compare(const void *a, const void *b) {
     return x->rank != y->rank ? (x->rank < y->rank ? -1 : 1) : strcmp(x->id, y->id);
 }
 
+static char *data_mods_dir; /* the directory scanned (--mods-dir), for the menu */
+
+const char *port_mods_data_dir(void) {
+    return data_mods_dir;
+}
+
 int port_mods_data_scan(const char *dir) {
+    free(data_mods_dir);
+    data_mods_dir = strdup(dir);
     if (!SDL_EnumerateDirectory(dir, data_mod_found, NULL)) {
         port_log("mods: %s: %s (no data mods)", dir, SDL_GetError());
         return 0;
@@ -161,6 +169,10 @@ void port_mods_data_start(int active) {
     }
 }
 #else
+const char *port_mods_data_dir(void) {
+    return NULL;
+}
+
 int port_mods_data_scan(const char *dir) {
     (void)dir;
     return 0;

@@ -30,6 +30,7 @@ constexpr const char *WINDOW_TITLE = PSXSTACK_GAME_TITLE " launcher";
 // the self-test's (launcher/README.md "The self-test").
 constexpr const char *ENV_GAME = PSXSTACK_GAME_ENV_PREFIX "_GAME";
 constexpr const char *ENV_CONFIG_DIR = PSXSTACK_GAME_ENV_PREFIX "_CONFIG_DIR";
+constexpr const char *ENV_LAUNCHER = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER"; // set for the game it starts (the in-game menu's Quit says "to launcher")
 constexpr const char *ENV_SELFTEST_FAKE_GAME = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_FAKE_GAME";
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";
@@ -39,8 +40,10 @@ constexpr int GAME_RATE = PSXSTACK_GAME_RATE;
 constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 constexpr const char *GAME_RATE_NOTE = PSXSTACK_GAME_RATE_NOTE;
-// The discs the game accepts (disc.h: disc_by_sha1, disc_known, disc_labels).
+// The discs the game accepts (disc.h: disc_by_sha1, disc_known, disc_labels). A disc-free game (examples/hello)
+// describes none: the generated list then holds one empty entry, which the count keeps out of reach.
 constexpr int GAME_DISC_COUNT = PSXSTACK_GAME_DISC_COUNT;
-inline constexpr PsxstackGameDisc GAME_DISCS[PSXSTACK_GAME_DISC_COUNT] = PSXSTACK_GAME_DISCS;
+inline constexpr PsxstackGameDisc GAME_DISCS[PSXSTACK_GAME_DISC_COUNT > 0 ? PSXSTACK_GAME_DISC_COUNT : 1] =
+    PSXSTACK_GAME_DISCS;
 
 } // namespace psxstack

@@ -93,21 +93,26 @@ jobs:
             tools/venv
             tools/sdl3
             tools/imgui
+            tools/dxc
           key: tools-launcher-${{ runner.os }}-${{ steps.pins.outputs.hash }}
-      - name: scripts/setup.sh cmake sdl3 imgui
+      - name: scripts/setup.sh cmake sdl3 imgui dxc
         run: |
-          scripts/setup.sh cmake sdl3 imgui   # cmake: pip-installs cmake and ninja into tools/venv when PATH lacks one
+          scripts/setup.sh cmake sdl3 imgui dxc   # cmake: pip-installs cmake and ninja into tools/venv when PATH lacks one
           echo "$PWD/tools/venv/bin" >> "$GITHUB_PATH"
       - name: Build
         run: cmake -S launcher -B build/launcher -G Ninja && cmake --build build/launcher
       - name: Self-test (offscreen)
         run: SDL_VIDEO_DRIVER=offscreen build/launcher/dw2003-launcher --self-test build/selftest
+      - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's picture (tests/hello_test.py --menu)"
+        run: python3 tests/hello_test.py --menu
       - name: Self-test pictures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: launcher-self-test-screens
-          path: build/selftest/launcher-self-test/screens/
+          path: |
+            build/selftest/launcher-self-test/screens/
+            build/hello-menu/menu.png
           if-no-files-found: ignore
 
   windows:

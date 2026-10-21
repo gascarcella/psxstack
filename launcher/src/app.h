@@ -1,5 +1,6 @@
-// The launcher's window: Dear ImGui over SDL3 + SDL_Renderer (docs/LAUNCHER.md "Launcher"). The screens are drawn into
-// one full-window ImGui window, so they could later be drawn inside the game's window too.
+// The launcher's window: Dear ImGui over SDL3 + SDL_Renderer (docs/LAUNCHER.md "Launcher"). The Play and Disc
+// screens are its own; Settings, Controls and Mods are the shared screens (launcher/ui/screens.h), which the game's
+// in-game menu draws too.
 #pragma once
 
 #include <mutex>
@@ -11,6 +12,7 @@
 #include "disc.h"
 #include "game.h"
 #include "mods.h"
+#include "screens.h"
 #include "settings.h"
 
 namespace psxstack {
@@ -38,12 +40,7 @@ struct AppOptions {
 
 class App {
 public:
-    // A binding somewhere in the settings (a hotkey, a mod's binding option): the conflict marks look at all of them.
-    struct BindingUse {
-        std::string key;   // "hotkey:<action>", "mod:<mod>.<option>"
-        std::string label; // "the hotkey Pause", "Fast-forward: Hold"
-        Binding binding;
-    };
+    using BindingUse = Screens::BindingUse;
 
     App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location, const AppOptions &options = {});
 
@@ -59,7 +56,8 @@ public:
     Screen screen() const { return screen_; }
     void set_screen(Screen s) { screen_ = s; }
     SettingsFile &settings() { return settings_; }
-    const std::string &last_error() const { return error_; }
+    // The last save or screenshot error, shown in the status bar.
+    const std::string &last_error() const;
     // Frames are wanted soon (a check or the game running): the main loop then waits less.
     bool busy() const { return check_.state() == DiscCheck::State::Running || run_.running(); }
 
@@ -77,17 +75,16 @@ public:
     const std::string &play_report_path() const { return play_report_path_; }
     std::string play_copy_text() const;
     const std::string &game_path() const { return game_; }
-    // The controls' prompt (the self-test drives it with events).
-    InputCapture &capture() { return capture_; }
-    void capture_for(int section, const std::string &id); // 0 keyboard, 1 gamepad (button ids), 2 hotkeys (actions)
-    void capture_for_mod(const std::string &mod, const std::string &option);
-    // The mods found beside the game.
-    const std::vector<ModManifest> &mods() const { return mods_; }
-    const std::string &mods_dir() const { return mods_dir_; }
-    const std::string &user_mods_dir() const { return user_mods_dir_; }
-    // The usable data mods' ids, the game's and the user's (their priority: ModValues::data_order).
-    std::vector<std::string> data_mod_ids() const;
-    void select_mod(const std::string &id);
+    // The shared screens' state (the self-test drives the controls' prompt and picks mods through these).
+    Screens &screens() { return screens_; }
+    InputCapture &capture() { return screens_.capture(); }
+    void capture_for(int section, const std::string &id) { screens_.capture_for(section, id); }
+    void capture_for_mod(const std::string &mod, const std::string &option) { screens_.capture_for_mod(mod, option); }
+    const std::vector<ModManifest> &mods() const { return screens_.mods(); }
+    const std::string &mods_dir() const { return screens_.mods_dir(); }
+    const std::string &user_mods_dir() const { return screens_.user_mods_dir(); }
+    std::vector<std::string> data_mod_ids() const { return screens_.data_mod_ids(); }
+    void select_mod(const std::string &id) { screens_.select_mod(id); }
 
 private:
     void draw();
@@ -95,23 +92,6 @@ private:
     void draw_status_bar();
     void draw_play();
     void draw_disc();
-    void draw_settings();
-    void draw_filter(float label_w);
-    void draw_controls();
-    void draw_names_table(bool pad);
-    void draw_hotkeys();
-    void draw_capture_popup();
-    void draw_mods();
-    void draw_data_mod(const ModManifest &m, ModValues &values);
-    void draw_mod(const ModManifest &m);
-    bool draw_mod_option(const ModManifest &m, const ModOption &o, ModValues &values,
-                         const std::vector<BindingUse> &uses);
-    std::vector<BindingUse> binding_uses() const;
-    // A binding's chips (x removes one) and its + button (want_capture_ set when pressed). True when changed.
-    bool binding_editor(const std::string &key, Binding *b, const std::vector<BindingUse> &uses);
-    const ModManifest *find_mod(const std::string &id) const;
-    void begin_capture(InputCapture::Kind kind, int section, const std::string &id, const std::string &label);
-    void finish_capture();
     void draw_play_error();
     void step_screen(int delta);
     void update_disc_check();
@@ -121,12 +101,12 @@ private:
 
     SDL_Window *window_;
     SDL_Renderer *renderer_;
+    Screens screens_;        // the shared screens, which own the settings file
+    SettingsFile &settings_; // screens_'s
     SettingsDir location_;
-    SettingsFile settings_;
     Screen screen_ = Screen::Play;
-    bool dirty_ = false;
     bool quit_ = false;
-    std::string error_; // the last save error, shown in the status bar
+    std::string error_; // the last screenshot error
 
     // The disc: the check, its outcome, the typed path, the file dialog's answer (it may come from another thread).
     DiscCheck check_;
@@ -136,20 +116,6 @@ private:
     std::mutex dialog_mutex_;
     bool dialog_open_ = false, dialog_done_ = false;
     std::string dialog_file_, dialog_error_;
-
-    // The controls: the "press a key" prompt and what it is for (section 0 keyboard, 1 gamepad, 2 hotkeys).
-    InputCapture capture_;
-    int capture_section_ = 0;
-    std::string capture_id_, capture_label_;
-    bool capture_popup_ = false;  // the prompt is to be opened this frame
-    bool pad_nav_hold_ = false;   // a gamepad press just went to a capture: no gamepad navigation until released
-    bool want_capture_ = false;   // binding_editor's + was pressed
-    std::string capture_option_;  // section 3 (a mod's binding option): capture_id_ is the mod
-
-    // The mods: the manifests beside the game and the data mods in the settings directory's mods/, the one shown.
-    std::string mods_dir_, user_mods_dir_;
-    std::vector<ModManifest> mods_;
-    std::string mod_selected_;
 
     // The game.
     std::string game_;                    // its executable ("" = not found)

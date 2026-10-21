@@ -52,6 +52,7 @@
 #include "render_gpu_wide.h"
 #include "render_gpu_subpixel.h"
 #include "render_gpu_textures.h"
+#include "menu.h"
 
 #include "render_gpu_shaders.h"
 
@@ -1000,6 +1001,10 @@ int render_gpu_active(void) {
     return r.device != NULL;
 }
 
+SDL_GPUDevice *render_gpu_device(void) {
+    return r.device;
+}
+
 const char *render_gpu_describe(void) {
     return r.device != NULL ? r.describe : "";
 }
@@ -1454,6 +1459,7 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
         dest((int)sw, (int)sh, rect);
         render_clip(rect, (int)sw, (int)sh);
         render_draw(cb, swap, pipe, w, h, vram_xy, rect, 1);
+        port_menu_render_gpu(cb, swap); /* the menu over the picture, while it is shown */
     }
     if (!SDL_SubmitGPUCommandBuffer(cb)) {
         goto failed;

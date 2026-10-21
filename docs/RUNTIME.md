@@ -64,7 +64,14 @@ build/port-sdl/<game> --disc <disc>.cue --script scripts/new_game.json --window 
 build/port-sdl/<game> --disc <disc>.cue --window --renderer gpu   # the window through the hardware renderer
 SDL_VIDEO_DRIVER=offscreen build/port-sdl/<game> --input-test --fps 0   # no display: the input self-test (exit 0)
                                           # (a disc_required game without --disc: the test on the pump, no game)
+cmake -S port -B build/port-sdl -G Ninja -DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON   # with the in-game menu (scripts/setup.sh imgui)
 ```
+**The in-game menu** (`-DPSXSTACK_MENU=ON`, with `PSXSTACK_SDL`): the launcher's UI inside the game's window, on the
+`menu` hotkey (Escape, or Back+Start on a gamepad), in a pause; docs/LAUNCHER.md "In-game menu". The game then
+links as C++ (`launcher/ui/`, Dear ImGui from `tools/imgui`); without the option nothing of it is in the binary. A
+change made in the menu is written to the settings file and applied live where the runtime can (`runtime/live.c`).
+`<PREFIX>_PORT_MENU_SHOT=PATH` writes the window with the menu up as a PNG (the software renderer), on the page
+`<PREFIX>_PORT_MENU_SCREEN` names.
 SDL's backends follow the `-dev` headers present when `setup.sh sdl3` runs: missing optional ones are turned off one by
 one (logged), and with no X11/Wayland headers at all only the `offscreen` and `dummy` video drivers are built (enough
 for the tests). For a desktop window install the headers (Debian/Ubuntu: `libx11-dev libxext-dev libwayland-dev
@@ -139,7 +146,8 @@ log and the record written. `--input-test` checks the path: it injects every key
 attaches a virtual SDL gamepad and presses each of its buttons, triggers and stick directions, and a chord, one per
 frame with its release in the next, then every hotkey trigger, and requires the buttons sent to `psyq_pad_set` to be the
 map's (none for a hotkey's, which must fire; with `--script`: none sent, and the script's log stays byte-identical to a
-run without the test), then (without a script) the pause's round trip; exit 0 when all the checks pass , 6 otherwise. With `--config` it tests the settings' map. The first game's CI runs it on SDL's offscreen driver, with the defaults and with a rebound settings file.
+run without the test), then (without a script) the pause's round trip, the quick slot's, and the in-game menu's
+(a build with `PSXSTACK_MENU`; docs/LAUNCHER.md "In-game menu"); exit 0 when all the checks pass, 6 otherwise. With `--config` it tests the settings' map. The first game's CI runs it on SDL's offscreen driver, with the defaults and with a rebound settings file.
 
 **The mods** (`runtime/mods.c`; docs/LAUNCHER.md "Mod manifest", "Mod runtime"): the registry (the stack's
 fast_forward and fast_loading, then the game's `game_mods`); each has a manifest `mods/<id>/mod.json` (the stack's `mods/`, the game's

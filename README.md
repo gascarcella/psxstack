@@ -33,8 +33,8 @@ python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU function
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh`. Its declarations are `include/psxstack/psyq/*.h` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/`, `mods/fast_loading/` | The stack's own mods, which every game has: fast-forward, faster loading |
-| `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
-| `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
+| `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description; `ui/` the screens the game's in-game menu shares (`PSXSTACK_MENU`) |
+| `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `imgui.cmake` (Dear ImGui for the launcher and the menu), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
 | `windows/` | The game's Windows resource and manifest templates |
 | `tools/` | `game_gen.py` (the description to a header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate, configured by a game), `psyq_decls.py` (a game's Psy-Q declarations against the stack's), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`), `mcp/` (the debug channel's MCP server, client and symbols) |
 | `scripts/` | `setup.sh` (SDL3, ImGui, DXC, llvm-mingw, SDL3 for Windows, cmake), `dev_link_tools.sh` |

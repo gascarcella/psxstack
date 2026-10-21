@@ -41,13 +41,13 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 ## Layout
 | Path | Contents |
 |---|---|
-| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings, the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, `game_defaults.c` (the adapter's weak defaults) |
+| `runtime/` | The host runtime (C): arena, overlay manager, pump, video, the hardware renderer, SPU, audio, input, memory cards, settings (`live.c`: re-applied from the in-game menu), the mods engine, json, sha1, crash report, debug channel, frame log, platform, reset, save states, `game_defaults.c` (the adapter's weak defaults) |
 | `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, `psyq/` (the Psy-Q declarations the shim implements: the stack's own, DECISIONS "Psy-Q declarations: the stack's"), the runtime's headers |
 | `psyq/` | The Psy-Q shim, one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
 | `mods/fast_forward/`, `mods/fast_loading/` | The stack's own mods, which every game has; a game's own mods live in the game |
-| `launcher/` | The launcher (C++, SDL3 + Dear ImGui): its own CMake project; every string from the game description (`launcher/src/brand.h`) |
-| `cmake/` | `psxstack.cmake` (`psxstack_add_game()`, documented inline), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (llvm-mingw) |
+| `launcher/` | The launcher (C++, SDL3 + Dear ImGui): its own CMake project; every string from the game description (`launcher/src/brand.h`); `ui/` the Settings, Controls and Mods screens, the style and the in-game menu, compiled (with `src/`'s data layer) into a game built with `PSXSTACK_MENU` (`include/psxstack/menu.h`, `runtime/menu.c` the stubs) |
+| `cmake/` | `psxstack.cmake` (`psxstack_add_game()`, documented inline), `imgui.cmake` (the Dear ImGui target), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (llvm-mingw) |
 | `windows/` | The game's Windows resource and manifest templates |
 | `tools/` | `game_gen.py` (`game.json` → header), `port_gen.py` (the build's generators), `port_inventory.py` (the host-compile gate a game configures), `replay/` (the emulator and port replay runners a game configures: `emulator.py`, `run.lua`, `boot_check.lua`, `port_test.py`, `redux.sh`; docs/RUNTIME.md "The replay runners"), `mcp/` (the debug channel's MCP server, client, symbols; `tools/mcp/README.md`); built tools under `tools/<name>` (gitignored) |
 | `scripts/` | `setup.sh`, `dev_link_tools.sh` |
@@ -55,7 +55,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack), `tasks/` (the same with its work in tasks on the stack's fibers, preempted by a root counter 3 event) |
 | `tests/` | `hello_test.py`, `tasks_test.py` (the fibers, with save states), `shim_test.py` and `shim/` (the shim's deterministic pieces, no runtime), `game_gen_test.py`, `fixtures/` (the launcher self-test's mod manifests) |
 | `docs/` | See below |
-| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers), `mcp`, `launcher` (build + self-test), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game |
+| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers), `mcp`, `launcher` (build + self-test; hello with the in-game menu, its input self-test), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game |
 
 ## Commands
 ```sh
@@ -66,6 +66,7 @@ python3 tests/hello_test.py [--record]            # the smoke test: examples/hel
 python3 tests/tasks_test.py [--sanitize|--m32]    # the fibers: examples/tasks (three tasks, one preempted), its picture, its log twice, a state saved on a task's fiber and resumed
 python3 tests/shim_test.py [--sanitize|--m32]     # the shim alone (psyq/*.c + tests/shim/shim_test.c): LIBAPI's events and root counter 3, the card's BIOS file calls and LIBCARD, CdSearchFile over a built ISO, CdRead, LIBSPU, LIBSND's SEQs
 python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine --gpu   # its Windows build (-DPSXSTACK_SDL=ON, cross-built) under Wine; --gpu: the hardware renderer's picture too (D3D12)
+python3 tests/hello_test.py --menu                # hello with the window and the in-game menu (-DPSXSTACK_MENU=ON): the input self-test offscreen, ending with the menu's round trip, and the menu's picture
 cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.json] && cmake --build build/launcher
 SDL_VIDEO_DRIVER=offscreen build/launcher/<id>-launcher --self-test build/selftest   # <id> from game.json (dw2003 by default)
 cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" -DCMAKE_BUILD_TYPE=Release   # the toolchain path must be absolute

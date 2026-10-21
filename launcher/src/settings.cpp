@@ -21,6 +21,8 @@ const char *dir_source_name(DirSource s) {
         return "the current directory (it has a settings.json)";
     case DirSource::User:
         return "the per-user directory";
+    case DirSource::Config:
+        return "the game's --config";
     }
     return "?";
 }

@@ -312,17 +312,33 @@ void port_audio_frame(void) {
 #endif
 }
 
-void port_audio_set_mute(int mute) {
+static int audio_mute_ff, audio_mute_user; /* fast-forward's mute and the settings' (the menu, live): either mutes */
+
+static void audio_mute_apply(void) {
 #ifdef PSXSTACK_SDL
+    int mute = audio_mute_ff || audio_mute_user;
     if (audio_stream != NULL && mute != audio_muted) {
         SDL_ClearAudioStream(audio_stream);
         audio_started = 0; /* the first put after it is a start, not a refill */
         audio_avg = audio_target;
     }
     audio_muted = mute;
-#else
-    (void)mute;
 #endif
+}
+
+void port_audio_set_mute(int mute) {
+    audio_mute_ff = mute;
+    audio_mute_apply();
+}
+
+void port_audio_set_user_mute(int mute) {
+#ifdef PSXSTACK_SDL
+    if (!mute && audio_stream == NULL && port_window) {
+        port_log("audio: the game started muted (no audio device): sound at the next start");
+    }
+#endif
+    audio_mute_user = mute;
+    audio_mute_apply();
 }
 
 void port_audio_pause(int paused) {

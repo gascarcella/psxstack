@@ -19,6 +19,7 @@
  * with status 64, as a bad option does; an unknown key is logged and ignored, so an older game runs a newer launcher's
  * file. The values are applied by main.c, under the command line's options. */
 #include <errno.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,14 +32,24 @@
 
 PortSettings port_settings;
 int port_settings_loaded;
+static jmp_buf settings_live_jmp; /* a live re-read (port_settings_reload): a bad file goes back there, not to exit */
+static int settings_live;
+static PortJson *settings_old_root; /* the root before the last reload: the mods' values pointed into it until
+                                     * port_mods_apply read the new one; freed at the next reload */
 
 void port_settings_fail(const char *key, const char *fmt, ...) {
     va_list ap;
-    fprintf(stderr, "port: settings %s: %s%s", port_settings.file, key != NULL ? key : "", key != NULL ? ": " : "");
+    char msg[512];
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
-    fputc('\n', stderr);
+    if (settings_live) {
+        port_log("settings: %s%s%s (re-read in the menu: the previous values stay)", key != NULL ? key : "",
+                 key != NULL ? ": " : "", msg);
+        longjmp(settings_live_jmp, 1);
+    }
+    fprintf(stderr, "port: settings %s: %s%s%s\n", port_settings.file, key != NULL ? key : "", key != NULL ? ": " : "",
+            msg);
     exit(64);
 }
 
@@ -124,23 +135,24 @@ static void settings_int(const PortJson *obj, const char *where, const char *key
 }
 
 /* A memory card: a path (relative to the file's directory), or null for no card. */
-static void settings_memcard(const PortJson *root, const char *key, int slot) {
+static void settings_memcard(PortSettings *s, const PortJson *root, const char *key, int slot) {
     const PortJson *v = port_json_get(root, key);
     if (v == NULL) {
         return;
     }
-    free(port_settings.memcard[slot]);
-    port_settings.memcard[slot] = NULL;
+    free(s->memcard[slot]);
+    s->memcard[slot] = NULL;
     if (v->type == PORT_JSON_NULL) {
         return;
     }
     if (v->type != PORT_JSON_STRING || v->string[0] == '\0') {
         port_settings_fail(key, "a path to a .mcd image (relative to the settings file), or null for no card");
     }
-    port_settings.memcard[slot] = settings_join(port_settings.dir, v->string);
+    s->memcard[slot] = settings_join(s->dir, v->string);
 }
 
-void port_settings_load(const char *path) {
+/* Reads `path` into `s` (zeroed by the caller); a bad file is port_settings_fail. */
+static void settings_parse(PortSettings *s, const char *path) {
     static const char *const top_keys[] = { "schema", "disc", "video", "audio", "memcard1", "memcard2", "watchdog",
                                             "input", "mods", "mod_order", "launcher", NULL };
     static const char *const disc_keys[] = { "path", "sha1", NULL };
@@ -151,7 +163,6 @@ void port_settings_load(const char *path) {
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
     static const char *const crt_keys[] = { "scanlines", "mask", "curvature", NULL };
-    PortSettings *s = &port_settings;
     const PortJson *root, *v, *obj;
     char err[256], *slash;
     FILE *f;
@@ -251,8 +262,8 @@ void port_settings_load(const char *path) {
         settings_unknown(obj, "audio", audio_keys);
         settings_bool(obj, "audio", "mute", &s->mute);
     }
-    settings_memcard(root, "memcard1", 0);
-    settings_memcard(root, "memcard2", 1);
+    settings_memcard(s, root, "memcard1", 0);
+    settings_memcard(s, root, "memcard2", 1);
     settings_int(root, "", "watchdog", 0, 3600, &s->watchdog);
     s->input = settings_member(root, "", "input", PORT_JSON_OBJECT);
     s->mods = settings_member(root, "", "mods", PORT_JSON_OBJECT);
@@ -266,8 +277,51 @@ void port_settings_load(const char *path) {
         }
     }
     s->launcher = settings_member(root, "", "launcher", PORT_JSON_OBJECT);
+}
+
+void port_settings_load(const char *path) {
+    memset(&port_settings, 0, sizeof(port_settings));
+    settings_parse(&port_settings, path);
     port_settings_loaded = 1;
-    port_log("settings: %s", s->file);
+    port_log("settings: %s", port_settings.file);
+}
+
+/* The file read again (the in-game menu wrote it; runtime/live.c applies what changed): the new values replace
+ * port_settings's. A bad file is logged and leaves everything as it was (0). The previous root stays allocated
+ * until the next reload: the mods' binding values point into it until port_mods_apply re-reads them. */
+int port_settings_reload(void) {
+    PortSettings n;
+    int i;
+    if (!port_settings_loaded) {
+        return 0;
+    }
+    memset(&n, 0, sizeof(n));
+    settings_live = 1;
+    if (setjmp(settings_live_jmp) != 0) {
+        settings_live = 0;
+        free(n.file);
+        free(n.dir);
+        free(n.disc);
+        free(n.disc_sha1);
+        free(n.memcard[0]);
+        free(n.memcard[1]);
+        port_json_free(n.root);
+        return 0;
+    }
+    settings_parse(&n, port_settings.file);
+    settings_live = 0;
+    free(port_settings.file);
+    free(port_settings.dir);
+    free(port_settings.disc);
+    free(port_settings.disc_sha1);
+    for (i = 0; i < 2; i++) {
+        free(port_settings.memcard[i]);
+    }
+    port_json_free(settings_old_root);
+    settings_old_root = port_settings.root;
+    port_settings = n;
+    port_log("settings: re-read %s", port_settings.file);
+    return 1;
 }
 
 static void settings_print_path(FILE *f, const char *path) {

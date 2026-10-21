@@ -30,6 +30,7 @@ enum class DirSource {
     Portable,    // 2. an (empty) portable.txt beside the executable: the executable's directory
     CurrentDir,  // 3. a settings.json that already exists in the current directory (never created there implicitly)
     User,        // 4. the per-user directory (SDL_GetPrefPath)
+    Config,      // the game's --config file's directory (the in-game menu; never the launcher's own lookup)
 };
 const char *dir_source_name(DirSource s);
 
