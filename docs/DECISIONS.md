@@ -246,3 +246,15 @@ of the launcher). The launcher's window stays the entry: it picks and verifies t
 is written to the settings file first and the runtime then re-reads that file (`runtime/live.c`): one source of
 truth, the same file the launcher writes, and the runtime's own parser checks it again, under a guard that logs a bad
 file instead of exiting.
+
+## Updates: GitHub releases, curl as a process (2026-10-21)
+A game that names its GitHub repository in its description (`launcher.updates.github`) gets an update check in the
+launcher: its latest release (`releases/latest`: no drafts, no prereleases) against the launcher's version stamp, so a
+release is a tag and its packages, named as GAME_CONTRACT.md "Releases" says, and nothing else to publish. The request
+goes through the system's `curl` started as a child process (`SDL_CreateProcess`, as the game's probe), not a linked
+HTTP client: one code path on Linux and Windows (Windows 10 1803 and later ship `curl.exe`), the OS's TLS and proxy
+settings instead of a certificate store of our own, and no new dependency to pin, build for two platforms and keep
+patched. Without curl the check says so and the launcher still offers the release page. Its outcome is read from
+curl's output (`-w`'s HTTP status, the `curl: (N)` error line) rather than the exit status, which SDL does not give for
+a process created without a console window on Windows. An environment variable puts a stand-in in curl's place, so the
+self-test and CI never touch the network.

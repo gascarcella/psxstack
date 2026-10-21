@@ -10,7 +10,7 @@ knows about a game (its title, executable name, discs, rates, strings) comes fro
 disc screen (file dialog, drag-and-drop, typed path, the SHA-1 check against the described discs), the play button (the
 game's exit status and last lines on an error), the settings screen (video, the rate, renderer, audio, memory cards),
 the controls screen (keyboard, gamepad, hotkeys), the mods screen (each mod's page generated from its `mod.json`), the
-self-test. The code uses SDL's calls, not POSIX, so the same source cross-builds for Windows (a GUI-subsystem
+update check against the game's GitHub releases, the self-test. The code uses SDL's calls, not POSIX, so the same source cross-builds for Windows (a GUI-subsystem
 `<id>-launcher.exe` with a manifest, `launcher/windows/`; the self-test passes under Wine); on real Windows it has not
 run yet.
 
@@ -20,7 +20,7 @@ run yet.
 scripts/setup.sh sdl3 imgui        # SDL3 (static) and Dear ImGui at their pinned versions, into tools/
 cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=/path/to/game.json]
 cmake --build build/launcher
-build/launcher/<id>-launcher [--config-dir DIR] [--game PATH]
+build/launcher/<id>-launcher [--config-dir DIR] [--game PATH] [--no-update-check]
 ```
 
 `PSXSTACK_GAME_JSON` (default `examples/dw2003.game.json`) is read at configure time by `tools/game_gen.py` into
@@ -71,6 +71,7 @@ Schema 1, as settled by the game's side (`docs/LAUNCHER.md` "Settings file": the
 | `input.gamepad.<button>` | name or list | the game's | Gamepad inputs (docs/LAUNCHER.md "Input bindings": `south`, `dpup`, `lefty-`, ...) |
 | `input.hotkeys.<action>` | binding | `pause` P, `fullscreen` F11 | A string or a list of triggers; a trigger is an input or a chord (a list); pads as `"pad:<name>"` |
 | `launcher.last_dir` | string | none | The launcher's own state: where the file dialog opens. The game never reads `launcher` |
+| `launcher.updates.check`, `.skipped` | bool, string | true, none | The update check at start, and the release tag the user skipped ("Updates") |
 
 **Only the bindings the user changed are written.** A button or action absent from `input` keeps the game's default
 (`src/input.cpp` mirrors the runtime's defaults for display), so a default changed in a later game reaches everyone who
@@ -111,7 +112,8 @@ A game build from before `--config` or `--crash-dir` (its usage, exit 64, at the
 
 **Settings:** the window's scale (1-16, with its size), fullscreen, the rate when the description offers two (the
 nominal one named by its TV standard; the other shows the description's note), the renderer, mute, the two memory
-card slots (a file name relative to the settings directory, or no card), and the settings file's location and state.
+card slots (a file name relative to the settings directory, or no card), the update check when the description names a
+repository ("Updates"), and the settings file's location and state.
 
 **Controls**, three tabs: **Keyboard** and **Gamepad** list the 14 PS1 buttons with their inputs as chips (x removes
 one, + adds one, Default restores the game's); **Hotkeys** has the port's actions (pause, fullscreen) with their
@@ -144,6 +146,19 @@ its changed options with `"enabled": false`; a mod with nothing left is removed,
 and options are kept. A stored value the manifest rejects is reported on the mod's page, and its default shown. The
 mods' bindings take part in the conflict marks (a key both on a PS1 button and a mod's hold, say).
 
+## Updates
+
+When the description names the game's GitHub repository (`launcher.updates.github`), the launcher asks GitHub for its
+latest release at start, on a worker thread (`src/update.cpp`; docs/LAUNCHER.md "Updates"), through the system's
+`curl` run as a child process (`src/http.cpp`: Linux and Windows alike; Windows 10 1803 and later ship `curl.exe`).
+A release newer than the launcher's version stamp (an exact `X.Y.Z`: a development build is only told the latest)
+brings up a prompt over the Play screen, never while the game runs: **Release page** (the browser), **Later**
+(Escape), **Skip this version** (`launcher.updates.skipped`: not offered again, a newer one is). The Settings screen
+has the checkbox "Check for updates when the launcher starts", the launcher's version, the last check's result,
+**Check now** (whatever the checkbox says; it only reports) and **Release page**. `--no-update-check` skips the check
+at start for one run. Without curl the check says so, and **Release page** opens the repository's latest release.
+`$<PREFIX>_LAUNCHER_FAKE_CURL` names a program to run in curl's place (the self-test's stand-in).
+
 ## Keys
 
 The mouse, the keyboard (arrows, Space/Enter, Escape) and a gamepad (ImGui's navigation) all work. Ctrl+PageDown /
@@ -170,7 +185,16 @@ described disc's size stands for the verified disc), rebinds a key through the p
 wrong file on the window, renders the mods screen over the fixture manifests (`tests/fixtures/mods/`: the first game's
 `fast_forward` as shipped, the documented `skip_dialogues` example, one with every option type, one with presets and a
 slider whose toggle makes it a typed number; three unusable ones written at test time) and rebinds a mod's key through
-the prompt, and saves a picture of each screen in `DIR/launcher-self-test/screens/`.
+the prompt, and saves a picture of each screen in `DIR/launcher-self-test/screens/`. The update check never touches the
+network: `<PREFIX>_LAUNCHER_FAKE_CURL` points at **the launcher itself as curl's stand-in** (it answers with a file, in
+pieces for a download, or with curl's errors; `<PREFIX>_SELFTEST_CURL_REPLY` says which), and every check of the
+self-test goes to it. It checks the version rules (only an exact `X.Y.Z` is offered an update), GitHub's answer
+(`tests/fixtures/updates/`: the tag, the page, this platform's package with its size and SHA-256; a tag that is not a
+version, a cut answer), `launcher.updates` in the file, `src/http.cpp` (a GET, curl's own errors, curl missing, a
+download with its progress, a cancel, a wrong size), then in the window: the prompt over Play (a picture), Escape as
+Later, the Release page, Skip and a newer release after it, the setting off with Check now, `--no-update-check`, the
+prompt waiting for a running game, curl missing, a cut answer, a development build and a description without a
+repository (pictures of the Settings screen's part).
 
 Optional, with a game and its disc: `<PREFIX>_SELFTEST_DISC=path/to/game.cue` also checks the real disc;
 `<PREFIX>_SELFTEST_GAME=path/to/<id>` also probes the real game and, with the disc, runs it 300 frames from the
@@ -196,11 +220,13 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/settings.cpp`, `settings.h` | The settings directory's lookup, the settings file |
 | `src/json_value.cpp`, `json_value.h` | An editable JSON tree over the runtime's reader, and a writer |
 | `src/disc.cpp`, `disc.h` | The `.cue` reader, the described discs, and the SHA-1 check on a thread |
+| `src/http.cpp`, `http.h` | HTTP through the system's curl as a child process: a GET, a download with progress and cancel |
+| `src/update.cpp`, `update.h` | The update check: the release query, the version rules, the package's lookup |
 | `src/game.cpp`, `game.h` | Finding the game, its `--print-settings` probe, the command, the running game |
 | `src/input.cpp`, `input.h` | The PS1 buttons, the game's default bindings, the binding grammar, the input prompt |
 | `src/mods.cpp`, `mods.h` | The manifests (reading, checking), the user's values in `mods.<mod id>` |
 | `src/paths.cpp`, `paths.h` | Paths and files through SDL's calls only (no POSIX; `/` and `\` and drive letters alike) |
-| `src/selftest.cpp`, `selftest.h` | The self-test; `tests/fixtures/mods/` its manifests, compiled in by CMake |
+| `src/selftest.cpp`, `selftest.h` | The self-test; `tests/fixtures/mods/` its manifests and `tests/fixtures/updates/` GitHub's answers, compiled in by CMake |
 | `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
 | `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |

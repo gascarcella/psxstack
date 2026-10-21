@@ -108,6 +108,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `mods` | object | every mod off | "Mods section" |
 | `mod_order` | list of strings | by id | The data mods' ids by priority, the first winning ("Data mods"). The launcher's Earlier/Later buttons write the whole list. Ids of data mods not found are kept |
 | `launcher` | object | none | The launcher's own state (e.g. `last_dir`, where its file dialog opens). The game never reads it and `--print-settings` prints it back unchanged |
+| `launcher.updates` | `{ "check": bool, "skipped": string }` | `check` true | The update check ("Updates"): whether it runs at the launcher's start, and the release tag the user skipped (`"v0.5.0"`). Written once it differs from the defaults |
 
 ### Input bindings
 
@@ -274,8 +275,44 @@ over the generated header). It finds the settings directory, edits `settings.jso
 edit, unknown ones included), and starts the game. Screens: **Disc** (file dialog, drag-and-drop, or a typed path; only
 the described discs' SHA-1s are accepted), **Play** (starts the game; on an error shows the exit status, the crash
 report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
-two, renderer, mute, memory cards), **Controls** (keyboard, gamepad, hotkeys), **Mods** (an on/off switch per mod and a
-page generated from its manifest; the data mods in the settings directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
+two, renderer, mute, memory cards, the update check when the game has one: "Updates"), **Controls** (keyboard, gamepad,
+hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data mods in the settings
+directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
+
+## Updates
+
+A game whose description names its GitHub repository (`launcher.updates.github`, GAME_CONTRACT.md "1. game.json") gets
+an update check in the launcher; without one there is no network call and nothing of it on the screens. The launcher
+does not download the package itself: its action is the release's page in the browser.
+
+### The check
+
+- **When:** at the launcher's start, on a worker thread, when `launcher.updates.check` is true (the default) and the
+  launcher was not started with `--no-update-check`; and at the Settings screen's **Check now**, whatever the setting.
+- **What:** one GET of `https://api.github.com/repos/<repo>/releases/latest` (GitHub leaves drafts and prereleases
+  out) through the system's `curl` as a child process (`launcher/src/http.cpp`; DECISIONS "Updates: GitHub releases,
+  curl as a process"): `-fsSL`, the User-Agent `<id>-launcher/<version>`, 10 s at most. The answer is read with the
+  runtime's `json.c`.
+- **The comparison:** the release's `tag_name` (`vX.Y.Z`) against the launcher's version stamp (`launcher_version`,
+  GAME_CONTRACT.md "Releases") as three integers. Only a stamp that is exactly `X.Y.Z` is offered an update; a
+  development build (`dev-<commit>`, `X.Y.Z-N-g<hash>`, `-dirty`) is told the latest version and nothing more.
+- **The package:** this platform's asset, found by the packages' names (`<id>-<version>-x86_64.AppImage`,
+  `<id>-<version>-windows-x86_64.zip`), is kept with its size, URL and SHA-256 (the asset's `digest`); a release
+  without it is still reported.
+- **The prompt:** when the check at start finds a newer release, a modal over the Play screen (never while the game
+  runs; it waits until the game has ended): "<title> X.Y.Z is available (you have A.B.C)." with **Release page** (the
+  release's page in the browser), **Later** (or Escape: asked again at the next start) and **Skip this version**
+  (writes `launcher.updates.skipped`: that release and older ones are not offered again, a newer one is). Check now
+  only reports, on the Settings screen.
+- **The Settings screen** ("Updates"): the checkbox "Check for updates when the launcher starts"
+  (`launcher.updates.check`), the launcher's version, the last check's result and time, the skipped release
+  (**Forget** clears it), **Check now** and **Release page**. The launcher's window only: the shared Settings screen
+  (`launcher/ui/screens.cpp`) leaves a place after "Memory cards" that its host fills (`Screens::set_settings_extra`),
+  and the in-game menu fills none, so the game's menu has no update check.
+- **Failures** are reported in words and never retried by themselves: curl missing (Windows 10 before 1803, a Linux
+  without it; **Release page** then opens the repository's latest release), no network (curl's own error), an HTTP
+  error (404: the repository has no release; 403: GitHub's limit of 60 requests an hour from one address without an
+  account), an answer that is not a release (not JSON, no tag, a tag that is not `vX.Y.Z`).
 
 ## In-game menu
 
@@ -299,7 +336,8 @@ at a time), where leaving the game for the launcher's window is a chore.
   hotkey again, or **Resume**, closes it and the game goes on; **Quit** ends the run with status 0.
 - **The pages** (the navigation on the left; the shoulder buttons or Ctrl+PageUp/PageDown step through them):
   **Game** (the title, Resume, Quit) and the launcher's own **Settings**, **Controls** and **Mods** screens
-  (`launcher/ui/screens.cpp`, the one implementation both draw), over the settings file the game was started with
+  (`launcher/ui/screens.cpp`, the one implementation both draw; the update check, "Updates", is the window's own),
+  over the settings file the game was started with
   (`--config`: the runtime's `settings.c` read it; the menu reads it again through the launcher's `SettingsFile` and
   writes it as the launcher would, keeping every member it does not edit) and the mods beside the executable plus the
   user's data mods (`--mods-dir`). A change is saved when no widget is in use (and when the menu closes), and the
