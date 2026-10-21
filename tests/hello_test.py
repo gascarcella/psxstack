@@ -64,7 +64,8 @@ def script_check(runner, exe, build, env):
 def menu_check(build, env):
     """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
-    the picture of the menu up (HELLO_PORT_MENU_SHOT, launcher/ui/menu.cpp) at build/menu.png."""
+    the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
+    build/menu.png."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
         if not shutil.which(tool, path=env["PATH"]):
             print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
@@ -75,9 +76,15 @@ def menu_check(build, env):
     subprocess.run(["cmake", "--build", str(build)], check=True, env=env, stdout=subprocess.DEVNULL)
     exe, shot = build / "hello", build / "menu.png"
     shot.unlink(missing_ok=True)
-    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot))
-    r = subprocess.run([str(exe), "--input-test", "--fps", "0"], capture_output=True, text=True, env=run_env,
-                       timeout=600)
+    # A settings file for the run, so the menu's Settings, Controls and Mods pages have something to edit; the
+    # picture is the Settings page.
+    cfg = build / "cfg"
+    cfg.mkdir(exist_ok=True)
+    (cfg / "settings.json").write_text('{ "schema": 1 }\n')
+    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot),
+                   HELLO_PORT_MENU_SCREEN="settings")
+    r = subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--mods-dir", str(cfg / "mods"),
+                        "--input-test", "--fps", "0"], capture_output=True, text=True, env=run_env, timeout=600)
     lines = r.stderr.strip().splitlines()
     menu = next((l for l in lines if "input test: the menu:" in l), "(no menu line)")
     ok = r.returncode == 0 and "the menu: passed" in menu

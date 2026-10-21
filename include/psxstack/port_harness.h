@@ -202,6 +202,7 @@ void port_mods_print_registry(FILE *f);
  * value fails the settings) and the settings' `mod_order`; port_mods_data_start loads the enabled ones in that order
  * (`active` 0: none). */
 int port_mods_data_scan(const char *dir);
+const char *port_mods_data_dir(void); /* the directory scanned, NULL for none (the menu lists its mods) */
 int port_mods_data_known(const char *id);
 void port_mods_data_settings(const struct PortJson *mods, const struct PortJson *order);
 void port_mods_data_start(int active);

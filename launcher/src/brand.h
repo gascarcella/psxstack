@@ -39,8 +39,10 @@ constexpr int GAME_RATE = PSXSTACK_GAME_RATE;
 constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 constexpr const char *GAME_RATE_NOTE = PSXSTACK_GAME_RATE_NOTE;
-// The discs the game accepts (disc.h: disc_by_sha1, disc_known, disc_labels).
+// The discs the game accepts (disc.h: disc_by_sha1, disc_known, disc_labels). A disc-free game (examples/hello)
+// describes none: the generated list then holds one empty entry, which the count keeps out of reach.
 constexpr int GAME_DISC_COUNT = PSXSTACK_GAME_DISC_COUNT;
-inline constexpr PsxstackGameDisc GAME_DISCS[PSXSTACK_GAME_DISC_COUNT] = PSXSTACK_GAME_DISCS;
+inline constexpr PsxstackGameDisc GAME_DISCS[PSXSTACK_GAME_DISC_COUNT > 0 ? PSXSTACK_GAME_DISC_COUNT : 1] =
+    PSXSTACK_GAME_DISCS;
 
 } // namespace psxstack

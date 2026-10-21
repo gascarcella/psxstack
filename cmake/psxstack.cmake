@@ -439,13 +439,26 @@ function(psxstack_add_game target)
         # links as C++. The game's units and the runtime stay C; runtime/menu.c's stubs make way for it.
         if(PSXSTACK_MENU)
             psxstack_imgui_target()
-            set(_ui "${PSXSTACK_ROOT}/launcher/ui/menu.cpp" "${PSXSTACK_ROOT}/launcher/ui/style.cpp")
-            target_sources(${target} PRIVATE ${_ui})
-            set_source_files_properties(${_ui} PROPERTIES COMPILE_OPTIONS "-Werror")
+            # Its own object library: the launcher's headers come first in its include order (its settings.h and
+            # mods.h share their names with the runtime's, which menu.cpp reaches as "psxstack/settings.h"), and
+            # the launcher's data layer (settings, input, mods, json_value, paths) is compiled once more here as it
+            # is, over the runtime's json.c and sha1.c the game already has.
+            set(_menu ${target}_menu)
+            add_library(${_menu} OBJECT
+                        "${PSXSTACK_ROOT}/launcher/ui/menu.cpp" "${PSXSTACK_ROOT}/launcher/ui/screens.cpp"
+                        "${PSXSTACK_ROOT}/launcher/ui/style.cpp" "${PSXSTACK_ROOT}/launcher/ui/widgets.cpp"
+                        "${PSXSTACK_ROOT}/launcher/src/settings.cpp" "${PSXSTACK_ROOT}/launcher/src/input.cpp"
+                        "${PSXSTACK_ROOT}/launcher/src/mods.cpp" "${PSXSTACK_ROOT}/launcher/src/json_value.cpp"
+                        "${PSXSTACK_ROOT}/launcher/src/paths.cpp")
+            set_target_properties(${_menu} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+            target_compile_definitions(${_menu} PRIVATE PSXSTACK_MENU PSXSTACK_SDL)
+            target_compile_options(${_menu} PRIVATE ${COMMON_FLAGS} -Wall -Wextra -Werror)
+            target_include_directories(${_menu} PRIVATE "${PSXSTACK_ROOT}/launcher/src" "${PSXSTACK_ROOT}/launcher/ui"
+                                       "${GEN}/include" "${PSXSTACK_ROOT}/include" "${PSXSTACK_ROOT}/include/psxstack")
+            target_link_libraries(${_menu} PRIVATE psxstack_imgui)
             set_target_properties(${target} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
             target_compile_definitions(${target} PRIVATE PSXSTACK_MENU)
-            target_include_directories(${target} PRIVATE "${PSXSTACK_ROOT}/launcher/ui")
-            target_link_libraries(${target} PRIVATE psxstack_imgui)
+            target_link_libraries(${target} PRIVATE ${_menu} psxstack_imgui)
             if(PSXSTACK_MENU_STATIC_RUNTIME)
                 target_link_options(${target} PRIVATE -static-libstdc++ -static-libgcc)
             endif()

@@ -192,7 +192,7 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 |---|---|
 | `src/main.cpp` | Options, the main loop |
 | `src/brand.h` | The game's identity, from the generated `psxstack_game_gen.h` (the only place the sources touch it) |
-| `src/app.cpp`, `app.h` | The window, the screens |
+| `src/app.cpp`, `app.h` | The window, the Play and Disc screens, the navigation |
 | `src/settings.cpp`, `settings.h` | The settings directory's lookup, the settings file |
 | `src/json_value.cpp`, `json_value.h` | An editable JSON tree over the runtime's reader, and a writer |
 | `src/disc.cpp`, `disc.h` | The `.cue` reader, the described discs, and the SHA-1 check on a thread |
@@ -201,6 +201,7 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/mods.cpp`, `mods.h` | The manifests (reading, checking), the user's values in `mods.<mod id>` |
 | `src/paths.cpp`, `paths.h` | Paths and files through SDL's calls only (no POSIX; `/` and `\` and drive letters alike) |
 | `src/selftest.cpp`, `selftest.h` | The self-test; `tests/fixtures/mods/` its manifests, compiled in by CMake |
-| `ui/style.cpp`, `style.h` | The look, shared with the game's in-game menu |
+| `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
+| `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |
 | `windows/launcher.rc.in`, `launcher.manifest.in` | The Windows resources, configured for the game's id |

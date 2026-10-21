@@ -69,7 +69,8 @@ cmake -S port -B build/port-sdl -G Ninja -DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON   
 **The in-game menu** (`-DPSXSTACK_MENU=ON`, with `PSXSTACK_SDL`): the launcher's UI inside the game's window, on the
 `menu` hotkey (Escape, or Back+Start on a gamepad), in a pause; docs/LAUNCHER.md "In-game menu". The game then
 links as C++ (`launcher/ui/`, Dear ImGui from `tools/imgui`); without the option nothing of it is in the binary.
-`<PREFIX>_PORT_MENU_SHOT=PATH` writes the window with the menu up as a PNG (the software renderer).
+`<PREFIX>_PORT_MENU_SHOT=PATH` writes the window with the menu up as a PNG (the software renderer), on the page
+`<PREFIX>_PORT_MENU_SCREEN` names.
 SDL's backends follow the `-dev` headers present when `setup.sh sdl3` runs: missing optional ones are turned off one by
 one (logged), and with no X11/Wayland headers at all only the `offscreen` and `dummy` video drivers are built (enough
 for the tests). For a desktop window install the headers (Debian/Ubuntu: `libx11-dev libxext-dev libwayland-dev

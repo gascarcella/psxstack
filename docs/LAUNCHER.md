@@ -275,11 +275,13 @@ page generated from its manifest; the data mods in the settings directory's `mod
 ## In-game menu
 
 A game configured with `-DPSXSTACK_MENU=ON` (with `PSXSTACK_SDL`; `scripts/setup.sh imgui`) has the launcher's UI
-inside its own window: `launcher/ui/` (C++17 over Dear ImGui, `cmake/imgui.cmake`) is compiled into the game, which
-then links as C++; the game's units and the runtime stay C, and a build without the option links the do-nothing
-stubs of `runtime/menu.c`, so the runtime's call sites need no `#ifdef`. The C API is `include/psxstack/menu.h`
-(`port_menu_*`). It is for handhelds and the couch (Steam Deck: gamescope shows one window at a time), where leaving
-the game for the launcher's window is a chore.
+inside its own window: `launcher/ui/` (C++17 over Dear ImGui, `cmake/imgui.cmake`) and the launcher's data layer
+(`launcher/src/`: settings, input, mods, json_value, paths) are compiled into the game as an object library of their
+own (the launcher's headers first in its include order: its `settings.h` and `mods.h` share their names with the
+runtime's), and the game then links as C++; the game's units and the runtime stay C, and a build without the option
+links the do-nothing stubs of `runtime/menu.c`, so the runtime's call sites need no `#ifdef`. The C API is
+`include/psxstack/menu.h` (`port_menu_*`). It is for handhelds and the couch (Steam Deck: gamescope shows one window
+at a time), where leaving the game for the launcher's window is a chore.
 
 - **The `menu` hotkey** (`input.hotkeys.menu`; default Escape, or Back held with Start on a gamepad: the chord's
   first input reaches the pad until it is complete, "Input bindings") opens the menu in a pause of the pump
@@ -290,17 +292,23 @@ the game for the launcher's window is a chore.
   submit). The window's events go to ImGui as well as to the runtime's keys (`runtime/input.c`): the menu navigates
   with the keyboard, the mouse and every gamepad; the pause, save and load hotkeys do not act while it is up. The
   hotkey again, or **Resume**, closes it and the game goes on; **Quit** ends the run with status 0.
-- **This phase** draws the game's title, Resume and Quit (issue psxstack#74). The screens follow: Settings, Controls
-  and Mods editing the same `settings.json` the launcher does, applied live where the runtime can and with a note
-  where a restart is needed (the disc, the renderer, the rate, the memory cards); the launcher's window stays the
-  place for the disc.
+- **The pages** (the navigation on the left; the shoulder buttons or Ctrl+PageUp/PageDown step through them):
+  **Game** (the title, Resume, Quit) and the launcher's own **Settings**, **Controls** and **Mods** screens
+  (`launcher/ui/screens.cpp`, the one implementation both draw), over the settings file the game was started with
+  (`--config`: the runtime's `settings.c` read it; the menu reads it again through the launcher's `SettingsFile` and
+  writes it as the launcher would, keeping every member it does not edit) and the mods beside the executable plus the
+  user's data mods (`--mods-dir`). A change is saved when no widget is in use (and when the menu closes) and takes
+  effect at the next start, as every page says; applying what the runtime can live is issue #74's next phase. A
+  game started without `--config` has the Game page alone. The disc stays the launcher's window's.
 - **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled by the window's height: 1 at
   480 lines, up to 4, so the menu reads the same on a 640x480 window and a 1280x800 handheld screen.
 - **The test:** `--input-test` ends with the menu's round trip (its hotkey at a vsync, the menu shown in the pause's
   polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
   window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
-  back with the menu in it). `tests/hello_test.py --menu` builds `examples/hello` that way and runs both on SDL's
-  offscreen driver; CI's `launcher` job runs it and keeps the picture.
+  back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names.
+  `tests/hello_test.py --menu` builds `examples/hello` that way and runs both on SDL's offscreen driver with a
+  settings file of its own, the picture its Settings page; CI's `launcher` job runs it and keeps the picture. The
+  screens' logic is the launcher self-test's.
 - **The release:** a game that ships the menu links libstdc++ and libgcc statically with
   `-DPSXSTACK_MENU_STATIC_RUNTIME=ON`, as the launcher does (`launcher/README.md` "Releases").
 

@@ -89,9 +89,11 @@ endforeach()
 file(CONFIGURE OUTPUT "${PSXSTACK_FIXTURES_H}" CONTENT "${fixtures}" @ONLY NEWLINE_STYLE UNIX)
 
 # ---- The executable: <id>-launcher.
-# ui/: what the in-game menu shares with the launcher (the style; the screens follow), compiled into both.
+# ui/: what the game's in-game menu shares with the launcher (the style, the widgets, the Settings, Controls and
+# Mods screens), compiled into both; ui/menu.cpp is the menu itself, the game's alone.
 file(GLOB PSXSTACK_LAUNCHER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/ui/style.cpp")
+     "${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp")
+list(REMOVE_ITEM PSXSTACK_LAUNCHER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/ui/menu.cpp")
 set(PSXSTACK_LAUNCHER_SHARED "${PSXSTACK_ROOT}/runtime/json.c" "${PSXSTACK_ROOT}/runtime/sha1.c"
     "${PSXSTACK_LAUNCHER_VERSION_C}")
 add_executable(${PSXSTACK_LAUNCHER} ${PSXSTACK_LAUNCHER_SRCS} ${PSXSTACK_LAUNCHER_SHARED})
