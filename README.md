@@ -32,7 +32,7 @@ python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU function
 | `include/psxstack/` | The hook macros' host side (`hooks.h`), the adapter interface (`game.h`, `mods.h`), the Psy-Q declarations the shim implements (`psyq/`), the runtime's headers |
 | `psyq/` | The Psy-Q shim: one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh`. Its declarations are `include/psxstack/psyq/*.h` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
-| `mods/fast_forward/` | The one mod every game has |
+| `mods/fast_forward/`, `mods/fast_loading/` | The stack's own mods, which every game has: fast-forward, faster loading |
 | `launcher/` | The launcher (C++): settings, disc check, mods, input bindings, self-test; branding from the game description |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (the llvm-mingw toolchain) |
 | `windows/` | The game's Windows resource and manifest templates |

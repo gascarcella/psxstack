@@ -142,7 +142,7 @@ map's (none for a hotkey's, which must fire; with `--script`: none sent, and the
 run without the test), then (without a script) the pause's round trip; exit 0 when all the checks pass , 6 otherwise. With `--config` it tests the settings' map. The first game's CI runs it on SDL's offscreen driver, with the defaults and with a rebound settings file.
 
 **The mods** (`runtime/mods.c`; docs/LAUNCHER.md "Mod manifest", "Mod runtime"): the registry (the stack's
-fast_forward, then the game's `game_mods`); each has a manifest `mods/<id>/mod.json` (the stack's `mods/`, the game's
+fast_forward and fast_loading, then the game's `game_mods`); each has a manifest `mods/<id>/mod.json` (the stack's `mods/`, the game's
 directories), copied beside the binary (`build/port*/mods/`) for the launcher. `--print-mods` prints the
 registry; the settings' `mods.<id>` enable and configure them; under `--script` they are off unless `--script-mods`.
 
@@ -153,6 +153,14 @@ fast-forward that ends never makes the game wait for the vsyncs it ran ahead).
 **Fast-forward** (the `fast_forward` mod; docs/LAUNCHER.md "Fast-forward"): enabled in the settings, hold `Tab` (or a
 toggle binding) runs the game at the nominal rate times its speed (default `4x`), presents at most 60 images a second
 and mutes the audio device; the game, its log and its record are unchanged.
+
+**Faster loading** (the `fast_loading` mod): while it is enabled the CD's data reads (ReadN/ReadS and CdRead whose
+Setmode byte has no XA bit) run at `speed` times the drive's rate (`2x`, `4x`, the default, `8x`) with their seeks
+divided as much, or at once (`instant`: no seek, as `--cd-speed instant`). The movie stream and the reads with the XA
+bit keep the drive's rate, so movies and their audio are unchanged. Unlike fast-forward it changes the game's run: a
+load ends in fewer vsyncs, so what the game does every frame (a random generator stepped once a frame) comes out
+differently afterwards; every read still completes through the game's own callbacks, and the speed is a setting, not
+part of a save state. Under `--cd-speed instant` the data reads stay instant whatever the speed.
 
 ## Texture dump
 `--dump-textures DIR` (the SDL build, either renderer, headless too; docs/PORT.md "Texture replacement") writes every

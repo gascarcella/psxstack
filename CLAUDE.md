@@ -45,7 +45,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `include/psxstack/` | `hooks.h` (the hook macros' host side and the `port_*` the game C calls), `game.h` (the adapter interface, `PSXSTACK_API`), `mods.h`, `types.h`, `psyq/` (the Psy-Q declarations the shim implements: the stack's own, DECISIONS "Psy-Q declarations: the stack's"), the runtime's headers |
 | `psyq/` | The Psy-Q shim, one file per library, plus the hardware models `gpu.c`, `gte.c`, `mdec.c`, `xa.c`; `check.sh` |
 | `shaders/` | The hardware renderer's HLSL (DXC to SPIR-V, for Windows also DXIL, at build time) |
-| `mods/fast_forward/` | The one mod every game has; a game's own mods live in the game |
+| `mods/fast_forward/`, `mods/fast_loading/` | The stack's own mods, which every game has; a game's own mods live in the game |
 | `launcher/` | The launcher (C++, SDL3 + Dear ImGui): its own CMake project; every string from the game description (`launcher/src/brand.h`) |
 | `cmake/` | `psxstack.cmake` (`psxstack_add_game()`, documented inline), `version.cmake`, `embed.cmake`, `windows-x86_64.cmake` (llvm-mingw) |
 | `windows/` | The game's Windows resource and manifest templates |

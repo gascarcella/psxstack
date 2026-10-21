@@ -51,7 +51,7 @@ int game_state_read(uint32_t addr, int size, int is_signed, int32_t *out);
 void *game_state_host(uint32_t addr, int size);
 
 /* ---- The mods: the game's built-in mods, game_mod_count() PortMod records at game_mods() (default: none). The
- * runtime's own fast_forward is not among them. */
+ * runtime's own fast_forward and fast_loading are not among them. */
 int game_mod_count(void);
 PortMod *game_mods(void);
 
