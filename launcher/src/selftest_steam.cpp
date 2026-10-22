@@ -270,6 +270,30 @@ static void test_record(const std::string &dir) {
           "a broken launcher.steam: one warning, not in Steam, left in the file: " + err);
 }
 
+// The build's pictures (game.json launcher.steam_art: none for some games) are PNGs under Steam's names; a record's
+// name that is not a plain file name is never removed.
+static void test_art(const std::string &dir) {
+    const std::vector<SteamArt> art = steam_art_embedded();
+    bool ok = true;
+    for (const SteamArt &a : art) {
+        ok &= a.bytes.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0 &&
+              (a.suffix == "p.png" || a.suffix == ".png" || a.suffix == "_hero.png" || a.suffix == "_logo.png" ||
+               a.suffix == "_icon.png");
+    }
+    check(ok, "the build's " + std::to_string(art.size()) + " Steam pictures are PNGs under Steam's names");
+    std::vector<std::string> written;
+    std::string err;
+    const std::string grid = path_join(dir, "grid");
+    check(steam_art_write(grid, 0x80000001u, art, &written, &err) && written.size() == art.size() &&
+              (art.empty() || get(path_join(grid, written[0])) == art[0].bytes),
+          "the build's pictures written: " + err);
+    check(put(path_join(dir, "outside.png"), "keep"), "a file outside the grid folder");
+    steam_art_remove(grid, { "../outside.png", "..", "a/b.png", "missing.png" });
+    steam_art_remove(grid, written);
+    check(get(path_join(dir, "outside.png")) == "keep" && (written.empty() || !path_is_file(path_join(grid, written[0]))),
+          "only plain names inside the grid folder are removed");
+}
+
 static void test_system() {
     // This system's own lists, never Steam's files: this process is found by its name, a made-up one is not; the
     // shortcut's path is this executable (no $APPIMAGE in the self-test).
@@ -361,6 +385,19 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
     };
     o.steam.running = [&] { return running; };
     o.steam.launcher_path = [&] { return launcher; };
+    // Pictures of the test's own (any bytes: the launcher copies them; the build's are checked in test_art).
+    o.steam.art = { { "p.png", "capsule" }, { ".png", "wide" }, { "_hero.png", "hero" }, { "_logo.png", "logo" },
+                    { "_icon.png", "icon" } };
+    const std::string grid = steam_grid_dir(steam, "39734383");
+    const auto art_of = [&](uint32_t id) { // the pictures in the grid folder for `id`, in the order written
+        std::string got;
+        for (const char *s : { "p.png", ".png", "_hero.png", "_logo.png", "_icon.png" }) {
+            got += get(path_join(grid, std::to_string(id) + s)) + "|";
+        }
+        return got;
+    };
+    const std::string all_art = "capsule|wide|hero|logo|icon|", no_art = "|||||";
+    check(put(path_join(grid, "12345p.png"), "another game's"), "another shortcut's picture in the grid folder");
     SettingsDir location;
     location.dir = path_join(dir, "settings");
     location.source = DirSource::Argument;
@@ -396,6 +433,9 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
         const VdfNode *e = steam_shortcuts_find(r, appid);
         check(e != nullptr && e->get_string("Exe") == steam_quote(launcher) && e->get_string("AppName") == GAME_TITLE,
               "the entry starts this launcher, named after the game");
+        check(e != nullptr && e->get_string("icon") == path_join(grid, std::to_string(appid) + "_icon.png") &&
+                  art_of(appid) == all_art && app.settings().values.steam.art.size() == 5,
+              "the pictures in the account's grid folder by appid, the icon the shortcut's, recorded");
         steam_shortcuts_remove(&r, appid);
         check(vdf_binary_write(r) == fixture, "the other shortcuts are byte for byte as they were");
         check(record_in_file(location.dir) == "39734383 " + std::to_string(appid) + " " + launcher,
@@ -428,12 +468,15 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
                   names_in(first).size() == 3 && !st.moved() &&
                   record_in_file(location.dir) == "39734383 " + std::to_string(moved_id) + " " + launcher,
               "Update shortcut: the old entry replaced by one for the new path, in one write: " + st.message());
+        check(art_of(moved_id) == all_art && art_of(appid) == no_art, "the pictures moved to the new appid");
         running = true;
         check(!st.remove() && app.settings().values.steam.added(), "Remove with Steam running: nothing changed");
         running = false;
         check(st.remove() && get(first) == fixture && !app.settings().values.steam.added() &&
                   record_in_file(location.dir).empty(),
               "Remove: the file byte for byte as it was before Add, launcher.steam gone: " + st.message());
+        check(art_of(moved_id) == no_art && get(path_join(grid, "12345p.png")) == "another game's",
+              "Remove: its pictures gone, another shortcut's left");
         pump(app, 2);
         shot(window, app, shots, "20f-Settings-steam-removed.png");
 
@@ -474,6 +517,7 @@ void self_test_steam(const std::string &dir, int *checks, int *failures) {
     test_find(path_join(dir, "find"));
     test_registry();
     test_record(path_join(dir, "record"));
+    test_art(path_join(dir, "art"));
     test_system();
 }
 

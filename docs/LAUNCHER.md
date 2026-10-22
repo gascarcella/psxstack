@@ -110,7 +110,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `mod_order` | list of strings | by id | The data mods' ids by priority, the first winning ("Data mods"). The launcher's Earlier/Later buttons write the whole list. Ids of data mods not found are kept |
 | `launcher` | object | none | The launcher's own state (e.g. `last_dir`, where its file dialog opens). The game never reads it and `--print-settings` prints it back unchanged |
 | `launcher.updates` | `{ "check": bool, "skipped": string }` | `check` true | The update check ("Updates"): whether it runs at the launcher's start, and the release tag the user skipped (`"v0.5.0"`). Written once it differs from the defaults |
-| `launcher.steam` | `{ "dir", "account", "account_name", "appid", "exe", "name" }` | none | The Steam shortcut ("Steam"): the Steam folder and account it was added to (and the account's name then), its appid, and the launcher path and name it was made with. Written by Add to Steam, removed by Remove; Update shortcut and Remove act on it without looking for Steam again. One that does not read is warned about, ignored and left in the file |
+| `launcher.steam` | `{ "dir", "account", "account_name", "appid", "exe", "name", "art" }` | none | The Steam shortcut ("Steam"): the Steam folder and account it was added to (and the account's name then), its appid, the launcher path and name it was made with, and the pictures' file names written beside it (`art`, absent when none). Written by Add to Steam, removed by Remove; Update shortcut and Remove act on it without looking for Steam again. One that does not read is warned about, ignored and left in the file |
 
 ### Input bindings
 
@@ -426,6 +426,13 @@ at its start or in the self-test's normal path.
   as `shortcuts.vdf.bak`.
 - **The appid**: CRC-32 of the quoted `Exe` followed by `AppName`, with the top bit set (the convention Steam's own tools
   follow; it also names the artwork in `userdata/<id>/config/grid/`).
+- **The artwork** (a game that names it: game.json `launcher.steam_art`, GAME_CONTRACT.md "1. game.json"; embedded in
+  the launcher at build time, `launcher/src/steam_art.cpp`): Add writes each picture into the account's
+  `config/grid/` as `<appid>p.png` (the portrait capsule), `<appid>.png` (the wide capsule), `<appid>_hero.png`,
+  `<appid>_logo.png` and `<appid>_icon.png`, the last also the shortcut's `icon`, and records their names in
+  `launcher.steam.art`; Update shortcut writes them under the new appid and removes the old ones; Remove removes
+  exactly the files recorded (a name that is not a plain file name is never touched). A picture that cannot be written
+  leaves the shortcut in place and is said; Steam then shows its own. A game without artwork gets Steam's placeholders.
 - **The test**: the self-test (`launcher/src/selftest_steam.cpp`) works on fixture folders only:
   `tests/fixtures/steam/` (written by its `make_fixtures.py`, an encoder separate from the launcher's) holds a
   `shortcuts.vdf` that must come back byte for byte, the same file with the launcher's shortcut added (adding it must
@@ -436,7 +443,11 @@ at its start or in the self-test's normal path.
   pressed (counted), a running Steam refuses Add, Update and Remove with the files unchanged, Add keeps the other
   shortcuts byte for byte and the old file as `.bak`, the record is saved at once and read back at the next start
   (still nothing looked up), a moved launcher gets Update shortcut, Remove gives back the file as it was before Add,
-  and the not-found, already-removed and damaged-file cases; pictures of each state (`20*-Settings-steam*.png`).
+  and the not-found, already-removed and damaged-file cases; pictures of each state (`20*-Settings-steam*.png`). The
+  artwork: written by appid with the icon the shortcut's, moved by Update, removed by Remove with another shortcut's
+  left; the build's own pictures checked as PNGs. CI also builds the launcher of `examples/hello`, whose game.json
+  names artwork of its own (`examples/hello/steam/`, drawn by its `make_art.py`), and runs its self-test, so the path
+  from game.json to the pictures written is covered; its play path is skipped (it describes no disc).
 
 ## In-game menu
 

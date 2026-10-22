@@ -163,6 +163,44 @@ bool steam_shortcuts_save(const std::string &path, const VdfNode &root, std::str
     return file_write_atomic(path, vdf_binary_write(root), err);
 }
 
+// ---- The artwork
+
+std::string steam_grid_dir(const std::string &steam_dir, const std::string &account) {
+    return path_join(path_join(path_join(steam_dir, "userdata"), account), "config/grid");
+}
+
+bool steam_art_write(const std::string &grid, uint32_t appid, const std::vector<SteamArt> &art,
+                     std::vector<std::string> *written, std::string *err) {
+    written->clear();
+    if (art.empty()) {
+        return true;
+    }
+    if (!path_is_dir(grid) && !path_make_dir(grid, err)) {
+        return false;
+    }
+    for (const SteamArt &a : art) {
+        const std::string name = std::to_string(appid) + a.suffix;
+        if (!file_write_atomic(path_join(grid, name), a.bytes, err)) {
+            return false;
+        }
+        written->push_back(name);
+    }
+    return true;
+}
+
+void steam_art_remove(const std::string &grid, const std::vector<std::string> &names) {
+    for (const std::string &n : names) {
+        if (n.empty() || n.find('/') != std::string::npos || n.find('\\') != std::string::npos ||
+            n.find("..") != std::string::npos) {
+            continue;
+        }
+        const std::string f = path_join(grid, n);
+        if (path_is_file(f)) {
+            SDL_RemovePath(f.c_str());
+        }
+    }
+}
+
 // ---- Where Steam is
 
 int SteamInstall::default_account() const {

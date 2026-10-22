@@ -9,5 +9,9 @@
     "slots": [{ "name": "main", "base": "0x80100000", "size": "0x10000" }],
     "heap": { "start": "0x80110000", "end": "0x801F0000" }
   },
-  "launcher": { "about": "psxstack's disc-free example: two polygons, a pad read, the SPU on." }
+  "launcher": {
+    "about": "psxstack's disc-free example: two polygons, a pad read, the SPU on.",
+    "steam_art": { "capsule": "steam/capsule.png", "wide_capsule": "steam/wide_capsule.png", "hero": "steam/hero.png",
+                   "logo": "steam/logo.png", "icon": "steam/icon.png" }
+  }
 }

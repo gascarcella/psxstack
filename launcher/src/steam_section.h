@@ -22,6 +22,7 @@ struct SteamOptions {
     std::function<bool()> running = steam_running;
     std::function<std::string()> launcher_path = steam_launcher_path;
     std::string name = GAME_TITLE; // the shortcut's AppName
+    std::vector<SteamArt> art = steam_art_embedded(); // written beside it (game.json launcher.steam_art)
 };
 
 class SteamSection {
@@ -53,10 +54,12 @@ private:
     // Steam closed, else the message that asks to quit it (`what`: the button's name). True when it is closed.
     bool steam_closed(const char *what);
     void say(const std::string &text, bool ok);
-    // The shortcut for this launcher into `dir`/`account`'s file (the entry with `replace` taken out in the same
-    // write), the record kept. False with the message set (`verb`: "added", "updated").
+    // The shortcut for this launcher into `dir`/`account`'s file and its pictures into the account's grid folder (with
+    // `replace`, that record's entry taken out in the same write and its pictures removed), the record kept. False
+    // with the message set (`verb`: "added", "updated"); a picture that could not be written is not a failure: `note`
+    // says so.
     bool write_shortcut(const std::string &dir, const std::string &account, const std::string &account_name,
-                        uint32_t replace, const char *verb);
+                        const SteamRecord *replace, const char *verb, std::string *note);
     // The record's shortcut out of its file. False with the message set (a file that does not read).
     bool remove_shortcut(int *removed);
 

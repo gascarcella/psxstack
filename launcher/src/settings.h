@@ -74,6 +74,7 @@ struct SteamRecord {
     uint32_t appid = 0;       // the shortcut's
     std::string exe;          // the launcher's path it points at
     std::string name;         // its AppName
+    std::vector<std::string> art; // the pictures written beside it, in userdata/<account>/config/grid
     bool added() const { return appid != 0; }
 };
 
