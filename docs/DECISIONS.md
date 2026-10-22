@@ -278,4 +278,6 @@ keep is refused, never rewritten); only the entry with the launcher's appid is a
 atomically and its first state kept as `shortcuts.vdf.bak`; and what was done is recorded in `launcher.steam`, so
 Remove and Update shortcut undo exactly that. Steam keeps the shortcuts in memory and writes them back at exit, so
 every change waits for Steam to be closed; the launcher asks, it never stops Steam. The shortcut points at the
-launcher (the AppImage path the self-update keeps), so an update needs no change in Steam.
+launcher (the AppImage path the self-update keeps), so an update needs no change in Steam. The artwork is the game's
+choice (game.json `launcher.steam_art`, optional): embedded in the launcher at build time, so a release stays the
+launcher and the game with nothing beside them, and written as the files Steam's own grid folder holds per appid.

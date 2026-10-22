@@ -86,7 +86,8 @@ void SteamSection::cancel() {
 }
 
 bool SteamSection::write_shortcut(const std::string &dir, const std::string &account,
-                                  const std::string &account_name, uint32_t replace, const char *verb) {
+                                  const std::string &account_name, const SteamRecord *replace, const char *verb,
+                                  std::string *note) {
     const std::string not_done = std::string("Not ") + verb + ": ";
     // The account's folder must be there: the launcher never makes one for an account Steam no longer has.
     if (!path_is_dir(path_join(path_join(dir, "userdata"), account))) {
@@ -109,13 +110,28 @@ bool SteamSection::write_shortcut(const std::string &dir, const std::string &acc
         say(not_done + "the launcher's own path could not be found.", false);
         return false;
     }
-    if (replace != 0) {
-        steam_shortcuts_remove(&root, replace);
+    // The icon picture, when the game has one, is also the shortcut's icon.
+    const std::string grid = steam_grid_dir(dir, account);
+    for (const SteamArt &a : options_.art) {
+        if (a.suffix == "_icon.png") {
+            s.icon = path_join(grid, std::to_string(steam_shortcut_appid(s.exe, s.name)) + a.suffix);
+        }
+    }
+    if (replace != nullptr) {
+        steam_shortcuts_remove(&root, replace->appid);
     }
     const uint32_t appid = steam_shortcuts_add(&root, s);
     if (!steam_shortcuts_save(path, root, &err)) {
         say(not_done + err, false);
         return false;
+    }
+    std::vector<std::string> written;
+    note->clear();
+    if (!steam_art_write(grid, appid, options_.art, &written, &err)) {
+        *note = " Its pictures could not all be written (" + err + "): Steam shows its own for those.";
+    }
+    if (replace != nullptr) {
+        steam_art_remove(steam_grid_dir(replace->dir, replace->account), replace->art);
     }
     SteamRecord &r = settings_->values.steam;
     r.dir = dir;
@@ -124,6 +140,7 @@ bool SteamSection::write_shortcut(const std::string &dir, const std::string &acc
     r.appid = appid;
     r.exe = s.exe;
     r.name = s.name;
+    r.art = written;
     save_();
     return true;
 }
@@ -134,13 +151,14 @@ bool SteamSection::add() {
     }
     const std::string dir = installs_[install_].dir;
     const SteamAccount a = installs_[install_].accounts[account_]; // a copy: the list is cleared below
-    if (!write_shortcut(dir, a.id, a.name, 0, "added")) {
+    std::string note;
+    if (!write_shortcut(dir, a.id, a.name, nullptr, "added", &note)) {
         return false;
     }
     choosing_ = false;
     installs_.clear();
     say("Added to Steam for " + account_label(a) +
-            ". Start Steam: the game is in the library (with the non-Steam games), and starts this launcher.",
+            ". Start Steam: the game is in the library (with the non-Steam games), and starts this launcher." + note,
         true);
     return true;
 }
@@ -175,6 +193,7 @@ bool SteamSection::remove() {
     if (!remove_shortcut(&removed)) {
         return false;
     }
+    steam_art_remove(steam_grid_dir(r.dir, r.account), r.art);
     r = SteamRecord();
     save_();
     say(removed > 0 ? "Removed from Steam."
@@ -189,10 +208,11 @@ bool SteamSection::update_shortcut() {
         return false;
     }
     const SteamRecord old = r;
-    if (!write_shortcut(old.dir, old.account, old.account_name, old.appid, "updated")) {
+    std::string note;
+    if (!write_shortcut(old.dir, old.account, old.account_name, &old, "updated", &note)) {
         return false;
     }
-    say("The shortcut now starts " + r.exe + ".", true);
+    say("The shortcut now starts " + r.exe + "." + note, true);
     return true;
 }
 

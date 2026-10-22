@@ -2,7 +2,7 @@
 """The game description -> psxstack_game_gen.h (GAME_CONTRACT.md "1. game.json", "The generated header").
 
   tools/game_gen.py GAME.json --out DIR/psxstack_game_gen.h      # the header (C and C++)
-  tools/game_gen.py GAME.json --cmake DIR/psxstack_game.cmake    # the id and title as CMake variables (the target names)
+  tools/game_gen.py GAME.json --cmake DIR/psxstack_game.cmake    # the id and title as CMake variables (the target names), launcher.steam_art's files
   tools/game_gen.py GAME.json --check                            # validate only
 
 The description is validated against schema/game.schema.json (with `jsonschema` when it is importable, else by hand:
@@ -128,6 +128,37 @@ def validate_schema(game, schema):
             fail("launcher/updates/github: owner/repo")
 
 
+# launcher.steam_art's pictures, in the order the launcher writes them: key, the file's name after the appid.
+STEAM_ART = (("capsule", "p.png"), ("wide_capsule", ".png"), ("hero", "_hero.png"), ("logo", "_logo.png"),
+             ("icon", "_icon.png"))
+STEAM_ART_MAX = 8 << 20  # bytes: a picture embedded in the launcher
+
+
+def steam_art(game, path):
+    """launcher.steam_art's files as absolute paths ({} when absent), each a PNG that exists."""
+    art = game.get("launcher", {}).get("steam_art")
+    if art is None:
+        return {}
+    keys = [k for k, _ in STEAM_ART]
+    if not isinstance(art, dict) or not art or any(k not in keys for k in art):
+        fail("launcher/steam_art: an object with one or more of " + ", ".join(keys))
+    out = {}
+    for k, rel in art.items():
+        if not isinstance(rel, str) or not rel:
+            fail(f"launcher/steam_art/{k}: a path to a PNG, relative to the description")
+        f = (Path(path).resolve().parent / rel).resolve()
+        try:
+            data = f.read_bytes()
+        except OSError as e:
+            fail(f"launcher/steam_art/{k}: {rel}: {e.strerror}")
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            fail(f"launcher/steam_art/{k}: {rel}: not a PNG")
+        if len(data) > STEAM_ART_MAX:
+            fail(f"launcher/steam_art/{k}: {rel}: {len(data)} bytes, more than {STEAM_ART_MAX}")
+        out[k] = str(f)
+    return out
+
+
 def load(path):
     try:
         game = json.loads(Path(path).read_text())
@@ -135,6 +166,7 @@ def load(path):
         fail(f"{path}: {e}")
     schema = json.loads(SCHEMA.read_text())
     validate_schema(game, schema)
+    game["_steam_art"] = steam_art(game, path)
     return game
 
 
@@ -153,6 +185,7 @@ def resolve(game):
         "disc_hint": game.get("launcher", {}).get("disc_hint", ""),
         "website": game.get("launcher", {}).get("website", ""),
         "updates_github": game.get("launcher", {}).get("updates", {}).get("github", ""),
+        "steam_art": game.get("_steam_art", {}),
     }
     if g["disc_required"] and not g["discs"]:
         fail("disc_required: needs a disc in `discs`")
@@ -317,7 +350,9 @@ def cmake_vars(g, source):
             f"set(PSXSTACK_GAME_ID {q(g['id'])})\n"
             f"set(PSXSTACK_GAME_TITLE {q(g['title'])})\n"
             f"set(PSXSTACK_GAME_ENV_PREFIX {q(g['env_prefix'])})\n"
-            f"set(PSXSTACK_GAME_RATE {g['rate']})\n")
+            f"set(PSXSTACK_GAME_RATE {g['rate']})\n"
+            + "".join(f"set(PSXSTACK_GAME_STEAM_ART_{k.upper()} {q(g['steam_art'].get(k, ''))})\n"
+                      for k, _ in STEAM_ART))
 
 
 def write(path, text):

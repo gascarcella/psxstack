@@ -48,6 +48,12 @@ the port and the launcher stay single binaries. Contents:
 - **Updates** (optional): `launcher.updates`, `{ "github": "owner/repo" }`, the repository whose latest release the
   launcher compares with its version stamp (docs/LAUNCHER.md "Updates"); its packages must be named as "Releases"
   says. Absent: no update check, no network call.
+- **Steam artwork** (optional): `launcher.steam_art`, the pictures the launcher's Add to Steam puts beside the game's
+  shortcut (docs/LAUNCHER.md "Steam"), each a PNG path relative to `game.json`: `capsule` (the library's portrait
+  capsule, 600x900), `wide_capsule` (the wide capsule, 920x430), `hero` (the game page's banner, 3840x1240), `logo`
+  (drawn over the hero, transparent, about 1280x720) and `icon` (square, 256x256; also the shortcut's icon). The sizes
+  are Steam's; any PNG is taken. They are embedded in the launcher at build time (nothing beside it at run time); a
+  game that names none gets Steam's own placeholders.
 - **Discs:** the accepted images: label, serial, SHA-1 of the whole BIN, BIN size, region. Both the port's check and
   the launcher's check use this list; the error text names the label. `disc_required` (optional, default `false`):
   the game cannot run on reads that find no data, so the port refuses to start without a disc (a message, status 64);
@@ -78,6 +84,10 @@ launcher and the game's adapter use by these exact names:
 | `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
 | `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
 | `PSXSTACK_GAME_UPDATES_GITHUB` | `launcher.updates.github` (`"owner/repo"`), `""` when absent (no update check) |
+
+`--cmake` writes the CMake variables: `PSXSTACK_GAME_ID`, `PSXSTACK_GAME_TITLE`, `PSXSTACK_GAME_ENV_PREFIX`,
+`PSXSTACK_GAME_RATE`, and `PSXSTACK_GAME_STEAM_ART_CAPSULE`, `_WIDE_CAPSULE`, `_HERO`, `_LOGO`, `_ICON` (`launcher.steam_art`'s
+files as absolute paths, `""` for each one absent), which the launcher's build embeds.
 
 A disc's `label` is a noun phrase, since the launcher writes "This is <label>." and "<file> is not <label>". The
 generator checks what the schema cannot: the slots are in address order and contiguous with each other and with the

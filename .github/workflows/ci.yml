@@ -115,6 +115,12 @@ jobs:
         run: SDL_VIDEO_DRIVER=offscreen DW3_SELFTEST_TAR="$(command -v bsdtar)" build/launcher/dw2003-launcher --self-test build/selftest
       - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's picture (tests/hello_test.py --menu)"
         run: python3 tests/hello_test.py --menu
+      - name: "The launcher of a disc-free game with Steam artwork (examples/hello): the pictures are make_art.py's, it builds, its self-test"
+        run: |
+          python3 examples/hello/steam/make_art.py --check
+          cmake -S launcher -B build/launcher-hello -G Ninja -DPSXSTACK_GAME_JSON="$PWD/examples/hello/game.json"
+          cmake --build build/launcher-hello
+          SDL_VIDEO_DRIVER=offscreen build/launcher-hello/hello-launcher --self-test build/selftest-hello
       - name: Self-test pictures
         if: always()
         uses: actions/upload-artifact@v4

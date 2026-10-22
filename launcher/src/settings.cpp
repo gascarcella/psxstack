@@ -327,6 +327,13 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
                 read_string(steam, "launcher.steam", "account_name", &r.account_name, w);
                 read_string(steam, "launcher.steam", "exe", &r.exe, w);
                 read_string(steam, "launcher.steam", "name", &r.name, w);
+                if (const Json *art = steam->find("art"); art != nullptr && art->is_array()) {
+                    for (const Json &a : art->items()) {
+                        if (a.is_string()) {
+                            r.art.push_back(a.as_string());
+                        }
+                    }
+                }
             }
             if (id >= 0x80000000u && id <= 0xFFFFFFFFu && id == (double)(uint32_t)id && !r.dir.empty() &&
                 !r.account.empty() && !r.exe.empty()) {
@@ -422,6 +429,13 @@ void settings_to_json(const Settings &s, Json *doc) {
         st.set("appid", Json::number(s.steam.appid));
         st.set("exe", Json::string(s.steam.exe));
         st.set("name", Json::string(s.steam.name));
+        if (!s.steam.art.empty()) {
+            Json art = Json::array();
+            for (const std::string &a : s.steam.art) {
+                art.push(Json::string(a));
+            }
+            st.set("art", art);
+        }
         doc->member("launcher").set("steam", st);
     } else if (const Json *st = launcher != nullptr ? launcher->find("steam") : nullptr;
                st != nullptr && st->is_object() && st->find("appid") != nullptr && st->find("appid")->is_number()) {

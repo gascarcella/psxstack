@@ -1141,6 +1141,10 @@ static void drop_file(SDL_Window *w, const std::string &path) {
 // The play path with the game's stand-in and a verified disc (a file of the BIN's size and the right disc.sha1).
 static void test_play(SDL_Window *window, const std::string &root) {
     const std::string dir = path_join(root, "play"), shots = path_join(root, "screens");
+    if (GAME_DISC_COUNT == 0) {
+        std::fprintf(stderr, "self-test: the play path skipped: the game describes no disc to verify\n");
+        return;
+    }
     path_make_dir(path_join(dir, "disc"), nullptr);
     if (!write_sized_bin(path_join(dir, "disc/game.bin"))) {
         check(false, std::string("a file of the BIN's size: ") + SDL_GetError());

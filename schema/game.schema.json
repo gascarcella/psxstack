@@ -106,6 +106,17 @@
           "properties": {
             "github": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "description": "owner/repo: \"gascarcella/dw2003recomp\"." }
           }
+        },
+        "steam_art": {
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "description": "The pictures Add to Steam puts beside the game's shortcut (docs/LAUNCHER.md \"Steam\"), each a PNG path relative to this file, embedded in the launcher at build time. Absent: Steam's own placeholders.",
+          "properties": {
+            "capsule": { "type": "string", "description": "The library's portrait capsule (600x900): <appid>p.png." },
+            "wide_capsule": { "type": "string", "description": "The wide capsule (920x430): <appid>.png." },
+            "hero": { "type": "string", "description": "The game page's banner (3840x1240): <appid>_hero.png." },
+            "logo": { "type": "string", "description": "The logo over the hero, transparent (about 1280x720): <appid>_logo.png." },
+            "icon": { "type": "string", "description": "The icon, square (256x256): <appid>_icon.png, also the shortcut's icon." }
+          }
         }
       }
     }

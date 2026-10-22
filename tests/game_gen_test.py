@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """tools/game_gen.py on examples/dw2003.game.json: the header compiles as C and as C++, a few values are right, the
-descriptions that must fail do, the update check's repository (and its absence), and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
+descriptions that must fail do, the update check's repository (and its absence), the Steam artwork's files, and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
 import copy
 import json
 import os
@@ -168,6 +168,41 @@ def main():
         r = run(str(tmp / "noup.json"), "--out", str(tmp / "noup.h"))
         check(r.returncode == 0 and "#define PSXSTACK_GAME_UPDATES_GITHUB \"\"" in (tmp / "noup.h").read_text(),
               f"no launcher.updates generates PSXSTACK_GAME_UPDATES_GITHUB \"\": {r.stderr}")
+
+        # launcher.steam_art: hello's pictures given to CMake as absolute paths; the others "" when absent; a bad key,
+        # a missing file, a file that is not a PNG and an empty object refused.
+        hello = ROOT / "examples/hello/game.json"
+        r = run(str(hello), "--cmake", str(tmp / "hello.cmake"))
+        cm = (tmp / "hello.cmake").read_text() if r.returncode == 0 else ""
+        check(r.returncode == 0 and f'set(PSXSTACK_GAME_STEAM_ART_CAPSULE "{ROOT}/examples/hello/steam/capsule.png")' in cm
+              and f'set(PSXSTACK_GAME_STEAM_ART_ICON "{ROOT}/examples/hello/steam/icon.png")' in cm,
+              f"hello's launcher.steam_art gives CMake its files' absolute paths: {r.stderr}")
+        r = run(str(EXAMPLE), "--cmake", str(tmp / "noart.cmake"))
+        check('set(PSXSTACK_GAME_STEAM_ART_HERO "")' in (tmp / "noart.cmake").read_text(),
+              "no launcher.steam_art: each picture's variable is empty")
+        art_dir = tmp / "art"
+        art_dir.mkdir()
+        (art_dir / "ok.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 16)
+        (art_dir / "not.png").write_bytes(b"GIF89a")
+
+        def art(value):
+            def f(g):
+                g["launcher"]["steam_art"] = value
+            return f
+        for value, what, needle in (({"banner": "art/ok.png"}, "an unknown picture", "steam_art"),
+                                    ({"hero": "art/missing.png"}, "a missing picture", "missing.png"),
+                                    ({"icon": "art/not.png"}, "a picture that is not a PNG", "not a PNG"),
+                                    ({}, "an empty steam_art", "steam_art")):
+            g = copy.deepcopy(base)
+            art(value)(g)
+            (tmp / "art.json").write_text(json.dumps(g))
+            r = run(str(tmp / "art.json"), "--check")
+            check(r.returncode != 0 and needle in r.stderr, f"{what} is refused: {r.stderr.strip()}")
+        g = copy.deepcopy(base)
+        art({"icon": "art/ok.png"})(g)
+        (tmp / "art.json").write_text(json.dumps(g))
+        r = run(str(tmp / "art.json"), "--check")
+        check(r.returncode == 0, f"a PNG path relative to the description is taken: {r.stderr}")
 
         def bad_addr(g):
             g["memory"]["ram"]["base"] = "80000000"

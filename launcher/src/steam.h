@@ -46,6 +46,25 @@ bool steam_shortcuts_load(const std::string &path, VdfNode *root, std::string *e
 // Written next to `path` and renamed over it; the first time, the file as it was is kept as shortcuts.vdf.bak.
 bool steam_shortcuts_save(const std::string &path, const VdfNode &root, std::string *err);
 
+// ---- The artwork (game.json launcher.steam_art; GAME_CONTRACT.md "1. game.json")
+
+// A picture and the end of its file's name after the appid ("p.png", ".png", "_hero.png", "_logo.png", "_icon.png").
+struct SteamArt {
+    std::string suffix;
+    std::string bytes;
+};
+// The game's, embedded at build time (launcher/src/steam_art.cpp); empty when it names none.
+std::vector<SteamArt> steam_art_embedded();
+// userdata/<account>/config/grid: where Steam looks for a shortcut's pictures, by its appid.
+std::string steam_grid_dir(const std::string &steam_dir, const std::string &account);
+// Each picture as <grid>/<appid><suffix> (the folder made when missing); the files' names written go into `written`,
+// in order, also when one fails (false, with the reason in `err`).
+bool steam_art_write(const std::string &grid, uint32_t appid, const std::vector<SteamArt> &art,
+                     std::vector<std::string> *written, std::string *err);
+// The named files removed from `grid` (plain names only: one with a separator or "..", from a hand-edited record, is
+// skipped). Missing ones are not an error.
+void steam_art_remove(const std::string &grid, const std::vector<std::string> &names);
+
 // ---- Where Steam is
 
 struct SteamAccount {
