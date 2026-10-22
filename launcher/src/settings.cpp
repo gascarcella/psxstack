@@ -316,6 +316,27 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
                 read_string(updates, "launcher.updates", "skipped", &s.update_skipped, w);
             }
         }
+        if (const Json *steam = launcher->find("steam")) {
+            // launcher.steam: all of it or none (a record Remove could not act on is dropped, with a warning).
+            SteamRecord r;
+            const Json *appid = steam->is_object() ? steam->find("appid") : nullptr;
+            const double id = appid != nullptr && appid->is_number() ? appid->as_number(0) : 0;
+            if (steam->is_object()) {
+                read_string(steam, "launcher.steam", "dir", &r.dir, w);
+                read_string(steam, "launcher.steam", "account", &r.account, w);
+                read_string(steam, "launcher.steam", "account_name", &r.account_name, w);
+                read_string(steam, "launcher.steam", "exe", &r.exe, w);
+                read_string(steam, "launcher.steam", "name", &r.name, w);
+            }
+            if (id >= 0x80000000u && id <= 0xFFFFFFFFu && id == (double)(uint32_t)id && !r.dir.empty() &&
+                !r.account.empty() && !r.exe.empty()) {
+                r.appid = (uint32_t)id;
+                s.steam = r;
+            } else {
+                warn(w, "launcher.steam: expected the shortcut's dir, account, appid and exe; ignored (the shortcut, "
+                        "if there is one, stays in Steam)");
+            }
+        }
     }
     for (int i = 0; i < 2; i++) {
         const char *key = i == 0 ? "memcard1" : "memcard2";
@@ -390,6 +411,21 @@ void settings_to_json(const Settings &s, Json *doc) {
         } else {
             u.erase("skipped");
         }
+    }
+    // launcher.steam: written while the shortcut is in Steam, gone once it is removed.
+    launcher = doc->find("launcher");
+    if (s.steam.added()) {
+        Json st = Json::object();
+        st.set("dir", Json::string(s.steam.dir));
+        st.set("account", Json::string(s.steam.account));
+        st.set("account_name", Json::string(s.steam.account_name));
+        st.set("appid", Json::number(s.steam.appid));
+        st.set("exe", Json::string(s.steam.exe));
+        st.set("name", Json::string(s.steam.name));
+        doc->member("launcher").set("steam", st);
+    } else if (const Json *st = launcher != nullptr ? launcher->find("steam") : nullptr;
+               st != nullptr && st->is_object() && st->find("appid") != nullptr && st->find("appid")->is_number()) {
+        doc->member("launcher").erase("steam"); // removed (a record that did not read is left as it is)
     }
 }
 

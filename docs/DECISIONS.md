@@ -266,3 +266,16 @@ ships, in place, the way each platform allows: the AppImage is one rename over t
 running launcher cannot be overwritten but can be renamed (`.old`, removed at the next start), the zip is unpacked
 with Windows' own `tar.exe` (no unzip code of ours), and every move is journaled and undone on a failure. Where that is
 not possible (a development build, an unwritable folder, no tar) the launcher says why and offers the release page.
+
+## Add to Steam: Steam's own shortcuts file, opt-in, never while Steam runs (2026-10-22)
+
+The launcher puts the game in the player's Steam library by editing `userdata/<account>/config/shortcuts.vdf` itself
+(issue #93; docs/LAUNCHER.md "Steam"), the file Steam's own "Add a Non-Steam Game" writes, rather than asking the
+player to add it by hand or depending on a third-party tool. Valve documents neither the file nor a way to add a
+shortcut from outside, so the launcher touches it as little as it can: nothing looks for Steam until the player
+presses Add to Steam; the binary VDF is read and written back byte for byte (a file with anything the reader does not
+keep is refused, never rewritten); only the entry with the launcher's appid is added or removed; the file is replaced
+atomically and its first state kept as `shortcuts.vdf.bak`; and what was done is recorded in `launcher.steam`, so
+Remove and Update shortcut undo exactly that. Steam keeps the shortcuts in memory and writes them back at exit, so
+every change waits for Steam to be closed; the launcher asks, it never stops Steam. The shortcut points at the
+launcher (the AppImage path the self-update keeps), so an update needs no change in Steam.

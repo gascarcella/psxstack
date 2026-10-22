@@ -101,9 +101,17 @@ App::App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location
         update_.start();
         update_auto_ = true;
     }
-    if (update_.available()) {
-        screens_.set_settings_extra([this](float label_w) { draw_updates(label_w); });
-    }
+    // The Settings screen's own parts (the in-game menu has neither): Updates when the game has a repository, Steam.
+    steam_.configure(options.steam, &settings_, [this] {
+        screens_.mark_dirty();
+        screens_.flush();
+    });
+    screens_.set_settings_extra([this](float label_w) {
+        if (update_.available()) {
+            draw_updates(label_w);
+        }
+        steam_.draw(label_w);
+    });
     // First run, or the disc went away: start on the disc screen (docs/LAUNCHER.md "Launcher"). A disc set by hand (no
     // verified SHA-1, or its size changed) is checked right away.
     switch (disc_status()) {

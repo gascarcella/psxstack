@@ -110,6 +110,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `mod_order` | list of strings | by id | The data mods' ids by priority, the first winning ("Data mods"). The launcher's Earlier/Later buttons write the whole list. Ids of data mods not found are kept |
 | `launcher` | object | none | The launcher's own state (e.g. `last_dir`, where its file dialog opens). The game never reads it and `--print-settings` prints it back unchanged |
 | `launcher.updates` | `{ "check": bool, "skipped": string }` | `check` true | The update check ("Updates"): whether it runs at the launcher's start, and the release tag the user skipped (`"v0.5.0"`). Written once it differs from the defaults |
+| `launcher.steam` | `{ "dir", "account", "account_name", "appid", "exe", "name" }` | none | The Steam shortcut ("Steam"): the Steam folder and account it was added to (and the account's name then), its appid, and the launcher path and name it was made with. Written by Add to Steam, removed by Remove; Update shortcut and Remove act on it without looking for Steam again. One that does not read is warned about, ignored and left in the file |
 
 ### Input bindings
 
@@ -276,7 +277,7 @@ over the generated header). It finds the settings directory, edits `settings.jso
 edit, unknown ones included), and starts the game. Screens: **Disc** (file dialog, drag-and-drop, or a typed path; only
 the described discs' SHA-1s are accepted), **Play** (starts the game; on an error shows the exit status, the crash
 report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
-two, renderer, mute, memory cards, the update check when the game has one: "Updates"), **Controls** (keyboard, gamepad,
+two, renderer, mute, memory cards, the update check when the game has one: "Updates", Add to Steam: "Steam"), **Controls** (keyboard, gamepad,
 hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data mods in the settings
 directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
 
@@ -390,8 +391,22 @@ crash reports and data mods are in the settings directory, "Settings directory")
 The launcher can put the game in the player's Steam library as a non-Steam shortcut and take it out again (issue
 #93), so Steam's library, Game Mode on the Steam Deck, its controller configuration and its overlay reach it. Nothing
 of it runs until the player asks: the launcher never looks for Steam, reads its files or checks that it is installed
-at its start or in the self-test's normal path. What is in place so far is the files' part below; the Settings
-section that offers it (Add to Steam, Remove, Update shortcut, `launcher.steam` in the settings) is not yet.
+at its start or in the self-test's normal path.
+
+- **The Settings section** (`launcher/src/steam_section.cpp`; the launcher's window only, through the shared Settings
+  screen's hook: the in-game menu has none). **Add to Steam** looks for Steam (below) and shows what it found: the
+  Steam folder and the account, each a choice when there is more than one (the most recent account first), then
+  **Add** or **Cancel**; nothing found, or no account yet, is said with where it looked. **Add** writes the shortcut
+  to the launcher itself (the AppImage, `$APPIMAGE`, the path the self-update keeps; on Windows `<id>-launcher.exe`),
+  named after the game (game.json's title), and records it in `launcher.steam`. The section then shows "In Steam,
+  for <account>" with **Remove from Steam**, and, when the launcher now runs from another path than the shortcut's
+  (the AppImage was moved), **Update shortcut**, which replaces the old entry with one for the new path in one write.
+  Remove takes out that shortcut only; one already gone (removed in Steam, the account gone) is forgotten, and said
+  so. A file that does not read is left as it is and nothing is recorded.
+- **Steam must be closed**: it keeps the shortcuts in memory and writes them back when it exits, which would undo the
+  change. Every button checks for a running Steam first (`steam`, `/proc/*/comm`; `steam.exe` on Windows) and, when
+  it runs, asks the player to quit it (on the Steam Deck, from the desktop mode) and writes nothing. It never stops
+  Steam itself.
 
 - **Where Steam is** (`launcher/src/steam.cpp` `steam_find`): on Linux `$XDG_DATA_HOME/Steam`, `~/.local/share/Steam`,
   `~/.steam/steam` (usually a link to the one before it: one folder, counted once) and Flatpak's
@@ -416,7 +431,12 @@ section that offers it (Add to Steam, Remove, Update shortcut, `launcher.steam` 
   `shortcuts.vdf` that must come back byte for byte, the same file with the launcher's shortcut added (adding it must
   give exactly those bytes, removing it the original), and a `loginusers.vdf`; a fixture home holds the Linux folders
   (the link included) and a Flatpak one. On Windows the registry reader is checked on a value of its own, written
-  under `HKEY_CURRENT_USER\Software\<id>-launcher-self-test` and removed.
+  under `HKEY_CURRENT_USER\Software\<id>-launcher-self-test` and removed. The window's part gives the App a lookup,
+  a running check and launcher paths of its own (`AppOptions::steam`): nothing is looked up before Add to Steam is
+  pressed (counted), a running Steam refuses Add, Update and Remove with the files unchanged, Add keeps the other
+  shortcuts byte for byte and the old file as `.bak`, the record is saved at once and read back at the next start
+  (still nothing looked up), a moved launcher gets Update shortcut, Remove gives back the file as it was before Add,
+  and the not-found, already-removed and damaged-file cases; pictures of each state (`20*-Settings-steam*.png`).
 
 ## In-game menu
 

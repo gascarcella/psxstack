@@ -226,7 +226,11 @@ The Steam shortcut (`selftest_steam.cpp`, in `DIR/launcher-self-test/steam/`; ne
 again, unchanged), damaged files refused (cut short, bytes after the end, an unknown type, empty) and left as they
 are, the save's backup (once, as the file was), `loginusers.vdf` and the text form's comments, escapes and errors,
 and Steam's folders and accounts in a fixture home (a link to a folder counted once, Flatpak's, the most recent account
-first; Windows' order on the same folders); on Windows, the registry reader on a value of its own.
+first; Windows' order on the same folders); on Windows, the registry reader on a value of its own; a broken
+`launcher.steam` kept; the process list (this launcher found by its name). Then the Settings screen's section in the
+window, with a fixture lookup, a running check and launcher paths of its own: nothing looked up before Add to Steam,
+a running Steam refusing every button, Add, the next start, a moved launcher's Update shortcut, Remove (the file as it
+was before Add), and the not-found, already-removed and damaged-file cases, with a picture of each state.
 
 The self-update (`selftest_update.cpp`, in `DIR/launcher-self-test/update/`, no network): SHA-256 of fixture files (the
 FIPS 180-4 examples) and the digest check (right, capitals, wrong, malformed, missing file); the plan's answers (no
@@ -279,7 +283,8 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/selftest_update.cpp` | The self-test's part for `update_apply`, its child processes and its stand-in tar |
 | `src/vdf.cpp`, `vdf.h` | Valve's KeyValues files: the binary form read and written back byte for byte, the text form read |
 | `src/steam.cpp`, `steam.h` | The Steam shortcut: where Steam is, its accounts, the shortcut added to and removed from `shortcuts.vdf` (docs/LAUNCHER.md "Steam") |
-| `src/selftest_steam.cpp` | The self-test's part for the Steam shortcut, on `tests/fixtures/steam/` and fixture folders |
+| `src/steam_section.cpp`, `steam_section.h` | The Settings screen's Steam section: Add to Steam, Remove from Steam, Update shortcut, the running-Steam check, `launcher.steam` |
+| `src/selftest_steam.cpp` | The self-test's part for the Steam shortcut, on `tests/fixtures/steam/` and fixture folders, the section in the window included |
 | `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
 | `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |

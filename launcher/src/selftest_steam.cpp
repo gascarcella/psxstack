@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include <SDL3/SDL.h>
 
@@ -19,9 +20,12 @@
 #include <unistd.h> // symlink: ~/.steam/steam as a link to ~/.local/share/Steam
 #endif
 
+#include "app.h"
 #include "brand.h"
+#include "json_value.h"
 #include "paths.h"
 #include "selftest_fixtures.h"
+#include "settings.h"
 
 namespace psxstack {
 
@@ -253,6 +257,214 @@ static void test_registry() {
 #endif
 }
 
+// launcher.steam in the settings file: a record that does not read is warned about, ignored and kept as it is.
+static void test_record(const std::string &dir) {
+    std::string err;
+    check(put(path_join(dir, SETTINGS_FILE), R"({"schema":1,"launcher":{"steam":{"dir":"/x","appid":"oops"}}})"),
+          "a settings file with a broken launcher.steam");
+    SettingsFile f;
+    f.load(dir);
+    f.values.mute = true;
+    check(f.messages().size() == 1 && !f.values.steam.added() && f.save(&err) &&
+              get(path_join(dir, SETTINGS_FILE)).find("\"oops\"") != std::string::npos,
+          "a broken launcher.steam: one warning, not in Steam, left in the file: " + err);
+}
+
+static void test_system() {
+    // This system's own lists, never Steam's files: this process is found by its name, a made-up one is not; the
+    // shortcut's path is this executable (no $APPIMAGE in the self-test).
+    check(process_running(LAUNCHER_EXE) && !process_running("psxstack-no-such-process"),
+          "the process list: this launcher found by its name, a made-up name not");
+    const char *image = SDL_getenv("APPIMAGE");
+    check((image != nullptr && *image != '\0') || path_base(steam_launcher_path()) == LAUNCHER_EXE,
+          "the shortcut's path is this executable: " + steam_launcher_path());
+}
+
+// ---- the Settings screen's section
+
+static void pump(App &app, int frames) {
+    for (int i = 0; i < frames; i++) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            app.handle_event(e);
+        }
+        app.frame();
+    }
+}
+
+static void scroll_to_end(SDL_Window *w, App &app) {
+    int width = 0, height = 0;
+    SDL_GetWindowSize(w, &width, &height);
+    for (int i = 0; i < 8; i++) {
+        SDL_Event e;
+        SDL_zero(e);
+        e.type = SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.windowID = SDL_GetWindowID(w);
+        e.wheel.y = -10.0f;
+        e.wheel.mouse_x = (float)width * 0.6f;
+        e.wheel.mouse_y = (float)height * 0.5f;
+        SDL_PushEvent(&e);
+        pump(app, 2);
+    }
+}
+
+static void shot(SDL_Window *w, App &app, const std::string &shots, const char *name) {
+    scroll_to_end(w, app);
+    app.frame(path_join(shots, name).c_str());
+}
+
+// launcher.steam as the file has it ("" when absent): "<account> <appid> <exe>".
+static std::string record_in_file(const std::string &settings_dir) {
+    Json j = Json::parse(get(path_join(settings_dir, SETTINGS_FILE)), nullptr);
+    const Json *l = j.find("launcher"), *s = l != nullptr ? l->find("steam") : nullptr;
+    if (s == nullptr) {
+        return "";
+    }
+    return s->find("account")->as_string() + " " + std::to_string((uint32_t)s->find("appid")->as_number(0)) + " " +
+           s->find("exe")->as_string();
+}
+
+// The shortcuts in a file, by AppName ("" for none).
+static std::vector<std::string> names_in(const std::string &path) {
+    VdfNode root;
+    std::string err;
+    std::vector<std::string> names;
+    if (steam_shortcuts_load(path, &root, &err)) {
+        for (const VdfNode &e : steam_shortcuts(&root)->children) {
+            names.push_back(e.get_string("AppName"));
+        }
+    }
+    return names;
+}
+
+void self_test_steam_window(SDL_Window *window, const std::string &root, int *checks, int *failures) {
+    n_checks = checks;
+    n_failures = failures;
+    const std::string dir = path_join(root, "steam-ui"), shots = path_join(root, "screens");
+    const std::string home = path_join(dir, "home"), steam = path_join(home, ".local/share/Steam");
+    const std::string first = steam_shortcuts_path(steam, "39734383"), recent = steam_shortcuts_path(steam, "39734494");
+    const std::string fixture = bytes(STEAM_SHORTCUTS_VDF, STEAM_SHORTCUTS_VDF_SIZE);
+    std::string err;
+    check(put(path_join(steam, "config/loginusers.vdf"), bytes(STEAM_LOGINUSERS_VDF, STEAM_LOGINUSERS_VDF_SIZE)) &&
+              put(first, fixture) && path_make_dir(path_dir(recent), &err) &&
+              path_make_dir(path_join(home, ".var/app/com.valvesoftware.Steam/.local/share/Steam/userdata/777"), &err),
+          "the fixture Steam folders: " + err);
+    int lookups = 0;
+    bool running = false;
+    std::string launcher = path_join(path_join(dir, "Games"), LAUNCHER_EXE);
+    AppOptions o;
+    o.echo_game = false;
+    o.update_check = false;
+    o.steam.lookup = [&] {
+        lookups++;
+        return steam_lookup_linux(home, "");
+    };
+    o.steam.running = [&] { return running; };
+    o.steam.launcher_path = [&] { return launcher; };
+    SettingsDir location;
+    location.dir = path_join(dir, "settings");
+    location.source = DirSource::Argument;
+    SDL_Renderer *renderer = SDL_GetRenderer(window);
+    const uint32_t appid = steam_shortcut_appid(launcher, GAME_TITLE);
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Settings);
+        pump(app, 3);
+        shot(window, app, shots, "20-Settings-steam.png");
+        check(lookups == 0 && !app.steam().choosing(), "nothing looks for Steam before Add to Steam is pressed");
+        SteamSection &st = app.steam();
+        st.begin_add();
+        pump(app, 2);
+        check(lookups == 1 && st.installs().size() == 2 && st.install() == 0 && st.account() == 1 &&
+                  st.message().empty(),
+              "Add to Steam: two Steam folders, the most recent account chosen");
+        shot(window, app, shots, "20b-Settings-steam-choose.png");
+        running = true;
+        check(!st.add() && st.message().find("Steam is running") != std::string::npos && !path_is_file(recent) &&
+                  !app.settings().values.steam.added(),
+              "Steam running: nothing is written, the player is asked to quit it");
+        shot(window, app, shots, "20c-Settings-steam-running.png");
+        running = false;
+        st.choose(0, 0); // the account whose file has two shortcuts already
+        check(st.add() && !st.choosing() && app.settings().values.steam.appid == appid,
+              "Add: the shortcut written for the account chosen: " + st.message());
+        const std::vector<std::string> names = names_in(first);
+        check(names.size() == 3 && names[2] == GAME_TITLE && get(first + ".bak") == fixture,
+              "the file: the other two shortcuts kept, the game's after them, the old file kept as .bak");
+        VdfNode r;
+        steam_shortcuts_load(first, &r, &err);
+        const VdfNode *e = steam_shortcuts_find(r, appid);
+        check(e != nullptr && e->get_string("Exe") == steam_quote(launcher) && e->get_string("AppName") == GAME_TITLE,
+              "the entry starts this launcher, named after the game");
+        steam_shortcuts_remove(&r, appid);
+        check(vdf_binary_write(r) == fixture, "the other shortcuts are byte for byte as they were");
+        check(record_in_file(location.dir) == "39734383 " + std::to_string(appid) + " " + launcher,
+              "launcher.steam saved at once: the account, the appid, the path");
+        pump(app, 2);
+        shot(window, app, shots, "20d-Settings-steam-added.png");
+    }
+    {
+        // The next start: the record read back, still nothing looked up; the launcher moved: Update shortcut.
+        lookups = 0;
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Settings);
+        SteamSection &st = app.steam();
+        check(app.settings().values.steam.added() && !st.moved() && lookups == 0,
+              "the next start reads the record and does not look for Steam");
+        const std::string old_launcher = launcher;
+        launcher = path_join(path_join(dir, "Moved"), LAUNCHER_EXE);
+        pump(app, 3);
+        check(st.moved(), "the launcher moved: Update shortcut offered");
+        shot(window, app, shots, "20e-Settings-steam-moved.png");
+        running = true;
+        check(!st.update_shortcut() && get(first + ".bak") == fixture && names_in(first).size() == 3 &&
+                  app.settings().values.steam.exe == old_launcher,
+              "Update shortcut with Steam running: nothing changed");
+        running = false;
+        const uint32_t moved_id = steam_shortcut_appid(launcher, GAME_TITLE);
+        VdfNode r;
+        check(st.update_shortcut() && steam_shortcuts_load(first, &r, &err) &&
+                  steam_shortcuts_find(r, appid) == nullptr && steam_shortcuts_find(r, moved_id) != nullptr &&
+                  names_in(first).size() == 3 && !st.moved() &&
+                  record_in_file(location.dir) == "39734383 " + std::to_string(moved_id) + " " + launcher,
+              "Update shortcut: the old entry replaced by one for the new path, in one write: " + st.message());
+        running = true;
+        check(!st.remove() && app.settings().values.steam.added(), "Remove with Steam running: nothing changed");
+        running = false;
+        check(st.remove() && get(first) == fixture && !app.settings().values.steam.added() &&
+                  record_in_file(location.dir).empty(),
+              "Remove: the file byte for byte as it was before Add, launcher.steam gone: " + st.message());
+        pump(app, 2);
+        shot(window, app, shots, "20f-Settings-steam-removed.png");
+
+        // Removed in Steam meanwhile: Remove forgets it and says so.
+        st.begin_add();
+        st.choose(0, 0);
+        check(st.add() && put(first, fixture) && st.remove() &&
+                  st.message().find("no longer") != std::string::npos && get(first) == fixture,
+              "a shortcut already gone from Steam: forgotten, the file left alone");
+        // A file Steam could not have written: refused, untouched.
+        check(put(recent, "garbage"), "a damaged shortcuts.vdf written");
+        st.begin_add();
+        st.choose(0, 1);
+        check(!st.add() && st.message().find("left as it is") != std::string::npos && get(recent) == "garbage" &&
+                  !app.settings().values.steam.added(),
+              "a damaged shortcuts file: not added, untouched: " + st.message());
+        st.cancel();
+        // No Steam: said, nothing else.
+        o.steam.lookup = [&] { return steam_lookup_linux(path_join(dir, "nowhere"), ""); };
+    }
+    {
+        App app(window, renderer, location, o);
+        app.set_screen(Screen::Settings);
+        app.steam().begin_add();
+        pump(app, 2);
+        check(app.steam().installs().empty() && app.steam().message().find("not found") != std::string::npos,
+              "no Steam: said, with where the launcher looked");
+        shot(window, app, shots, "20g-Settings-steam-not-found.png");
+    }
+}
+
 void self_test_steam(const std::string &dir, int *checks, int *failures) {
     n_checks = checks;
     n_failures = failures;
@@ -261,6 +473,8 @@ void self_test_steam(const std::string &dir, int *checks, int *failures) {
     test_text();
     test_find(path_join(dir, "find"));
     test_registry();
+    test_record(path_join(dir, "record"));
+    test_system();
 }
 
 } // namespace psxstack

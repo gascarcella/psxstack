@@ -2220,6 +2220,7 @@ static void test_window(const std::string &root) {
     test_mods_window(window, root);
     test_update_window(window, root);
     test_update_flow(window, root);
+    self_test_steam_window(window, root, &checks, &failures);
     gui_close(window, renderer);
 }
 
