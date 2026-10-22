@@ -142,7 +142,7 @@ void Screens::draw_settings() {
         static_assert(SDL_arraysize(labels) == SDL_arraysize(MENU_SIZE_NAMES), "a label per menu size");
         ImGui::TextDisabled("Menu size");
         if (!in_game_) {
-            ImGui::SetItemTooltip("The in-game menu's (Escape in the game, by default)");
+            ImGui::SetItemTooltip("The in-game menu's: Auto fits it to the game's window");
         }
         ImGui::SameLine(label_w);
         for (int i = 0; i < (int)SDL_arraysize(labels); i++) {
