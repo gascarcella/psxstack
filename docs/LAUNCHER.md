@@ -385,6 +385,39 @@ crash reports and data mods are in the settings directory, "Settings directory")
   (retried for about a second while the old launcher exits; else at the next start), and so are a stale staging folder
   (unless its `old\` holds files: a failed rollback's) and an AppImage's leftover temporary file.
 
+## Steam
+
+The launcher can put the game in the player's Steam library as a non-Steam shortcut and take it out again (issue
+#93), so Steam's library, Game Mode on the Steam Deck, its controller configuration and its overlay reach it. Nothing
+of it runs until the player asks: the launcher never looks for Steam, reads its files or checks that it is installed
+at its start or in the self-test's normal path. What is in place so far is the files' part below; the Settings
+section that offers it (Add to Steam, Remove, Update shortcut, `launcher.steam` in the settings) is not yet.
+
+- **Where Steam is** (`launcher/src/steam.cpp` `steam_find`): on Linux `$XDG_DATA_HOME/Steam`, `~/.local/share/Steam`,
+  `~/.steam/steam` (usually a link to the one before it: one folder, counted once) and Flatpak's
+  `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`; on Windows `HKEY_CURRENT_USER\Software\Valve\Steam`'s
+  `SteamPath`, then `%ProgramFiles(x86)%\Steam`. A folder counts when it holds `userdata/`. More than one may be found.
+- **Its accounts**: `userdata/<id>/`, one per account that has logged in on the machine (`0` and other names are not
+  accounts), named from `config/loginusers.vdf` (a text VDF: its `PersonaName`, else `AccountName`; an account's
+  SteamID64 is its id plus 76561197960265728). The one marked `MostRecent` is offered first.
+- **The file**: `userdata/<id>/config/shortcuts.vdf`, a binary VDF (`launcher/src/vdf.cpp`: maps, strings and
+  numbers, each kept as its bytes, so a file is written back exactly as it was read; a file with anything else in it is
+  refused and never rewritten). A shortcut is added with every field Steam writes, in its order (`appid`, `AppName`,
+  `Exe` and `StartDir` in quotes, `icon`, `ShortcutPath`, `LaunchOptions`, `IsHidden`, `AllowDesktopConfig`,
+  `AllowOverlay`, `OpenVR`, `Devkit`, `DevkitGameID`, `DevkitOverrideAppID`, `LastPlayTime`, `FlatpakAppID`, `sortas`,
+  `tags`) at Steam's defaults for the ones the launcher does not set; one with the same appid is replaced, never doubled;
+  removing takes out only the entries with that appid; the entries are numbered again from 0 either way. The file is
+  written beside itself and renamed into place, and the first time the launcher writes it, the file as it was is kept
+  as `shortcuts.vdf.bak`.
+- **The appid**: CRC-32 of the quoted `Exe` followed by `AppName`, with the top bit set (the convention Steam's own tools
+  follow; it also names the artwork in `userdata/<id>/config/grid/`).
+- **The test**: the self-test (`launcher/src/selftest_steam.cpp`) works on fixture folders only:
+  `tests/fixtures/steam/` (written by its `make_fixtures.py`, an encoder separate from the launcher's) holds a
+  `shortcuts.vdf` that must come back byte for byte, the same file with the launcher's shortcut added (adding it must
+  give exactly those bytes, removing it the original), and a `loginusers.vdf`; a fixture home holds the Linux folders
+  (the link included) and a Flatpak one. On Windows the registry reader is checked on a value of its own, written
+  under `HKEY_CURRENT_USER\Software\<id>-launcher-self-test` and removed.
+
 ## In-game menu
 
 A game configured with `-DPSXSTACK_MENU=ON` (with `PSXSTACK_SDL`; `scripts/setup.sh imgui`) has the launcher's UI

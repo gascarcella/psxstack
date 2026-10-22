@@ -22,6 +22,7 @@
 #include "mods.h"
 #include "paths.h"
 #include "settings.h"
+#include "steam.h"
 #include "update.h"
 #include "update_apply.h"
 
@@ -2263,6 +2264,7 @@ bool self_test_run(const std::string &dir) {
     test_update_settings(path_join(root, "update-settings"));
     test_http(path_join(root, "http"));
     self_test_update(path_join(root, "update"), &checks, &failures);
+    self_test_steam(path_join(root, "steam"), &checks, &failures);
     test_window(root);
     std::fprintf(stderr, "self-test: %d of %d checks passed; pictures in %s\n", checks - failures, checks,
                  path_join(root, "screens").c_str());
