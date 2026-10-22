@@ -99,7 +99,14 @@
       "properties": {
         "about": { "type": "string", "description": "One line under the title: \"Digimon World 2003 (Europe, SLES-03936) on the PC port.\"" },
         "disc_hint": { "type": "string", "description": "The launcher's disc screen: what the game needs, one or two sentences (\"Nothing is unpacked or copied.\" is added)." },
-        "website": { "type": "string", "format": "uri" }
+        "website": { "type": "string", "format": "uri" },
+        "updates": {
+          "type": "object", "additionalProperties": false, "required": ["github"],
+          "description": "The launcher's update check (docs/LAUNCHER.md \"Updates\"): the GitHub repository whose latest release is compared with the launcher's version stamp. Absent: no check, no network call. The release's packages are named as GAME_CONTRACT.md \"Releases\" says.",
+          "properties": {
+            "github": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "description": "owner/repo: \"gascarcella/dw2003recomp\"." }
+          }
+        }
       }
     }
   }

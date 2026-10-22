@@ -10,8 +10,8 @@
 # gen/psxstack_game_gen.h (every name, string, hash and number the launcher shows) and gen/psxstack_game.cmake (the id
 # that names the executable). A game repo points it at its own description.
 #
-# It shares two files of the runtime, compiled here as they are (never modified for the launcher): the JSON reader
-# (runtime/json.c) and SHA-1 (runtime/sha1.c).
+# It shares three files of the runtime, compiled here as they are (never modified for the launcher): the JSON reader
+# (runtime/json.c), SHA-1 (runtime/sha1.c) and SHA-256 (runtime/sha256.c).
 cmake_minimum_required(VERSION 3.20)
 project(psxstack_launcher C CXX)
 
@@ -86,6 +86,14 @@ foreach(id fast_forward skip_dialogues every_type presets)
     string(TOUPPER "${id}" ID)
     string(APPEND fixtures "static const char ${ID}_MANIFEST[] = R\"json(${text})json\";\n")
 endforeach()
+# ... and the update check's GitHub answers (tests/fixtures/updates/<name>.json -> UPDATE_<NAME>_JSON).
+foreach(name release release_bad)
+    set(f "${PSXSTACK_ROOT}/tests/fixtures/updates/${name}.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${f}")
+    file(READ "${f}" text)
+    string(TOUPPER "${name}" NAME)
+    string(APPEND fixtures "static const char UPDATE_${NAME}_JSON[] = R\"json(${text})json\";\n")
+endforeach()
 file(CONFIGURE OUTPUT "${PSXSTACK_FIXTURES_H}" CONTENT "${fixtures}" @ONLY NEWLINE_STYLE UNIX)
 
 # ---- The executable: <id>-launcher.
@@ -95,6 +103,7 @@ file(GLOB PSXSTACK_LAUNCHER_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/
      "${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp")
 list(REMOVE_ITEM PSXSTACK_LAUNCHER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/ui/menu.cpp")
 set(PSXSTACK_LAUNCHER_SHARED "${PSXSTACK_ROOT}/runtime/json.c" "${PSXSTACK_ROOT}/runtime/sha1.c"
+    "${PSXSTACK_ROOT}/runtime/sha256.c"
     "${PSXSTACK_LAUNCHER_VERSION_C}")
 add_executable(${PSXSTACK_LAUNCHER} ${PSXSTACK_LAUNCHER_SRCS} ${PSXSTACK_LAUNCHER_SHARED})
 add_dependencies(${PSXSTACK_LAUNCHER} psxstack_launcher_version)

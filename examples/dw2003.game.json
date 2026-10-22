@@ -30,6 +30,7 @@
   "launcher": {
     "about": "Digimon World 2003 (Europe, SLES-03936) on the PC port.",
     "disc_hint": "The game needs your own copy of the European disc (SLES-03936), as a .cue with its .bin (one MODE2/2352 track, as Redump has it).",
-    "website": "https://github.com/gascarcella/dw2003recomp"
+    "website": "https://github.com/gascarcella/dw2003recomp",
+    "updates": { "github": "gascarcella/dw2003recomp" }
   }
 }

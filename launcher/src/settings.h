@@ -76,6 +76,9 @@ struct Settings {
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };
     std::string last_dir; // launcher.last_dir: where the file dialog opens (the launcher's own state)
+    // launcher.updates (docs/LAUNCHER.md "Updates"): the check at start, and the release tag the user skipped.
+    bool update_check = true;
+    std::string update_skipped; // "v0.5.0"; "" = none
     // input: only what the file sets; a button or action that is absent keeps the game's default (input.h), so a
     // changed default in a later game reaches every user who never rebound it.
     std::map<std::string, std::vector<std::string>> keyboard; // input.keyboard: button -> key names

@@ -1,0 +1,63 @@
+{
+  "url": "https://api.github.com/repos/owner/game/releases/1000",
+  "assets_url": "https://api.github.com/repos/owner/game/releases/1000/assets",
+  "html_url": "https://github.com/owner/game/releases/tag/v0.5.0",
+  "id": 1000,
+  "author": { "login": "owner", "id": 1, "type": "User", "site_admin": false },
+  "tag_name": "v0.5.0",
+  "target_commitish": "main",
+  "name": "game v0.5.0",
+  "draft": false,
+  "immutable": false,
+  "prerelease": false,
+  "created_at": "2026-10-20T12:00:00Z",
+  "published_at": "2026-10-20T12:30:00Z",
+  "assets": [
+    {
+      "name": "{id}-0.5.0-windows-x86_64-symbols.zip",
+      "label": "",
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 8473285,
+      "digest": "sha256:a7ab8023f1a998c1b614cd8139682d1c9fd2780cc7b423d1c4d1c2720108f1d1",
+      "download_count": 3,
+      "browser_download_url": "https://github.com/owner/game/releases/download/v0.5.0/{id}-0.5.0-windows-x86_64-symbols.zip"
+    },
+    {
+      "name": "{id}-0.5.0-windows-x86_64.zip",
+      "label": "",
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 4740723,
+      "digest": "sha256:19C3513FAE8A2CC9B6CA605AD379539604BD8E6D63A27116BF9AFB36F6A78F57",
+      "download_count": 12,
+      "browser_download_url": "https://github.com/owner/game/releases/download/v0.5.0/{id}-0.5.0-windows-x86_64.zip"
+    },
+    {
+      "name": "{id}-0.5.0-x86_64.AppImage",
+      "label": null,
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 5814776,
+      "digest": "sha256:d73d2474cb751190a162326d4666a60aa1f0078aa65ebf8e39c8b52cc0f886a5",
+      "download_count": 9,
+      "browser_download_url": "https://github.com/owner/game/releases/download/v0.5.0/{id}-0.5.0-x86_64.AppImage"
+    },
+    {
+      "name": "{id}-0.5.0-x86_64.debug",
+      "size": 11524568,
+      "digest": null,
+      "browser_download_url": "https://github.com/owner/game/releases/download/v0.5.0/{id}-0.5.0-x86_64.debug"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 187,
+      "digest": "sha256:574111971c6bc5ce1948ccd24d4aeb673faf399cd585d2af98de9bef04a7f358",
+      "browser_download_url": "https://github.com/owner/game/releases/download/v0.5.0/SHA256SUMS"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/owner/game/tarball/v0.5.0",
+  "zipball_url": "https://api.github.com/repos/owner/game/zipball/v0.5.0",
+  "body": "## What changed\r\n\r\n- The launcher checks for updates — at start.\r\n- 🎮 A pad fix.\r\n",
+  "mentions_count": 0
+}
