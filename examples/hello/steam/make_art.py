@@ -6,7 +6,8 @@
 At Steam's sizes (GAME_CONTRACT.md "1. game.json"): capsule 600x900, wide_capsule 920x430, hero 3840x1240, logo
 1280x720 (transparent) and icon 256x256. Flat panels in the launcher's colours and hello's two triangles; they exist
 so the launcher's build embeds real pictures and its self-test writes them (CI's launcher job builds hello's
-launcher). --check: the files on disk are what this script draws.
+launcher). --check: the files on disk hold the pixels this script draws (their compressed bytes may differ with
+the zlib that wrote them).
 """
 import struct
 import sys
@@ -19,7 +20,7 @@ CLEAR = (0, 0, 0, 0)
 
 
 def png(w, h, pixel):
-    """A w x h RGBA PNG; pixel(x, y) gives each pixel (called per row segment for speed: see draw())."""
+    """A w x h RGBA PNG; pixel(y) gives each row's pixels (see draw())."""
     rows = b"".join(b"\0" + pixel(y) for y in range(h))
 
     def chunk(kind, data):
@@ -41,6 +42,24 @@ def draw(w, h, background, triangles):
     return png(w, h, row)
 
 
+def decoded(data):
+    """A PNG's header and its decompressed rows: what --check compares (zlib's compressed bytes differ between zlib
+    builds, the pixels do not)."""
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    at, ihdr, idat = 8, b"", b""
+    while at + 8 <= len(data):
+        n, kind = struct.unpack(">I4s", data[at:at + 8])
+        body = data[at + 8:at + 8 + n]
+        ihdr = body if kind == b"IHDR" else ihdr
+        idat += body if kind == b"IDAT" else b""
+        at += 12 + n
+    try:
+        return ihdr, zlib.decompress(idat)
+    except zlib.error:
+        return None
+
+
 def art():
     return {
         "capsule.png": draw(600, 900, BG, [(100, 250, 400, ACCENT), (200, 500, 200, PALE)]),
@@ -54,7 +73,8 @@ def art():
 def main():
     files = art()
     if "--check" in sys.argv[1:]:
-        bad = [n for n, data in files.items() if not (HERE / n).exists() or (HERE / n).read_bytes() != data]
+        bad = [n for n, data in files.items()
+               if not (HERE / n).exists() or decoded((HERE / n).read_bytes()) != decoded(data)]
         print("hello's Steam art: " + ("differs: " + ", ".join(bad) if bad else "up to date"))
         return 1 if bad else 0
     for n, data in files.items():
