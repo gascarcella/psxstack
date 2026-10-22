@@ -1,0 +1,29 @@
+"users"
+{
+	"76561198000000111"
+	{
+		"AccountName"		"first_account"
+		"PersonaName"		"First Player"
+		"RememberPassword"		"1"
+		"WantsOfflineMode"		"0"
+		"SkipOfflineModeWarning"		"0"
+		"AllowAutoLogin"		"1"
+		"MostRecent"		"0"
+		"Timestamp"		"1750000000"
+	}
+	"76561198000000222"
+	{
+		"AccountName"		"second_account"
+		"PersonaName"		"Second \"Quoted\" Player"
+		"RememberPassword"		"1"
+		"MostRecent"		"1"
+		"Timestamp"		"1760000000"
+	}
+	"76561198000000333"
+	{
+		"AccountName"		"no_userdata"
+		"PersonaName"		"Never Played Here"
+		"MostRecent"		"0"
+		"Timestamp"		"1700000000"
+	}
+}

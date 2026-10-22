@@ -109,6 +109,8 @@ jobs:
       # DW3_SELFTEST_TAR makes the self-test use it rather than its stand-in.
       - name: bsdtar
         run: command -v bsdtar || (sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libarchive-tools)
+      - name: The Steam fixtures are their generator's (tests/fixtures/steam/make_fixtures.py --check)
+        run: python3 tests/fixtures/steam/make_fixtures.py --check
       - name: Self-test (offscreen)
         run: SDL_VIDEO_DRIVER=offscreen DW3_SELFTEST_TAR="$(command -v bsdtar)" build/launcher/dw2003-launcher --self-test build/selftest
       - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's picture (tests/hello_test.py --menu)"
@@ -120,7 +122,7 @@ jobs:
           name: launcher-self-test-screens
           path: |
             build/selftest/launcher-self-test/screens/
-            build/hello-menu/menu.png
+            build/hello-menu/menu*.png
           if-no-files-found: ignore
 
   windows:

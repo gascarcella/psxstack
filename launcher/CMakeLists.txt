@@ -94,6 +94,19 @@ foreach(name release release_bad)
     string(TOUPPER "${name}" NAME)
     string(APPEND fixtures "static const char UPDATE_${NAME}_JSON[] = R\"json(${text})json\";\n")
 endforeach()
+# ... and the Steam shortcut's (tests/fixtures/steam/, written by its make_fixtures.py): loginusers.vdf as text,
+# the binary shortcuts files as byte arrays (STEAM_<NAME>_VDF, STEAM_<NAME>_VDF_SIZE).
+foreach(name loginusers shortcuts shortcuts_added)
+    set(f "${PSXSTACK_ROOT}/tests/fixtures/steam/${name}.vdf")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${f}")
+    string(TOUPPER "${name}" NAME)
+    file(READ "${f}" hex HEX)
+    string(LENGTH "${hex}" len)
+    math(EXPR size "${len} / 2")
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
+    string(APPEND fixtures "static const unsigned char STEAM_${NAME}_VDF[] = { ${bytes} };\n"
+                           "static const unsigned STEAM_${NAME}_VDF_SIZE = ${size};\n")
+endforeach()
 file(CONFIGURE OUTPUT "${PSXSTACK_FIXTURES_H}" CONTENT "${fixtures}" @ONLY NEWLINE_STYLE UNIX)
 
 # ---- The executable: <id>-launcher.

@@ -220,6 +220,14 @@ copy of the launcher; Enter presses Update now) and into a fake Windows folder (
 zip made with the self-update's tar), each ending with the new launcher (a marked copy) started with the arguments
 given and this one quitting, and the relaunched stamp not prompted again (pictures of the prompt's steps).
 
+The Steam shortcut (`selftest_steam.cpp`, in `DIR/launcher-self-test/steam/`; never this system's Steam): the fixture
+`shortcuts.vdf` read and written back byte for byte, the launcher's shortcut added (the bytes of
+`shortcuts_added.vdf`), added again (replaced), removed (the fixture again), another entry removed (the rest numbered
+again, unchanged), damaged files refused (cut short, bytes after the end, an unknown type, empty) and left as they
+are, the save's backup (once, as the file was), `loginusers.vdf` and the text form's comments, escapes and errors,
+and Steam's folders and accounts in a fixture home (a link to a folder counted once, Flatpak's, the most recent account
+first; Windows' order on the same folders); on Windows, the registry reader on a value of its own.
+
 The self-update (`selftest_update.cpp`, in `DIR/launcher-self-test/update/`, no network): SHA-256 of fixture files (the
 FIPS 180-4 examples) and the digest check (right, capitals, wrong, malformed, missing file); the plan's answers (no
 `$APPIMAGE`, an image that is gone, a folder without the launcher, no tar, a tar path that names nothing, a read-only
@@ -269,6 +277,9 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/update_apply.cpp`, `update_apply.h` | A downloaded release applied: the plan, the SHA-256 check, the AppImage and Windows folder swaps, the relaunch, the cleanup at start (docs/LAUNCHER.md "Applying one") |
 | `src/selftest.cpp`, `selftest.h` | The self-test; `tests/fixtures/mods/` its manifests and `tests/fixtures/updates/` GitHub's answers, compiled in by CMake |
 | `src/selftest_update.cpp` | The self-test's part for `update_apply`, its child processes and its stand-in tar |
+| `src/vdf.cpp`, `vdf.h` | Valve's KeyValues files: the binary form read and written back byte for byte, the text form read |
+| `src/steam.cpp`, `steam.h` | The Steam shortcut: where Steam is, its accounts, the shortcut added to and removed from `shortcuts.vdf` (docs/LAUNCHER.md "Steam") |
+| `src/selftest_steam.cpp` | The self-test's part for the Steam shortcut, on `tests/fixtures/steam/` and fixture folders |
 | `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
 | `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |
