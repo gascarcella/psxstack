@@ -79,6 +79,17 @@ std::vector<SteamInstall> steam_find(const SteamLookup &in);
 std::vector<SteamAccount> steam_accounts(const std::string &steam_dir);
 std::string steam_shortcuts_path(const std::string &steam_dir, const std::string &account);
 
+// ---- This system
+
+// A process with this executable name is running: /proc/<pid>/comm on Linux (the name's first 15 bytes, as the kernel
+// keeps it), the process list on Windows (case-insensitively). False when the list cannot be read.
+bool process_running(const std::string &name);
+// Steam is running ("steam", "steam.exe"): it keeps the shortcuts in memory and writes them back when it exits, so the
+// file must not be changed while it runs.
+bool steam_running();
+// The path the shortcut points at: the AppImage ($APPIMAGE, the path the self-update keeps), else this executable.
+std::string steam_launcher_path();
+
 // The self-test of all the above on fixture folders under `dir` (launcher/src/selftest_steam.cpp); never the system's.
 void self_test_steam(const std::string &dir, int *checks, int *failures);
 

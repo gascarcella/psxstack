@@ -15,6 +15,7 @@
 #include "mods.h"
 #include "screens.h"
 #include "settings.h"
+#include "steam_section.h"
 #include "update.h"
 #include "update_apply.h"
 
@@ -53,6 +54,8 @@ struct AppOptions {
     std::vector<std::string> args;
     std::function<UpdateSystem()> update_system;
     bool update_now = false;
+    // The Settings screen's Steam section (docs/LAUNCHER.md "Steam"): this system's Steam; the self-test's fixtures.
+    SteamOptions steam;
 };
 
 // The update prompt's buttons (Close, after a failed update, is Later).
@@ -131,6 +134,8 @@ public:
     const std::string &update_message() const { return update_message_; }
     const HttpDownload &update_download() const { return download_; }
     void update_cancel(); // the download's Cancel: stopped, its file removed, the prompt closed (Later)
+    // The Settings screen's Steam section (its buttons; nothing looks for Steam before one is pressed).
+    SteamSection &steam() { return steam_; }
 
 private:
     void draw();
@@ -194,6 +199,7 @@ private:
     std::vector<std::string> args_;
     std::function<UpdateSystem()> update_system_;
     bool update_now_auto_ = false;
+    SteamSection steam_;
 };
 
 } // namespace psxstack

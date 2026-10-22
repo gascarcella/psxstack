@@ -9,6 +9,11 @@
 #ifdef SDL_PLATFORM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <tlhelp32.h>
+#else
+#include <cstdio>
+#include <cstring>
+#include <unistd.h>
 #endif
 
 #include "paths.h"
@@ -282,6 +287,83 @@ std::string steam_shortcuts_path(const std::string &steam_dir, const std::string
     return path_join(path_join(path_join(steam_dir, "userdata"), account), "config/shortcuts.vdf");
 }
 
+// ---- This system
+
+#ifdef SDL_PLATFORM_WINDOWS
+static std::string utf8(const wchar_t *w) {
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    std::string out((size_t)(n > 0 ? n : 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, &out[0], n, nullptr, nullptr);
+    out.resize(n > 0 ? (size_t)n - 1 : 0);
+    return out;
+}
+#endif
+
+bool process_running(const std::string &name) {
+#ifdef SDL_PLATFORM_WINDOWS
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    PROCESSENTRY32W pe;
+    pe.dwSize = sizeof(pe);
+    bool found = false;
+    for (BOOL ok = Process32FirstW(snap, &pe); ok && !found; ok = Process32NextW(snap, &pe)) {
+        found = SDL_strcasecmp(utf8(pe.szExeFile).c_str(), name.c_str()) == 0;
+    }
+    CloseHandle(snap);
+    return found;
+#else
+    struct Find {
+        std::string comm;
+        bool found = false;
+    } f;
+    f.comm = name.substr(0, 15);
+    SDL_EnumerateDirectory(
+        "/proc",
+        [](void *data, const char *dir, const char *pid) -> SDL_EnumerationResult {
+            Find *f = static_cast<Find *>(data);
+            if (pid[0] < '0' || pid[0] > '9') {
+                return SDL_ENUM_CONTINUE;
+            }
+            char line[64] = "";
+            if (FILE *c = std::fopen(path_join(path_join(dir, pid), "comm").c_str(), "r")) {
+                if (std::fgets(line, sizeof(line), c) != nullptr) {
+                    line[std::strcspn(line, "\n")] = '\0';
+                }
+                std::fclose(c);
+            }
+            f->found = f->comm == line;
+            return f->found ? SDL_ENUM_SUCCESS : SDL_ENUM_CONTINUE;
+        },
+        &f);
+    return f.found;
+#endif
+}
+
+bool steam_running() {
+#ifdef SDL_PLATFORM_WINDOWS
+    return process_running("steam.exe");
+#else
+    return process_running("steam");
+#endif
+}
+
+std::string steam_launcher_path() {
+#ifdef SDL_PLATFORM_WINDOWS
+    wchar_t buf[32768];
+    const DWORD n = GetModuleFileNameW(nullptr, buf, (DWORD)(sizeof(buf) / sizeof(buf[0])));
+    return n > 0 && n < sizeof(buf) / sizeof(buf[0]) ? utf8(buf) : "";
+#else
+    if (const char *image = SDL_getenv("APPIMAGE"); image != nullptr && *image != '\0') {
+        return image;
+    }
+    char buf[PATH_MAX];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    return n > 0 ? std::string(buf, (size_t)n) : "";
+#endif
+}
+
 std::string windows_registry_string(const std::string &subkey, const std::string &value) {
 #ifdef SDL_PLATFORM_WINDOWS
     auto wide = [](const std::string &s) {
@@ -302,12 +384,7 @@ std::string windows_registry_string(const std::string &subkey, const std::string
         ERROR_SUCCESS) {
         return "";
     }
-    w.resize(wcslen(w.c_str()));
-    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string out((size_t)(n > 0 ? n : 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &out[0], n, nullptr, nullptr);
-    out.resize(n > 0 ? (size_t)n - 1 : 0);
-    return out;
+    return utf8(w.c_str());
 #else
     (void)subkey;
     (void)value;

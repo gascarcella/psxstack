@@ -3,6 +3,7 @@
 // directory (or absolute).
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
@@ -64,6 +65,18 @@ inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt",
 // video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
 inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
 
+// launcher.steam (docs/LAUNCHER.md "Steam"): what Add to Steam did, so Remove and Update shortcut undo exactly that
+// without looking for Steam again. appid 0: not in Steam.
+struct SteamRecord {
+    std::string dir;          // Steam's folder
+    std::string account;      // userdata/<account>
+    std::string account_name; // its name when it was added ("" when Steam had none)
+    uint32_t appid = 0;       // the shortcut's
+    std::string exe;          // the launcher's path it points at
+    std::string name;         // its AppName
+    bool added() const { return appid != 0; }
+};
+
 struct Settings {
     std::string disc_path; // "" = unset
     std::string disc_sha1; // the SHA-1 the launcher verified for disc_path ("" = not verified)
@@ -82,6 +95,7 @@ struct Settings {
     // launcher.updates (docs/LAUNCHER.md "Updates"): the check at start, and the release tag the user skipped.
     bool update_check = true;
     std::string update_skipped; // "v0.5.0"; "" = none
+    SteamRecord steam;          // launcher.steam
     // input: only what the file sets; a button or action that is absent keeps the game's default (input.h), so a
     // changed default in a later game reaches every user who never rebound it.
     std::map<std::string, std::vector<std::string>> keyboard; // input.keyboard: button -> key names
