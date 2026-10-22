@@ -296,9 +296,24 @@ static void test_art(const std::string &dir) {
 
 static void test_system() {
     // This system's own lists, never Steam's files: this process is found by its name, a made-up one is not; the
-    // shortcut's path is this executable (no $APPIMAGE in the self-test).
-    check(process_running(LAUNCHER_EXE) && !process_running("psxstack-no-such-process"),
-          "the process list: this launcher found by its name, a made-up name not");
+    // shortcut's path is this executable (no $APPIMAGE in the self-test). The name is the one the system lists: on
+    // Linux the file it was started through (an AppImage starts it as AppRun), on Windows its own file's.
+    std::string me;
+#ifdef SDL_PLATFORM_WINDOWS
+    me = path_base(steam_launcher_path());
+#else
+    char line[64] = ""; // /proc's files have no size: read as a stream, not through SDL_LoadFile
+    if (FILE *f = std::fopen("/proc/self/comm", "r")) {
+        if (std::fgets(line, sizeof(line), f) == nullptr) {
+            line[0] = '\0';
+        }
+        std::fclose(f);
+    }
+    me = line;
+    me = me.substr(0, me.find('\n'));
+#endif
+    check(!me.empty() && process_running(me) && !process_running("psxstack-no-such-process"),
+          "the process list: this launcher found by its name (" + me + "), a made-up name not");
     const char *image = SDL_getenv("APPIMAGE");
     check((image != nullptr && *image != '\0') || path_base(steam_launcher_path()) == LAUNCHER_EXE,
           "the shortcut's path is this executable: " + steam_launcher_path());
