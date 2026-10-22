@@ -120,7 +120,7 @@ jobs:
           name: launcher-self-test-screens
           path: |
             build/selftest/launcher-self-test/screens/
-            build/hello-menu/menu.png
+            build/hello-menu/menu*.png
           if-no-files-found: ignore
 
   windows:

@@ -53,7 +53,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `scripts/` | `setup.sh`, `dev_link_tools.sh` |
 | `schema/` | `game.schema.json`, the game description |
 | `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack), `tasks/` (the same with its work in tasks on the stack's fibers, preempted by a root counter 3 event) |
-| `tests/` | `hello_test.py`, `tasks_test.py` (the fibers, with save states), `shim_test.py` and `shim/` (the shim's deterministic pieces, no runtime), `game_gen_test.py`, `sha256_test.py` (runtime/sha256.c against FIPS 180-4 and hashlib), `fixtures/` (the launcher self-test's mod manifests and GitHub's release answers) |
+| `tests/` | `hello_test.py`, `tasks_test.py` (the fibers, with save states), `shim_test.py` and `shim/` (the shim's deterministic pieces, no runtime), `game_gen_test.py`, `sha256_test.py` (runtime/sha256.c against FIPS 180-4 and hashlib), `fixtures/` (the launcher self-test's mod manifests and GitHub's release answers; `mods/multipliers`, the menu test's large page) |
 | `docs/` | See below |
 | `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers; SHA-256, tests/sha256_test.py), `mcp`, `launcher` (build + self-test; hello with the in-game menu, its input self-test), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game |
 
@@ -67,7 +67,7 @@ python3 tests/hello_test.py [--record]            # the smoke test: examples/hel
 python3 tests/tasks_test.py [--sanitize|--m32]    # the fibers: examples/tasks (three tasks, one preempted), its picture, its log twice, a state saved on a task's fiber and resumed
 python3 tests/shim_test.py [--sanitize|--m32]     # the shim alone (psyq/*.c + tests/shim/shim_test.c): LIBAPI's events and root counter 3, the card's BIOS file calls and LIBCARD, CdSearchFile over a built ISO, CdRead, LIBSPU, LIBSND's SEQs
 python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine --gpu   # its Windows build (-DPSXSTACK_SDL=ON, cross-built) under Wine; --gpu: the hardware renderer's picture too (D3D12)
-python3 tests/hello_test.py --menu                # hello with the window and the in-game menu (-DPSXSTACK_MENU=ON): the input self-test offscreen, ending with the menu's round trip, and the menu's picture
+python3 tests/hello_test.py --menu                # hello with the window and the in-game menu (-DPSXSTACK_MENU=ON): the input self-test offscreen, ending with the menu's round trip, and the menu's pictures (Settings; Mods at 1920x1080, 1280x800, 640x480), none wider than its window
 cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.json] && cmake --build build/launcher
 SDL_VIDEO_DRIVER=offscreen build/launcher/<id>-launcher --self-test build/selftest   # <id> from game.json (dw2003 by default)
 cmake -S launcher -B build/launcher-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/windows-x86_64.cmake" -DCMAKE_BUILD_TYPE=Release   # the toolchain path must be absolute

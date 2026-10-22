@@ -101,6 +101,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `video.subpixel` | `"off"`, `"on"` or `"perspective"` | `"on"` | Above internal scale 1, the hardware renderer draws the 3D at the GTE's sub-pixel positions (`docs/PORT.md` "Sub-pixel precision") instead of the PS1's whole pixels; `"perspective"` also textures it perspective-correct (not the PS1's look: its affine textures swim on large polygons). The launcher's "3D vertices" choice, shown for the GPU renderer above x1. A game built before it logs the key and ignores it |
 | `video.filter` | `"none"`, `"sharp"`, `"scanlines"`, `"crt"` or `"smooth"` | `"none"` | The hardware renderer's present filter (docs/PORT.md "Rendering"): `none` shows the picture's pixels as whole blocks, `sharp` is sharp bilinear, `scanlines` sharp with dark lines, `crt` a TV, `smooth` xBR on the 1x picture (the internal scale does not apply to it). The software renderer shows the picture unfiltered and logs it. The launcher's "Filter" combo, shown for the GPU renderer; it writes the member only once it is set |
 | `video.crt` | `{ "scanlines", "mask", "curvature" }`, integers 0-100 | 50, 30, 0 | The filters' parameters: `scanlines` (the lines' strength) for `scanlines` and `crt`, `mask` (the aperture grille) and `curvature` for `crt`. The launcher's sliders under the Filter combo; written once set, as `video.filter` |
+| `video.menu_size` | `"smaller"`, `"auto"` or `"larger"` | `"auto"` | The in-game menu's size ("In-game menu"): its fit to the window, a step smaller or larger. The Settings screen's "Menu size"; written once set. The menu reads it, the runtime does not (`--print-settings` leaves it out); a game built before it logs the key and ignores it |
 | `audio.mute` | bool | false | No audio device |
 | `memcard1`, `memcard2` | string or `null` | `"card1.mcd"`, `"card2.mcd"` | A `.mcd` image, created formatted when missing; `null`: no card in that slot. An empty string is an error |
 | `watchdog` | integer 0-3600 | 0 | Seconds without a vsync before the game exits 4; 0 is off. The bare binary (no `--config`) keeps its 10 s |
@@ -421,18 +422,31 @@ at a time), where leaving the game for the launcher's window is a chore.
   read back is logged and changes nothing. A game started without `--config` has the Game page alone; one the
   launcher started (`<PREFIX>_LAUNCHER` in its environment) says Quit *to launcher*. The disc stays the launcher's
   window's.
-- **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled by the window's height: 1 at
-  480 lines, up to 4, so the menu reads the same on a 640x480 window and a 1280x800 handheld screen.
+- **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled to fit the launcher's canvas,
+  its window at scale 1 (960x620, `launcher/ui/style.h` `CANVAS_W`/`CANVAS_H`), into the game's window, so a page the
+  launcher fits fits the menu too: about 1.74 at 1920x1080, 1.29 at 1280x800, at least 1. `video.menu_size` steps
+  it ("smaller" 0.8 times, "larger" 1.25 times; Settings, "Menu size", applied as soon as it is chosen), never past
+  the scale that leaves a 640x480 canvas. The shared screens fit that smallest canvas: the Mods screen's list
+  becomes a combo above the mod's page when the two do not fit side by side, a mod's options stack (the name and
+  Default on a line, the widget across the page) when the table's widget would be narrower than 160, rows of
+  buttons and chips wrap, and a mod's name the list cannot fit ends in an ellipsis (the whole name in its tooltip).
+  The list and the page share the gamepad's navigation (`ImGuiChildFlags_NavFlattened`), and the page scrolls to
+  the widget it reaches.
 - **The test:** `--input-test` ends with the menu's round trip (its hotkey at a vsync, the menu shown in the pause's
   polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
   window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
-  back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names.
+  back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names (`mods:<id>`:
+  with that mod chosen), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH` when it is set (SDL's
+  software renderer follows it: `SDL_RENDER_DRIVER=software`). The shot's log line names the windows whose content
+  reaches past their right edge ("nothing wider than its window" when none does).
   The round trip also re-applies the settings live at its second poll, as the menu does after a save, and with
   `<PREFIX>_PORT_MENU_LIVE_FILE=PATH` that file is put in place of the settings first (the hotkey pressed next is the
   file's binding, so a rebinding must take). `tests/hello_test.py --menu` builds `examples/hello` that way and runs
   both on SDL's offscreen driver with a settings file of its own (the live file rebinds the menu hotkey and switches
-  fast-forward on), the picture its Settings page; CI's `launcher` job runs it and keeps the picture. The screens'
-  logic is the launcher self-test's.
+  fast-forward on), the picture its Settings page, then the Mods page's at 1920x1080, 1280x800 and 640x480 and at
+  1280x800 "larger" (`tests/fixtures/mods/multipliers` chosen, a page larger than any a game ships so far), none of
+  them wider than its window; CI's `launcher` job runs it and keeps the pictures. The screens' logic is the launcher
+  self-test's.
 - **The release:** a game that ships the menu links libstdc++ and libgcc statically with
   `-DPSXSTACK_MENU_STATIC_RUNTIME=ON`, as the launcher does (`launcher/README.md` "Releases").
 
