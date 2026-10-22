@@ -65,7 +65,7 @@ def menu_check(build, env):
     """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
     the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
-    build/menu.png."""
+    build/menu.png; then the Mods page's at three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
         if not shutil.which(tool, path=env["PATH"]):
             print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
@@ -99,13 +99,61 @@ def menu_check(build, env):
           f"fast-forward {'switched on live' if ff_on else 'NOT switched on'}")
     if not ok:
         print("\n".join(lines[-15:]))
+    fit = shot_fit(lines)
+    if fit != "nothing wider than its window":
+        print(f"FAIL the Settings page at 640x480: {fit}")
+        ok = False
     if shot.exists() and shot.stat().st_size > 1000 and shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n":
         print(f"ok   the menu's picture: {shot} ({shot.stat().st_size} bytes)")
     else:
         print("FAIL no PNG of the menu")
         ok = False
+    ok &= menu_sizes(exe, cfg, env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
+
+
+# The Mods page's pictures (#92): a desktop's 1920x1080, the Steam Deck's 1280x800 and the smallest window, 640x480,
+# at the fitted size, and the Deck's at video.menu_size "larger" (the narrow layout at a larger scale), with
+# tests/fixtures/mods/multipliers selected (a page at least as large as the widest a game ships), its values set so
+# every Default button shows. Nothing may be wider than its window (the menu logs that with the shot).
+MENU_SIZES = [(1920, 1080, "auto"), (1280, 800, "auto"), (640, 480, "auto"), (1280, 800, "larger")]
+
+
+def shot_fit(lines):
+    """The menu's line on the windows wider than they are, logged with its shot (launcher/ui/menu.cpp)."""
+    return next((l.split("menu: shot: ", 1)[1] for l in lines if "menu: shot: " in l and " -> " not in l),
+                "no overflow line")
+
+
+def menu_sizes(exe, cfg, env):
+    ok = True
+    mods = exe.parent / "mods"
+    shutil.copytree(ROOT / "tests/fixtures/mods/multipliers", mods / "multipliers", dirs_exist_ok=True)
+    sizes = cfg / "sizes"
+    sizes.mkdir(exist_ok=True)
+    for w, h, size in MENU_SIZES:
+        (sizes / "settings.json").write_text(json.dumps({"schema": 1, "video": {"menu_size": size}, "mods": {
+            "multipliers": {"enabled": True, "exp": 5, "second_exp": 5, "money": 5, "rounds": 12,
+                            "toggle": ["F6", "pad:north"]}}}))
+        shot = exe.parent / f"menu-mods-{w}x{h}{'' if size == 'auto' else '-' + size}.png"
+        shot.unlink(missing_ok=True)
+        # SDL's software renderer: the offscreen driver's OpenGL keeps the size the window was opened at.
+        run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", SDL_RENDER_DRIVER="software",
+                       HELLO_PORT_MENU_SHOT=str(shot), HELLO_PORT_MENU_SCREEN="mods:multipliers",
+                       HELLO_PORT_MENU_WINDOW=f"{w}x{h}")
+        r = subprocess.run([str(exe), "--config", str(sizes / "settings.json"), "--input-test", "--fps", "0"],
+                           capture_output=True, text=True, env=run_env, timeout=600)
+        lines = r.stderr.strip().splitlines()
+        scale = next((l.split("menu: ", 1)[1] for l in lines if "menu: scale" in l), "no scale logged")
+        fit = shot_fit(lines)
+        good = (r.returncode == 0 and fit == "nothing wider than its window" and shot.exists() and
+                shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n")
+        print(("ok   " if good else "FAIL ") + f"the Mods page at {w}x{h}, {size}: {scale}; {fit}; {shot}")
+        if not good and r.returncode != 0:
+            print("\n".join(lines[-15:]))
+        ok &= good
+    return ok
 
 
 def main():

@@ -242,6 +242,31 @@ static void test_settings_file(const std::string &root) {
         g.load(sp);
         check(g.messages().size() == 1 && g.values.subpixel == "on", "a bad video.subpixel: one warning, \"on\"");
     }
+    // video.menu_size (the in-game menu's): not added to a file that never chose one; "larger" read and written back;
+    // a bad value warned about, "auto" used.
+    {
+        const std::string ms = path_join(root, "menu_size");
+        path_make_dir(ms, nullptr);
+        write(path_join(ms, SETTINGS_FILE), R"({"schema":1})");
+        SettingsFile f;
+        f.load(ms);
+        f.values.mute = true;
+        check(f.values.menu_size == "auto" && f.save(&err) &&
+                  Json::parse(read(f.path()), nullptr).find("video")->find("menu_size") == nullptr,
+              "a file that never chose a menu size gets no video.menu_size");
+        write(path_join(ms, SETTINGS_FILE), R"({"schema":1,"video":{"menu_size":"larger"}})");
+        SettingsFile h;
+        h.load(ms);
+        check(h.messages().empty() && h.values.menu_size == "larger", "video.menu_size \"larger\" is read");
+        h.values.menu_size = "smaller";
+        check(h.save(&err) && Json::parse(read(h.path()), nullptr).find("video")->find("menu_size")->as_string() ==
+                                  "smaller",
+              "video.menu_size is written");
+        write(path_join(ms, SETTINGS_FILE), R"({"schema":1,"video":{"menu_size":"huge"}})");
+        SettingsFile g;
+        g.load(ms);
+        check(g.messages().size() == 1 && g.values.menu_size == "auto", "a bad video.menu_size: one warning, \"auto\"");
+    }
     // video.filter (the hardware renderer's present filter): read; written back once the file has it, not added to a
     // file that never chose one; a bad name warned about and "none" used.
     check(Json::parse(read(g.path()), nullptr).find("video")->find("filter") == nullptr,

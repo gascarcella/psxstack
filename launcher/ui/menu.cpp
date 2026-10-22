@@ -19,6 +19,7 @@
 #include <SDL3/SDL.h>
 
 #include "imgui.h"
+#include "imgui_internal.h" // the windows' horizontal overflow, logged with the shot
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_sdlrenderer3.h"
@@ -82,12 +83,25 @@ bool menu_open_common(SDL_Window *window) {
         mn.shot = shot;
     }
     mn.from_launcher = SDL_getenv(env_name("_LAUNCHER").c_str()) != nullptr;
+    std::string start_mod;
     if (const char *page = SDL_getenv(env_name("_PORT_MENU_SCREEN").c_str())) {
+        std::string name = page;
+        if (size_t colon = name.find(':'); colon != std::string::npos) { // mods:<id>
+            start_mod = name.substr(colon + 1);
+            name.resize(colon);
+        }
         for (int i = 0; i < PAGE_COUNT; i++) {
-            if (SDL_strcasecmp(page, PAGE_NAMES[i]) == 0) {
+            if (SDL_strcasecmp(name.c_str(), PAGE_NAMES[i]) == 0) {
                 mn.start_page = i;
             }
         }
+    }
+    int win_w = 0, win_h = 0;
+    if (const char *size = SDL_getenv(env_name("_PORT_MENU_WINDOW").c_str());
+        size != nullptr && SDL_sscanf(size, "%dx%d", &win_w, &win_h) == 2 && win_w > 0 && win_h > 0) {
+        SDL_SetWindowSize(window, win_w, win_h);
+        SDL_SyncWindow(window);
+        port_log("menu: window %dx%d (%s)", win_w, win_h, env_name("_PORT_MENU_WINDOW").c_str());
     }
     // The shared screens: the settings file the game was started with (the runtime's settings.c read it), the
     // game's mods beside the executable (psxstack_add_game copies the manifests there) and the user's data mods
@@ -106,6 +120,9 @@ bool menu_open_common(SDL_Window *window) {
     mn.screens.load(location, exe_dir.empty() ? "" : psxstack::path_join(exe_dir, "mods"),
                     user_mods != nullptr ? user_mods : "", true);
     mn.screens.set_in_game(true);
+    if (!start_mod.empty()) {
+        mn.screens.select_mod(start_mod);
+    }
     if (mn.has_settings) {
         port_log("menu: settings %s, mods beside %s%s%s", port_settings.file, exe_dir.c_str(),
                  user_mods != nullptr ? ", data mods in " : "", user_mods != nullptr ? user_mods : "");
@@ -115,15 +132,22 @@ bool menu_open_common(SDL_Window *window) {
     return true;
 }
 
-// The style at the window's size: 1 at 480 lines (the launcher's at 96 dpi), larger on a taller window, so the
-// menu reads the same on a 640x480 window and a 1280x800 handheld screen.
+// The style at the window's size: the launcher's canvas (style.h CANVAS_W x CANVAS_H, its window at scale 1) fitted
+// into the window, so a page the launcher fits fits here too (about 1.74 at 1920x1080, 1.29 at 1280x800), at least 1
+// (the launcher's at 96 dpi). video.menu_size steps it ("smaller" x0.8, "larger" x1.25, applied as soon as it is
+// chosen), within 1 and the scale that leaves the smallest canvas the screens fit (CANVAS_MIN_W x CANVAS_MIN_H).
 void menu_style_for_window() {
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(mn.window, &w, &h);
-    float s = std::clamp(h / 480.0f, 1.0f, 4.0f);
+    const std::string &size = mn.screens.settings().values.menu_size;
+    const float step = size == "smaller" ? 0.8f : size == "larger" ? 1.25f : 1.0f;
+    const float fit = std::min(w / psxstack::CANVAS_W, h / psxstack::CANVAS_H);
+    const float most = std::max(1.0f, std::min(w / psxstack::CANVAS_MIN_W, h / psxstack::CANVAS_MIN_H));
+    const float s = std::clamp(fit * step, 1.0f, std::min(most, 4.0f));
     if (s != mn.scale) {
         mn.scale = s;
         psxstack::gui_style(s);
+        port_log("menu: scale %.2f (%dx%d, size %s)", s, w, h, size.c_str());
     }
 }
 
@@ -237,6 +261,28 @@ bool menu_ready_to_draw() {
     return mn.open && mn.shown && mn.frame_built && ImGui::GetDrawData() != nullptr;
 }
 
+// The windows whose content in the frame just built reaches past their right edge (cut off: the pages have no
+// horizontal scrollbar), by their own names ("page", "mod"), logged with the shot; tests/hello_test.py --menu requires
+// none.
+std::string menu_overflow() {
+    std::string names;
+    for (ImGuiWindow *w : ImGui::GetCurrentContext()->Windows) {
+        const float over = w->DC.CursorMaxPos.x - w->WorkRect.Max.x;
+        if (!w->WasActive || w->Hidden || over < 1.0f) {
+            continue;
+        }
+        std::string name = w->Name;
+        name = name.substr(name.rfind('/') == std::string::npos ? 0 : name.rfind('/') + 1);
+        if (size_t u = name.rfind('_'); u != std::string::npos && u + 9 == name.size()) {
+            name.resize(u); // a child's name ends in its id
+        }
+        char by[32];
+        SDL_snprintf(by, sizeof(by), " (%.0f px)", over);
+        names += (names.empty() ? "" : ", ") + name + by;
+    }
+    return names;
+}
+
 void menu_shot_renderer(SDL_Renderer *renderer) {
     if (mn.shot.empty() || mn.shot_done || mn.drawn < 2) {
         return; // the second present: ImGui draws an auto-sized window from its second frame on
@@ -248,6 +294,8 @@ void menu_shot_renderer(SDL_Renderer *renderer) {
     } else {
         port_log("menu: shot: %dx%d -> %s", s->w, s->h, mn.shot.c_str());
     }
+    const std::string over = menu_overflow();
+    port_log("menu: shot: %s", over.empty() ? "nothing wider than its window" : ("wider than its window: " + over).c_str());
     SDL_DestroySurface(s);
 }
 

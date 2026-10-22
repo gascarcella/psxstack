@@ -44,6 +44,14 @@ static float label_width() {
     return std::min(150 * ImGui::GetStyle().FontScaleDpi, ImGui::GetContentRegionAvail().x * 0.34f);
 }
 
+// The Mods screen's width (at scale 1) below which the list becomes a combo above the mod's page: the list's 230
+// beside a page that holds an option's name, its widget and its Default button.
+static constexpr float MODS_SIDE_BY_SIDE = 660;
+// The width the mod's page keeps when the list widens for its names: an option's name, widget and Default.
+static constexpr float MODS_PAGE_ROOM = 520;
+// An option's widget below which the options are stacked: the name (and Default) on a line, the widget under it.
+static constexpr float OPTION_MIN_WIDGET = 160;
+
 static float item_width(float label_w) {
     return std::min(260 * ImGui::GetStyle().FontScaleDpi,
                     ImGui::GetContentRegionAvail().x - label_w - ImGui::GetStyle().ItemSpacing.x);
@@ -126,7 +134,28 @@ void Screens::draw_settings() {
     ImGui::SameLine(label_w);
     dirty_ |= ImGui::Checkbox("##fullscreen", &s.fullscreen);
     ImGui::SameLine();
+    wrap_for(ImGui::CalcTextSize("(F11 in the game, by default)").x, label_w);
     ImGui::TextDisabled("(F11 in the game, by default)");
+    // video.menu_size: the in-game menu's size, applied as soon as it is chosen (launcher/ui/menu.cpp).
+    {
+        static const char *const labels[] = { "Smaller", "Auto", "Larger" };
+        static_assert(SDL_arraysize(labels) == SDL_arraysize(MENU_SIZE_NAMES), "a label per menu size");
+        ImGui::TextDisabled("Menu size");
+        if (!in_game_) {
+            ImGui::SetItemTooltip("The in-game menu's (Escape in the game, by default)");
+        }
+        ImGui::SameLine(label_w);
+        for (int i = 0; i < (int)SDL_arraysize(labels); i++) {
+            if (i > 0) {
+                ImGui::SameLine();
+                wrap_for(radio_width(labels[i]), label_w);
+            }
+            if (ImGui::RadioButton(labels[i], s.menu_size == MENU_SIZE_NAMES[i])) {
+                s.menu_size = MENU_SIZE_NAMES[i];
+                dirty_ = true;
+            }
+        }
+    }
     // The rates the game offers (brand.h GAME_RATES): the nominal one named by its TV standard; one rate: no choice.
     if (GAME_RATE_COUNT > 1) {
         ImGui::TextDisabled("Refresh");
@@ -138,13 +167,14 @@ void Screens::draw_settings() {
                          rate != GAME_RATE ? "" : rate == 50 ? " (PAL)" : " (NTSC)");
             if (i > 0) {
                 ImGui::SameLine();
+                wrap_for(radio_width(label), label_w);
             }
             if (ImGui::RadioButton(label, s.refresh == rate)) {
                 s.refresh = rate;
                 dirty_ = true;
             }
         }
-        restart_mark();
+        restart_mark(label_w);
     }
     ImGui::TextDisabled("Renderer");
     ImGui::SameLine(label_w);
@@ -153,11 +183,12 @@ void Screens::draw_settings() {
         dirty_ = true;
     }
     ImGui::SameLine();
+    wrap_for(radio_width("GPU (experimental)"), label_w);
     if (ImGui::RadioButton("GPU (experimental)", s.renderer == "gpu")) {
         s.renderer = "gpu";
         dirty_ = true;
     }
-    restart_mark();
+    restart_mark(label_w);
     if (s.renderer == "gpu") {
         char res[64];
         ImGui::TextDisabled("Resolution");
@@ -166,7 +197,7 @@ void Screens::draw_settings() {
         SDL_snprintf(res, sizeof(res), "x%d  (%d x %d)", s.internal_scale, 320 * s.internal_scale,
                      240 * s.internal_scale);
         dirty_ |= ImGui::SliderInt("##internal_scale", &s.internal_scale, 1, 8, res, ImGuiSliderFlags_AlwaysClamp);
-        restart_mark();
+        restart_mark(label_w);
         ImGui::Indent(label_w);
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("SDL_GPU (Vulkan; Direct3D 12 on Windows). x1 is the Software picture, pixel for pixel; above it the game is drawn "
@@ -184,12 +215,13 @@ void Screens::draw_settings() {
             dirty_ = true;
         }
         ImGui::SameLine();
-        ImGui::SameLine();
+        wrap_for(radio_width("Perspective"), label_w);
         if (ImGui::RadioButton("Perspective", s.subpixel == "perspective")) {
             s.subpixel = "perspective";
             dirty_ = true;
         }
         ImGui::SameLine();
+        wrap_for(radio_width("PS1 pixels"), label_w);
         if (ImGui::RadioButton("PS1 pixels", s.subpixel == "off")) {
             s.subpixel = "off";
             dirty_ = true;
@@ -344,8 +376,30 @@ void Screens::draw_mods() {
     for (const std::string &id : order) {
         list.push_back(find_mod(id));
     }
-    const float list_w = std::min(230 * ImGui::GetStyle().FontScaleDpi, ImGui::GetContentRegionAvail().x * 0.4f);
-    ImGui::BeginChild("modlist", ImVec2(list_w, 0), ImGuiChildFlags_Borders);
+    // The list beside the mod's page when the page has room for both (the launcher's window, the in-game menu at its
+    // fitted size), else a combo above it (the menu on a small window or at a larger size). The gamepad crosses
+    // between the list and the page (NavFlattened), and the page scrolls to what it reaches.
+    if (ImGui::GetContentRegionAvail().x < MODS_SIDE_BY_SIDE * ImGui::GetStyle().FontScaleDpi) {
+        draw_mod_combo(list, order, values);
+        ImGui::BeginChild("mod", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+        if (const ModManifest *m = find_mod(mod_selected_)) {
+            draw_mod(*m);
+        }
+        ImGui::EndChild();
+        draw_capture_popup();
+        return;
+    }
+    // The list: 230 wide, wider for its longest name while the page keeps MODS_PAGE_ROOM, at most 40% of the width.
+    const ImGuiStyle &st = ImGui::GetStyle();
+    const float unit = st.FontScaleDpi, avail = ImGui::GetContentRegionAvail().x;
+    float names_w = 0;
+    for (const ModManifest *m : list) {
+        names_w = std::max(names_w, ImGui::CalcTextSize(m->name.c_str()).x);
+    }
+    const float row_w = names_w + ImGui::GetFrameHeight() + st.ItemSpacing.x + st.WindowPadding.x * 2 + st.ScrollbarSize;
+    const float list_w = std::min(std::clamp(row_w, 230 * unit, std::max(230 * unit, avail - MODS_PAGE_ROOM * unit)),
+                                  avail * 0.4f);
+    ImGui::BeginChild("modlist", ImVec2(list_w, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     ImGui::BeginDisabled(!settings_.writable());
     for (const ModManifest *mp : list) {
         const ModManifest &m = *mp;
@@ -365,8 +419,15 @@ void Screens::draw_mods() {
         ImGui::SetItemTooltip(on ? "On: the game starts with this mod" : "Off");
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Selectable(m.name.c_str(), mod_selected_ == m.id)) {
+        // The name, cut with an ellipsis when the list is too narrow for it (the whole of it in the tooltip).
+        const float room = ImGui::GetContentRegionAvail().x -
+                           (m.error.empty() ? 0 : st.ItemSpacing.x + ImGui::CalcTextSize("!").x);
+        const std::string shown = text_fit_right(m.name, room);
+        if (ImGui::Selectable((shown + "###name").c_str(), mod_selected_ == m.id)) {
             mod_selected_ = m.id;
+        }
+        if (shown != m.name) {
+            ImGui::SetItemTooltip("%s", m.name.c_str());
         }
         if (!m.error.empty()) {
             ImGui::SameLine();
@@ -377,12 +438,43 @@ void Screens::draw_mods() {
     ImGui::EndDisabled();
     ImGui::EndChild();
     ImGui::SameLine();
-    ImGui::BeginChild("mod", ImVec2(0, 0));
+    ImGui::BeginChild("mod", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
     if (const ModManifest *m = find_mod(mod_selected_)) {
         draw_mod(*m);
     }
     ImGui::EndChild();
     draw_capture_popup();
+}
+
+// The narrow Mods screen's list: a combo over the whole width, each mod with its state; the first one shown when
+// none is chosen yet. A mod is switched on and off on its page.
+void Screens::draw_mod_combo(const std::vector<const ModManifest *> &list, const std::vector<std::string> &order,
+                             ModValues &values) {
+    if (find_mod(mod_selected_) == nullptr) {
+        mod_selected_ = list.front()->id;
+    }
+    const ModManifest *selected = find_mod(mod_selected_);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Mod");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::BeginCombo("##mod", selected->name.c_str(), ImGuiComboFlags_HeightLarge)) {
+        for (const ModManifest *m : list) {
+            if (!order.empty() && m == find_mod(order[0])) {
+                ImGui::SeparatorText("Data mods");
+            }
+            const std::string state = !m->error.empty() ? "cannot be used" : values.enabled(m->id) ? "on" : "off";
+            ImGui::PushID(m->id.c_str());
+            if (ImGui::Selectable(m->name.c_str(), m == selected)) {
+                mod_selected_ = m->id;
+            }
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ImGui::CalcTextSize(state.c_str()).x);
+            ImGui::TextDisabled("%s", state.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::Spacing();
 }
 
 // A data mod's page below its name and switch: what it holds, its priority among the data mods, where it is.
@@ -423,8 +515,12 @@ void Screens::draw_mod(const ModManifest &m) {
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
     ImGui::TextUnformatted(m.name.c_str());
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s%s", m.version.empty() ? "" : "v", m.version.c_str());
+    if (!m.version.empty()) {
+        const std::string version = "v" + m.version;
+        ImGui::SameLine();
+        wrap_for(ImGui::CalcTextSize(version.c_str()).x);
+        ImGui::TextDisabled("%s", version.c_str());
+    }
     if (!m.description.empty()) {
         ImGui::TextWrapped("%s", m.description.c_str());
     }
@@ -461,6 +557,7 @@ void Screens::draw_mod(const ModManifest &m) {
         ImGui::TextUnformatted("Presets");
         for (const ModPreset &p : m.presets) {
             ImGui::SameLine();
+            wrap_for(button_width(p.name.c_str()));
             const bool active = values.preset_active(m, p);
             if (active) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
@@ -486,6 +583,15 @@ void Screens::draw_mod(const ModManifest &m) {
         }
     }
     const std::vector<BindingUse> uses = binding_uses();
+    // A table (name, widget, Default) while the widget keeps OPTION_MIN_WIDGET; else stacked.
+    const ImGuiStyle &st = ImGui::GetStyle();
+    float name_w = 0;
+    for (const ModOption &o : m.options) {
+        name_w = std::max(name_w, ImGui::CalcTextSize(o.name.c_str()).x +
+                                      (o.restart ? st.ItemSpacing.x + ImGui::CalcTextSize("(restart)").x : 0));
+    }
+    const bool stacked = ImGui::GetContentRegionAvail().x - name_w - button_width("Default") -
+                             st.CellPadding.x * 6 < OPTION_MIN_WIDGET * st.FontScaleDpi;
     ImGui::BeginDisabled(!settings_.writable());
     for (const std::string &g : groups) {
         bool any = false;
@@ -501,6 +607,14 @@ void Screens::draw_mod(const ModManifest &m) {
         } else {
             ImGui::Separator();
         }
+        if (stacked) {
+            for (const ModOption &o : m.options) {
+                if (o.group == g && draw_mod_option(m, o, values, uses, true)) {
+                    dirty_ = true;
+                }
+            }
+            continue;
+        }
         if (!ImGui::BeginTable(("opts" + g).c_str(), 3, ImGuiTableFlags_SizingFixedFit)) {
             continue;
         }
@@ -508,7 +622,7 @@ void Screens::draw_mod(const ModManifest &m) {
         ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("default", ImGuiTableColumnFlags_WidthFixed);
         for (const ModOption &o : m.options) {
-            if (o.group == g && draw_mod_option(m, o, values, uses)) {
+            if (o.group == g && draw_mod_option(m, o, values, uses, false)) {
                 dirty_ = true;
             }
         }
@@ -539,12 +653,15 @@ static std::string typed_range(const ModOption &o, bool typed) {
     return text;
 }
 
+// A row of the options' table, or stacked: the name and Default on a line, the widget over the whole width under it.
 bool Screens::draw_mod_option(const ModManifest &m, const ModOption &o, ModValues &values,
-                          const std::vector<BindingUse> &uses) {
+                              const std::vector<BindingUse> &uses, bool stacked) {
     bool changed = false;
     ImGui::PushID(o.id.c_str());
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    if (!stacked) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+    }
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(o.name.c_str());
     if (!o.description.empty()) {
@@ -555,9 +672,26 @@ bool Screens::draw_mod_option(const ModManifest &m, const ModOption &o, ModValue
         ImGui::TextDisabled("(restart)");
         ImGui::SetItemTooltip("Changing it in the game takes effect at the next start");
     }
-    ImGui::TableNextColumn();
+    // Stacked, a checkbox stays on the name's line, Default at its end.
+    auto stacked_default = [&]() {
+        if (values.is_set(m.id, o.id)) {
+            ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - button_width("Default"));
+            if (ImGui::SmallButton("Default")) {
+                values.reset(m.id, o.id);
+                changed = true;
+            }
+        }
+    };
+    if (stacked && o.type == ModOption::Type::Bool) {
+        ImGui::SameLine();
+    } else if (stacked) {
+        stacked_default();
+    } else {
+        ImGui::TableNextColumn();
+    }
     const Json v = values.value(m, o);
-    const float w = std::min(260 * ImGui::GetStyle().FontScaleDpi, ImGui::GetContentRegionAvail().x); // in the column
+    const float w = stacked ? ImGui::GetContentRegionAvail().x // the line's
+                            : std::min(260 * ImGui::GetStyle().FontScaleDpi, ImGui::GetContentRegionAvail().x); // the column's
     // A number's width, leaving room for its range beside it when it is typed.
     auto number_width = [&](const std::string &range) {
         return range.empty() ? w : w - ImGui::CalcTextSize(range.c_str()).x - ImGui::GetStyle().ItemSpacing.x;
@@ -658,10 +792,17 @@ bool Screens::draw_mod_option(const ModManifest &m, const ModOption &o, ModValue
         break;
     }
     }
-    ImGui::TableNextColumn();
-    if (values.is_set(m.id, o.id) && ImGui::SmallButton("Default")) {
-        values.reset(m.id, o.id);
-        changed = true;
+    if (stacked) {
+        if (o.type == ModOption::Type::Bool) {
+            stacked_default();
+        }
+        ImGui::Spacing();
+    } else {
+        ImGui::TableNextColumn();
+        if (values.is_set(m.id, o.id) && ImGui::SmallButton("Default")) {
+            values.reset(m.id, o.id);
+            changed = true;
+        }
     }
     ImGui::PopID();
     return changed;
@@ -881,7 +1022,9 @@ bool Screens::binding_editor(const std::string &key, Binding *b, const std::vect
             bool pad = in.compare(0, 4, "pad:") == 0;
             conflict = uses_of(s, uses, pad, pad ? in.substr(4) : in, key);
         }
-        if (chip(binding_label({ (*b)[i] }), conflict, std::to_string(i).c_str())) {
+        const std::string label = binding_label({ (*b)[i] });
+        wrap_for(button_width(label.c_str()) + 2 + button_width("x"));
+        if (chip(label, conflict, std::to_string(i).c_str())) {
             b->erase(b->begin() + (long)i);
             changed = true;
             break;
@@ -891,6 +1034,7 @@ bool Screens::binding_editor(const std::string &key, Binding *b, const std::vect
         ImGui::TextDisabled("unbound");
         ImGui::SameLine();
     }
+    wrap_for(button_width("+"));
     ImGui::BeginDisabled(b->size() >= BINDING_MAX_TRIGGERS);
     want_capture_ = ImGui::SmallButton("+");
     ImGui::EndDisabled();
@@ -1051,9 +1195,10 @@ void Screens::draw_restart_note() {
 }
 
 // "(restart)" after a label, in the game, for a setting the runtime cannot apply live.
-void Screens::restart_mark() {
+void Screens::restart_mark(float indent) {
     if (in_game_) {
         ImGui::SameLine();
+        wrap_for(ImGui::CalcTextSize("(restart)").x, indent);
         ImGui::TextDisabled("(restart)");
         ImGui::SetItemTooltip("Takes effect when the game starts again");
     }

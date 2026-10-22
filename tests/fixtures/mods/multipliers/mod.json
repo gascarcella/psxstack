@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "multipliers",
+  "name": "Multiply the rewards of a round",
+  "version": "0.1",
+  "kind": "builtin",
+  "requires_port": 1,
+  "description": "A page at least as large as the widest manifest a game ships: a long description, presets, sliders with long names and descriptions, typed values past the sliders' top behind a switch. It multiplies what a won round gives: the experience, the second kind of experience and the money. The sliders go up to 5x; to go up to 10x, switch on Type values and type them in. Works with the other mods that share the rewards out.",
+  "presets": [
+    { "id": "boost", "name": "Boost", "description": "Everything 2x.",
+      "values": { "exp": 2, "second_exp": 2, "money": 2 } },
+    { "id": "turbo", "name": "Turbo", "description": "Everything 3x.",
+      "values": { "exp": 3, "second_exp": 3, "money": 3 } },
+    { "id": "ultra", "name": "Ultra", "description": "Everything 5x, the sliders' top.",
+      "values": { "exp": 5, "second_exp": 5, "money": 5 } },
+    { "id": "maximum", "name": "Maximum", "description": "Everything 10x, typed.",
+      "values": { "exp": 10, "second_exp": 10, "money": 10, "manual": true } }
+  ],
+  "options": [
+    { "id": "exp", "name": "Experience (x)",
+      "description": "The experience from a round, after the game splits it among the fighters (an equipped bonus item adds its fifth on top).",
+      "type": "float", "min": 1, "max": 10, "step": 0.1, "slider_max": 5, "input_toggle": "manual", "default": 2 },
+    { "id": "second_exp", "name": "Evolution experience (x)",
+      "description": "The second kind of experience, after the game's cap (10 a round, 50 past a threshold).",
+      "type": "float", "min": 1, "max": 10, "step": 0.1, "slider_max": 5, "input_toggle": "manual", "default": 2 },
+    { "id": "money", "name": "Money (x)",
+      "description": "The money from a round (an equipped bonus item's fifth included). It stops at 9,999,999.",
+      "type": "float", "min": 1, "max": 10, "step": 0.1, "slider_max": 5, "input_toggle": "manual", "default": 2 },
+    { "id": "manual", "name": "Type values (up to 10x)",
+      "description": "Off: sliders from 1x to 5x (a higher value in the settings counts as 5x). On: type any value from 1x to 10x.",
+      "type": "bool", "default": false },
+    { "id": "rounds", "name": "Rounds between bonuses", "group": "Bonus rounds",
+      "description": "How many rounds go by before the next one gives the bonus.",
+      "type": "int", "min": 1, "max": 99, "default": 5 },
+    { "id": "bonus_kind", "name": "What a bonus round gives", "group": "Bonus rounds",
+      "description": "The reward a bonus round multiplies.",
+      "type": "enum", "values": [ { "id": "all", "label": "Everything above" }, { "id": "exp", "label": "Experience only" },
+                                  { "id": "money", "label": "Money only" } ], "default": "all", "applies": "restart" },
+    { "id": "toggle", "name": "Switch on and off", "group": "Bonus rounds",
+      "description": "A key or a button that switches the multipliers on and off while playing.",
+      "type": "binding", "default": "F6" }
+  ]
+}

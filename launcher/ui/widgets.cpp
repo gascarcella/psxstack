@@ -40,11 +40,42 @@ void text_fit_left(const char *prefix, const std::string &text) {
     ImGui::TextDisabled("%s%s", prefix, shown.c_str());
 }
 
+std::string text_fit_right(const std::string &text, float width) {
+    if (ImGui::CalcTextSize(text.c_str()).x <= width) {
+        return text;
+    }
+    std::string shown = text;
+    while (!shown.empty() && ImGui::CalcTextSize((shown + "...").c_str()).x > width) {
+        shown.pop_back();
+        while (!shown.empty() && (shown.back() & 0xC0) == 0x80) { // a whole UTF-8 character
+            shown.pop_back();
+        }
+    }
+    return shown + "...";
+}
+
 void section_title(const char *title) {
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Text, rgb(ACCENT));
     ImGui::TextUnformatted(title);
     ImGui::PopStyleColor();
+}
+
+float button_width(const char *label) {
+    return ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2;
+}
+
+void wrap_for(float width, float indent) {
+    if (ImGui::GetContentRegionAvail().x < width) {
+        ImGui::NewLine();
+        if (indent > 0) {
+            ImGui::SetCursorPosX(indent); // as ImGui::SameLine(indent)
+        }
+    }
+}
+
+float radio_width(const char *label) {
+    return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(label, nullptr, true).x;
 }
 
 } // namespace psxstack

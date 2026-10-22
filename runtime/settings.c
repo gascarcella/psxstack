@@ -7,7 +7,8 @@
  *                   "internal_scale": 1,
  *                   "subpixel": "on",
  *                   "filter": "none",
- *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 } },
+ *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 },
+ *                   "menu_size": "auto" },                                the in-game menu's own; not read here
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off
@@ -160,6 +161,7 @@ static void settings_parse(PortSettings *s, const char *path) {
                                               "subpixel",
                                               "filter",
                                               "crt",
+                                              "menu_size", /* the in-game menu's (launcher/ui/menu.cpp reads it) */
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
     static const char *const crt_keys[] = { "scanlines", "mask", "curvature", NULL };

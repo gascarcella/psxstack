@@ -61,6 +61,8 @@ struct MemoryCard {
 
 // video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
 inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt", "smooth" };
+// video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
+inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
 
 struct Settings {
     std::string disc_path; // "" = unset
@@ -73,6 +75,7 @@ struct Settings {
     std::string subpixel = "on";       // "on", "perspective" or "off": the 3D at the GTE's sub-pixel positions above x1
     std::string filter = "none";       // the hardware renderer's present filter (video.filter): one of FILTER_NAMES
     int crt_scanlines = 50, crt_mask = 30, crt_curvature = 0; // video.crt: the scanlines and crt filters', 0..100
+    std::string menu_size = "auto";    // the in-game menu's size (video.menu_size): one of MENU_SIZE_NAMES
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };
     std::string last_dir; // launcher.last_dir: where the file dialog opens (the launcher's own state)

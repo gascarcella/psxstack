@@ -35,7 +35,7 @@ bool gui_open(SDL_Window **window, SDL_Renderer **renderer, std::string *err) {
     if (scale <= 0) {
         scale = 1;
     }
-    *window = SDL_CreateWindow(WINDOW_TITLE, (int)(960 * scale), (int)(620 * scale),
+    *window = SDL_CreateWindow(WINDOW_TITLE, (int)(CANVAS_W * scale), (int)(CANVAS_H * scale),
                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (*window == nullptr) {
         *err = std::string("SDL_CreateWindow: ") + SDL_GetError();

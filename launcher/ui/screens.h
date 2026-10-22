@@ -71,15 +71,17 @@ public:
 
 private:
     void draw_restart_note();
-    void restart_mark();
+    void restart_mark(float indent = 0); // "(restart)" after the last item, in the game's menu
     void draw_filter(float label_w);
     void draw_names_table(bool pad);
     void draw_hotkeys();
     void draw_capture_popup();
     void draw_data_mod(const ModManifest &m, ModValues &values);
     void draw_mod(const ModManifest &m);
+    void draw_mod_combo(const std::vector<const ModManifest *> &list, const std::vector<std::string> &order,
+                        ModValues &values);
     bool draw_mod_option(const ModManifest &m, const ModOption &o, ModValues &values,
-                         const std::vector<BindingUse> &uses);
+                         const std::vector<BindingUse> &uses, bool stacked);
     std::vector<BindingUse> binding_uses() const;
     // A binding's chips (x removes one) and its + button (want_capture_ set when pressed). True when changed.
     bool binding_editor(const std::string &key, Binding *b, const std::vector<BindingUse> &uses);
