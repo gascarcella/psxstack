@@ -123,7 +123,11 @@ half way (Gamepad), or, for a hotkey, any of them or a chord (everything held to
 most 4 inputs, and 8 triggers a binding: the game's limits). Escape alone, or Cancel, closes it. The prompt takes its
 events before ImGui, and gamepad navigation pauses until the gamepad is released, so the press that was bound does
 not also click a button. An input used by two buttons (or a button and a single-input hotkey) is marked, with a
-tooltip naming the other use. A mod's own bindings are its options (Mods, below).
+tooltip naming the other use. A mod's own bindings are its options (Mods, below). The **Gamepad** tab starts with
+**Player 2** (`input.player2`: Off, First gamepad, Second gamepad, by connection order; docs/LAUNCHER.md "Input
+bindings"), a line on what the choice does, and the gamepads connected now with the player each is (in the in-game
+menu the game's own count; in the launcher the same connection order the game will count). Both players' gamepads use
+the tab's map. The tables wrap their chips, so every tab fits the in-game menu over a 640x480 window.
 
 ## Mods
 
@@ -193,32 +197,33 @@ drops `SDL_VIDEO_DRIVER` from the program's environment.)
 
 No disc and no display needed (CI runs it). It replaces `DIR/launcher-self-test/` and checks: the path helpers (Windows
 forms too), the JSON writer, the lookup order, the settings file's round trips (the documented example with its unknown
-members kept, invalid values, a broken file, a newer schema), the binding grammar and the input prompt (keys, gamepad
-buttons, stick directions, chords, Escape), the `.cue` reader and the SHA-1 check (against the described discs), the
-launch path with **the launcher itself as the game's stand-in** (`<PREFIX>_LAUNCHER_FAKE_GAME=mode`: a game with and
-without `--config`, one that rejects the file, one that crashes, one that fails after 250 lines), then opens the
-window, walks every screen with injected key events and a virtual gamepad, plays with the stand-in (a file of the first
-described disc's size stands for the verified disc), rebinds a key through the prompt and checks the file, drops a
-wrong file on the window, renders the mods screen over the fixture manifests (`tests/fixtures/mods/`: the first game's
-`fast_forward` as shipped, the documented `skip_dialogues` example, one with every option type, one with presets and a
-slider whose toggle makes it a typed number; three unusable ones written at test time) and rebinds a mod's key through
-the prompt, and saves a picture of each screen in `DIR/launcher-self-test/screens/`. The update check never touches the
-network: `<PREFIX>_LAUNCHER_FAKE_CURL` points at **the launcher itself as curl's stand-in** (it answers with a file, in
-pieces for a download, or with curl's errors; `<PREFIX>_SELFTEST_CURL_REPLY` says which), and every check of the
-self-test goes to it. It checks the version rules (only an exact `X.Y.Z` is offered an update), GitHub's answer
+members kept, invalid values, a broken file, a newer schema), the binding grammar, `input.player2`, and the input prompt
+(keys, gamepad buttons, stick directions, chords, Escape), the `.cue` reader and the SHA-1 check (against the described
+discs), the launch path with **the launcher itself as the game's stand-in** (`<PREFIX>_LAUNCHER_FAKE_GAME=mode`: a game
+with and without `--config`, one that rejects the file, one that crashes, one that fails after 250 lines), then opens
+the window, walks every screen with injected key events and a virtual gamepad, plays with the stand-in (a file of the
+first described disc's size stands for the verified disc), rebinds a key through the prompt and checks the file, shows
+the Gamepad tab with player 2 set and two virtual gamepads connected, drops a wrong file on the window, renders the mods
+screen over the fixture manifests (`tests/fixtures/mods/`: the first game's `fast_forward` as shipped, the documented
+`skip_dialogues` example, one with every option type, one with presets and a slider whose toggle makes it a typed
+number; three unusable ones written at test time) and rebinds a mod's key through the prompt, and saves a picture of
+each screen in `DIR/launcher-self-test/screens/`. The update check never touches the network:
+`<PREFIX>_LAUNCHER_FAKE_CURL` points at **the launcher itself as curl's stand-in** (it answers with a file, in pieces
+for a download, or with curl's errors; `<PREFIX>_SELFTEST_CURL_REPLY` says which), and every check of the self-test goes
+to it. It checks the version rules (only an exact `X.Y.Z` is offered an update), GitHub's answer
 (`tests/fixtures/updates/`: the tag, the page, this platform's package with its size and SHA-256; a tag that is not a
 version, a cut answer), `launcher.updates` in the file, `src/http.cpp` (a GET, curl's own errors, curl missing, a
 download with its progress, a cancel, a wrong size), then in the window: the prompt over Play (a picture), Escape as
 Later, the Release page, Skip and a newer release after it, the setting off with Check now, `--no-update-check`, the
 prompt waiting for a running game, curl missing, a cut answer, a development build and a description without a
 repository (pictures of the Settings screen's part). Then **Update now** in the window, the stand-in "downloading"
-fixture packages (`<PREFIX>_SELFTEST_CURL_DOWNLOAD` is its answer for a download, the release's JSON being the
-check's): the line instead of the button when the plan is not possible (no `$APPIMAGE`), the progress and Cancel on a
-slow download (no check started meanwhile, the file removed, the install unchanged), a wrong digest and a missing one
+fixture packages (`<PREFIX>_SELFTEST_CURL_DOWNLOAD` is its answer for a download, the release's JSON being the check's):
+the line instead of the button when the plan is not possible (no `$APPIMAGE`), the progress and Cancel on a slow
+download (no check started meanwhile, the file removed, the install unchanged), a wrong digest and a missing one
 (nothing applied, the message, Release page still works), the whole flow into a fake AppImage install (`$APPIMAGE` at a
 copy of the launcher; Enter presses Update now) and into a fake Windows folder (a copy of the launcher, the release's
-zip made with the self-update's tar), each ending with the new launcher (a marked copy) started with the arguments
-given and this one quitting, and the relaunched stamp not prompted again (pictures of the prompt's steps).
+zip made with the self-update's tar), each ending with the new launcher (a marked copy) started with the arguments given
+and this one quitting, and the relaunched stamp not prompted again (pictures of the prompt's steps).
 
 The Steam shortcut (`selftest_steam.cpp`, in `DIR/launcher-self-test/steam/`; never this system's Steam): the fixture
 `shortcuts.vdf` read and written back byte for byte, the launcher's shortcut added (the bytes of

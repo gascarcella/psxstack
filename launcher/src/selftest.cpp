@@ -429,6 +429,28 @@ static void test_input(const std::string &root) {
     h.values.keyboard["circle"] = { "B" };
     check(h.save(&err) && Json::parse(read(h.path()), nullptr).find("input")->find("future") != nullptr,
           "unknown members of input are kept");
+    // input.player2 (the second pad): written once set, read back; kept once in the file, as video.menu_size; a bad
+    // value is warned about and reads as "off"; a file without it says "off" and gets none.
+    check(h.values.player2 == "off", "input.player2: off by default");
+    h.values.player2 = "second";
+    check(h.save(&err) &&
+              *Json::parse(read(h.path()), nullptr).find("input")->find("player2") == Json::string("second"),
+          "input.player2 is written");
+    SettingsFile p2;
+    p2.load(dir);
+    check(p2.values.player2 == "second" && p2.messages().empty(), "input.player2 reads back");
+    p2.values.player2 = "off";
+    check(p2.save(&err) && *Json::parse(read(p2.path()), nullptr).find("input")->find("player2") == Json::string("off"),
+          "input.player2 set back to off stays in the file");
+    write(p2.path(), R"({"schema": 1, "input": {"player2": "third"}})");
+    p2.load(dir);
+    check(p2.values.player2 == "off" && p2.messages().size() == 1 &&
+              p2.messages()[0].find("input.player2") != std::string::npos,
+          "a bad input.player2: a warning and off");
+    write(p2.path(), R"({"schema": 1})");
+    p2.load(dir);
+    check(p2.save(&err) && Json::parse(read(p2.path()), nullptr).find("input") == nullptr,
+          "no input.player2 written for a file without one");
 
     // The capture, fed events.
     InputCapture c;
@@ -1022,6 +1044,7 @@ static void test_game(const std::string &root) {
     r.values.gamepad["select"] = {};
     r.values.hotkeys["pause"] = { { "pad:guide", "pad:start" }, { "P" } };
     r.values.hotkeys["fullscreen"] = {};
+    r.values.player2 = "second";
     // Every mod beside the game turned on, every option off its default (the game's own checks of mods.<id>).
     int mods_set = 0, mods_found = 0;
     ModValues mv(&r.doc);
@@ -1254,6 +1277,37 @@ static void test_play(SDL_Window *window, const std::string &root) {
     push_key(window, SDL_SCANCODE_ESCAPE, SDL_KMOD_NONE, false);
     pump(app, 2);
     check(!app.capture().active() && app.settings().values.hotkeys.count("pause") == 0, "Escape leaves the hotkey");
+    // The second pad (input.player2): the Gamepad tab with two virtual gamepads connected, the second one player 2's
+    // (a picture); then back to off and the Keyboard tab.
+    {
+        SDL_JoystickID pads[2] = { 0, 0 };
+        for (int i = 0; i < 2; i++) {
+            SDL_VirtualJoystickDesc desc;
+            SDL_INIT_INTERFACE(&desc);
+            desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+            desc.nbuttons = SDL_GAMEPAD_BUTTON_DPAD_RIGHT + 1;
+            desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+            desc.name = i == 0 ? "psxstack self-test pad A" : "psxstack self-test pad B";
+            pads[i] = SDL_AttachVirtualJoystick(&desc);
+            check(pads[i] != 0, std::string("a virtual gamepad: ") + SDL_GetError());
+        }
+        app.settings().values.player2 = "second";
+        app.screens().show_controls_tab("gamepad");
+        pump(app, 4);
+        int listed = 0;
+        SDL_free(SDL_GetGamepads(&listed));
+        check(listed >= 2, "the two virtual gamepads are connected (" + std::to_string(listed) + ")");
+        png = path_join(shots, "8b-Controls-gamepad.png");
+        app.frame(png.c_str());
+        for (SDL_JoystickID id : pads) {
+            if (id != 0) {
+                SDL_DetachVirtualJoystick(id);
+            }
+        }
+        app.settings().values.player2 = "off";
+        app.screens().show_controls_tab("keyboard");
+        pump(app, 2);
+    }
     app.set_screen(Screen::Settings);
     pump(app, 2);
     png = path_join(shots, "9-Settings.png");

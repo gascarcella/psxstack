@@ -61,6 +61,8 @@ public:
     InputCapture &capture() { return capture_; }
     void capture_for(int section, const std::string &id); // 0 keyboard, 1 gamepad (button ids), 2 hotkeys (actions)
     void capture_for_mod(const std::string &mod, const std::string &option);
+    // The Controls screen's tab ("keyboard", "gamepad" or "hotkeys"), selected at its next frame.
+    void show_controls_tab(const std::string &tab) { controls_tab_ = tab; }
     // The mods found: the game's, then the user's data mods.
     const std::vector<ModManifest> &mods() const { return mods_; }
     const std::string &mods_dir() const { return mods_dir_; }
@@ -74,6 +76,7 @@ private:
     void restart_mark(float indent = 0); // "(restart)" after the last item, in the game's menu
     void draw_filter(float label_w);
     void draw_names_table(bool pad);
+    void draw_players();
     void draw_hotkeys();
     void draw_capture_popup();
     void draw_data_mod(const ModManifest &m, ModValues &values);
@@ -94,6 +97,7 @@ private:
     bool dirty_ = false;
     bool saved_ = false;
     bool in_game_ = false;
+    std::string controls_tab_; // show_controls_tab's, until the Controls screen is drawn
     std::function<void(float)> settings_extra_;
     std::string error_; // the last save error
 

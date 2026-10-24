@@ -937,32 +937,104 @@ void Screens::draw_controls() {
     draw_restart_note();
     ImGui::BeginDisabled(!settings_.writable());
     if (ImGui::BeginTabBar("controls")) {
-        if (ImGui::BeginTabItem("Keyboard")) {
+        auto pick = [this](const char *tab) {
+            return SDL_strcasecmp(controls_tab_.c_str(), tab) == 0 ? ImGuiTabItemFlags_SetSelected : 0;
+        };
+        if (ImGui::BeginTabItem("Keyboard", nullptr, pick("keyboard"))) {
             draw_names_table(false);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Gamepad")) {
+        if (ImGui::BeginTabItem("Gamepad", nullptr, pick("gamepad"))) {
+            draw_players();
+            ImGui::Separator();
             draw_names_table(true);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Hotkeys")) {
+        if (ImGui::BeginTabItem("Hotkeys", nullptr, pick("hotkeys"))) {
             draw_hotkeys();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
+        controls_tab_.clear();
     }
     ImGui::EndDisabled();
     draw_capture_popup();
 }
 
+// input.player2 (docs/LAUNCHER.md "Input bindings"): Off, or the gamepad by connection order that drives the second
+// pad (the PS1's port 1); a line of help for the choice, then the gamepads connected now with the player each is (in
+// the game's menu the game's own count; in the launcher the same connection order the game will count).
+void Screens::draw_players() {
+    static const char *const labels[] = { "Off", "First gamepad", "Second gamepad" };
+    static_assert(SDL_arraysize(labels) == SDL_arraysize(PLAYER2_NAMES), "a label per input.player2 value");
+    Settings &s = settings_.values;
+    const float label_w = label_width();
+    int p2 = 0; // 0 off, else the gamepad (1-based, by connection order) that is player 2
+    ImGui::TextDisabled("Player 2");
+    ImGui::SetItemTooltip("The gamepad that drives the second pad, for two-player games");
+    ImGui::SameLine(label_w);
+    for (int i = 0; i < (int)SDL_arraysize(labels); i++) {
+        if (i > 0) {
+            ImGui::SameLine();
+            wrap_for(radio_width(labels[i]), label_w);
+        }
+        if (ImGui::RadioButton(labels[i], s.player2 == PLAYER2_NAMES[i])) {
+            s.player2 = PLAYER2_NAMES[i];
+            dirty_ = true;
+        }
+        if (s.player2 == PLAYER2_NAMES[i]) {
+            p2 = i;
+        }
+    }
+    ImGui::SetCursorPosX(label_w);
+    ImGui::BeginGroup(); // its wrapped lines start under the choices
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", p2 == 0 ? "The keyboard and every gamepad are player 1; the second pad stays empty."
+                                      : "That gamepad drives the second pad and never a hotkey; the keyboard and the "
+                                        "other gamepads are player 1. First suits a player 1 on the keyboard.");
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+    int n = 0;
+    SDL_JoystickID *ids = SDL_GetGamepads(&n);
+    if (ids != nullptr) {
+        std::sort(ids, ids + n); // the instance ids grow with each connection
+    }
+    ImGui::TextDisabled("Connected");
+    ImGui::SameLine(label_w);
+    ImGui::BeginGroup();
+    if (n == 0) {
+        ImGui::TextDisabled("no gamepad");
+    }
+    for (int i = 0; i < n; i++) {
+        const char *name = SDL_GetGamepadNameForID(ids[i]);
+        ImGui::TextWrapped("%d. %s (player %d)", i + 1, name != nullptr ? name : "Gamepad", i + 1 == p2 ? 2 : 1);
+    }
+    ImGui::EndGroup();
+    SDL_free(ids);
+}
+
 void Screens::draw_names_table(bool pad) {
     Settings &s = settings_.values;
     auto &map = pad ? s.gamepad : s.keyboard;
-    ImGui::TextDisabled(pad ? "Every gamepad drives the PS1 pad (positions: south is the PlayStation cross)."
-                            : "Keys by their place on the keyboard, whatever its layout.");
-    ImGui::SameLine();
+    const char *reset = pad ? "Reset the gamepad" : "Reset the keyboard";
+    const char *note = "Keys by their place on the keyboard, whatever its layout.";
+    if (pad) {
+        note = s.player2 == "off" ? "Every gamepad drives the PS1 pad (positions: south is the PlayStation cross)."
+                                  : "Both players' gamepads use this map (south is the PlayStation cross).";
+    }
+    // the note with its Reset beside it when both fit, else the note wrapped and Reset under it; the chips below wrap
+    // too (a narrow page: the in-game menu over a 640x480 window)
+    if (ImGui::CalcTextSize(note).x + ImGui::GetStyle().ItemSpacing.x + button_width(reset) <=
+        ImGui::GetContentRegionAvail().x) {
+        ImGui::TextDisabled("%s", note);
+        ImGui::SameLine();
+    } else {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", note);
+        ImGui::PopTextWrapPos();
+    }
     ImGui::BeginDisabled(map.empty());
-    if (ImGui::SmallButton(pad ? "Reset the gamepad" : "Reset the keyboard")) {
+    if (ImGui::SmallButton(reset)) {
         map.clear();
         dirty_ = true;
     }
@@ -971,9 +1043,15 @@ void Screens::draw_names_table(bool pad) {
         return;
     }
     const std::vector<BindingUse> uses = binding_uses();
-    ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed);
+    // The buttons' column as wide as its widest name: auto-fitted, it was squeezed below the names once the chips
+    // wrap (the in-game menu's Gamepad tab at 640x480).
+    float names_w = 0;
+    for (const PadButton &b : pad_buttons()) {
+        names_w = std::max(names_w, ImGui::CalcTextSize(b.label).x);
+    }
+    ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, names_w);
     ImGui::TableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Default", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableSetupColumn("Default", ImGuiTableColumnFlags_WidthFixed, button_width("Default"));
     for (const PadButton &b : pad_buttons()) {
         ImGui::PushID(b.id);
         ImGui::TableNextRow();
@@ -984,6 +1062,7 @@ void Screens::draw_names_table(bool pad) {
         std::vector<std::string> names = pad ? s.pad_for(b.id) : s.keys_for(b.id);
         for (size_t i = 0; i < names.size(); i++) {
             const std::string label = pad ? pad_input_label(names[i]) : names[i];
+            wrap_for(button_width(label.c_str()) + 2 + button_width("x"));
             if (chip(label, uses_of(s, uses, pad, names[i], b.id), std::to_string(i).c_str())) {
                 names.erase(names.begin() + (long)i);
                 map[b.id] = names;
@@ -995,6 +1074,7 @@ void Screens::draw_names_table(bool pad) {
             ImGui::TextDisabled("unbound");
             ImGui::SameLine();
         }
+        wrap_for(button_width("+"));
         if (ImGui::SmallButton("+")) {
             capture_for(pad ? 1 : 0, b.id);
         }
@@ -1046,7 +1126,8 @@ bool Screens::binding_editor(const std::string &key, Binding *b, const std::vect
 void Screens::draw_hotkeys() {
     Settings &s = settings_.values;
     ImGui::TextWrapped("The port's own actions. A hotkey never reaches the game's pad. A chord: hold its inputs "
-                       "together, then let go. The mods' bindings are on the Mods screen.");
+                       "together, then let go. The mods' bindings are on the Mods screen.%s",
+                       s.player2 == "off" ? "" : " Player 2's gamepad never fires one.");
     if (!ImGui::BeginTable("hotkeys", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
         return;
     }

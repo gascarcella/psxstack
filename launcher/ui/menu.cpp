@@ -9,7 +9,8 @@
 // <PREFIX>_PORT_MENU_SHOT=PATH writes the window's output with the menu up, once, as a PNG: the second present after
 // it is shown (the software renderer: the input self-test's picture; the hardware renderer's present cannot be read
 // back with the menu in it, logged). <PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods picks the page it opens on
-// (the picture of a page; default game).
+// (the picture of a page; default game), `mods:<id>` with that mod chosen, `controls:<tab>` on that tab (keyboard,
+// gamepad, hotkeys).
 #include "menu.h"
 
 #include <algorithm>
@@ -83,11 +84,11 @@ bool menu_open_common(SDL_Window *window) {
         mn.shot = shot;
     }
     mn.from_launcher = SDL_getenv(env_name("_LAUNCHER").c_str()) != nullptr;
-    std::string start_mod;
+    std::string start_mod, start_tab;
     if (const char *page = SDL_getenv(env_name("_PORT_MENU_SCREEN").c_str())) {
         std::string name = page;
-        if (size_t colon = name.find(':'); colon != std::string::npos) { // mods:<id>
-            start_mod = name.substr(colon + 1);
+        if (size_t colon = name.find(':'); colon != std::string::npos) { // mods:<id>, controls:<tab>
+            (SDL_strncasecmp(page, "controls:", 9) == 0 ? start_tab : start_mod) = name.substr(colon + 1);
             name.resize(colon);
         }
         for (int i = 0; i < PAGE_COUNT; i++) {
@@ -122,6 +123,9 @@ bool menu_open_common(SDL_Window *window) {
     mn.screens.set_in_game(true);
     if (!start_mod.empty()) {
         mn.screens.select_mod(start_mod);
+    }
+    if (!start_tab.empty()) {
+        mn.screens.show_controls_tab(start_tab);
     }
     if (mn.has_settings) {
         port_log("menu: settings %s, mods beside %s%s%s", port_settings.file, exe_dir.c_str(),

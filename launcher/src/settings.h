@@ -64,6 +64,8 @@ struct MemoryCard {
 inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt", "smooth" };
 // video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
 inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
+// input.player2's values (the game's runtime/input.c): none, or the gamepad by connection order that is player 2.
+inline const char *const PLAYER2_NAMES[] = { "off", "first", "second" };
 
 // launcher.steam (docs/LAUNCHER.md "Steam"): what Add to Steam did, so Remove and Update shortcut undo exactly that
 // without looking for Steam again. appid 0: not in Steam.
@@ -102,6 +104,7 @@ struct Settings {
     std::map<std::string, std::vector<std::string>> keyboard; // input.keyboard: button -> key names
     std::map<std::string, std::vector<std::string>> gamepad;  // input.gamepad: button -> gamepad input names
     std::map<std::string, Binding> hotkeys;                   // input.hotkeys: action -> binding
+    std::string player2 = "off";                              // input.player2: one of PLAYER2_NAMES
 
     // The effective values (the file's, else the defaults).
     std::vector<std::string> keys_for(const std::string &button) const;

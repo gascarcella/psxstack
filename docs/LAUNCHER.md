@@ -282,8 +282,8 @@ over the generated header). It finds the settings directory, edits `settings.jso
 edit, unknown ones included), and starts the game. Screens: **Disc** (file dialog, drag-and-drop, or a typed path; only
 the described discs' SHA-1s are accepted), **Play** (starts the game; on an error shows the exit status, the crash
 report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
-two, renderer, mute, memory cards, the update check when the game has one: "Updates", Add to Steam: "Steam"), **Controls** (keyboard, gamepad,
-hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data mods in the settings
+two, renderer, mute, memory cards, the update check when the game has one: "Updates", Add to Steam: "Steam"), **Controls** (keyboard, gamepad
+with the second player's gamepad, hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data mods in the settings
 directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
 
 ## Updates
@@ -505,7 +505,7 @@ at a time), where leaving the game for the launcher's window is a chore.
   polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
   window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
   back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names (`mods:<id>`:
-  with that mod chosen), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH` when it is set (SDL's
+  with that mod chosen; `controls:keyboard|gamepad|hotkeys`: on that tab), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH` when it is set (SDL's
   software renderer follows it: `SDL_RENDER_DRIVER=software`). The shot's log line names the windows whose content
   reaches past their right edge ("nothing wider than its window" when none does).
   The round trip also re-applies the settings live at its second poll, as the menu does after a save, and with
