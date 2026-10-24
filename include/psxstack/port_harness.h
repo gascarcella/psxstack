@@ -120,9 +120,17 @@ const char *port_filter_choices(int quoted);
  * 0 with the reason in `err` when it is malformed. */
 int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
 void port_video_set_filter(const PortFilter *f);
-/* The window's settings changed live (the menu; runtime/live.c): the scale, fullscreen, the filter and the sub-pixel
- * mode; nothing without a window. */
-void port_video_apply(int scale, int fullscreen, const PortFilter *filter, int subpixel);
+/* The picture's size in the window (`--scaling`, video.scaling; video.c video_dest; video_filter.c the names): fit
+ * (the default: as large as the window allows at the picture's aspect), integer (as tall as a whole multiple of its
+ * lines allows: every line the same height, black bars where the window is not such a multiple) or stretch (the whole
+ * window, the aspect not kept). */
+enum { PORT_SCALING_FIT, PORT_SCALING_INTEGER, PORT_SCALING_STRETCH, PORT_SCALING_COUNT };
+extern const char *const port_scaling_names[PORT_SCALING_COUNT];
+int port_scaling_from_name(const char *name); /* PORT_SCALING_*; -1 for another name */
+void port_video_set_scaling(int mode);
+/* The window's settings changed live (the menu; runtime/live.c): the scale, fullscreen, the scaling, the filter and
+ * the sub-pixel mode; nothing without a window. */
+void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter *filter, int subpixel);
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */

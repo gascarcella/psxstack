@@ -86,9 +86,11 @@ own size: 15-bit (one VRAM pixel per screen pixel, 5-bit components widened as `
 shown) or 24-bit (`isrgb24`, the movies and the title: 3 bytes per screen pixel, so a 320-pixel line spans 480 VRAM
 pixels; `disp.w` counts screen pixels), any width up to 640 and height up to 576 (the title's 320x480 interlaced frame
 is shown whole, both fields), wrapping in the VRAM as the GPU does; black while `SetDispMask(0)` holds. The image is
-drawn at 4:3, nearest-neighbour, as tall as an integer multiple of its lines fits the window (centred; scaled to fit when
-the window is smaller than the image). `--scale N` opens a 320N x 240N window (default 2; with an even N a 240-line and
-a 480-line display come out the same size), `--fullscreen` (F11 toggles). `--screenshot FRAME:PATH` (repeatable; any
+drawn at 4:3, nearest-neighbour, centred, as large as `--scaling` (`video.scaling`) says: `fit` (the default) as large
+as the window allows, `integer` as tall as an integer multiple of its lines fits (every line the same height; fit when
+the window is smaller than the image; with an even scale a 240-line and a 480-line display come out the same size),
+`stretch` the whole window, out of shape. `--scale N` opens a 320N x 240N window (default 2: every scaling is the same
+picture there), `--fullscreen` (F11 toggles: the screen's size, so the scaling decides). `--screenshot FRAME:PATH` (repeatable; any
 build, also headless) writes the image of vsync FRAME as a binary PPM: the texture's pixels, independent of the window.
 **The renderer** (docs/PORT.md "Rendering"): `--renderer software` (the default) presents through
 SDL_Renderer; `--renderer gpu` (or `video.renderer: "gpu"`) through the hardware renderer, `runtime/render_gpu.c` on SDL_GPU

@@ -57,10 +57,12 @@ void render_gpu_raster_resync(void);
 void render_gpu_set_filter(const PortFilter *f);
 /* Widescreen (render_gpu_wide.c; video.c port_video_widescreen): enable before render_gpu_raster_start (the target gets
  * the wide canvas strip, 1.5 times as wide); on or off every vsync (the scenes that widen; off without the
- * rasteriser); the width a 15-bit display of w x h at vram_xy is presented with: its canvas's (16:9 at the display's
- * pixel aspect), or 0 when it stays 4:3. render_gpu_present and render_gpu_readback show the canvas for that width. */
+ * rasteriser); the canvas's aspect a:b (from 4:3 to 16:9, the window's: video.c video_wide_follow; 16:9 until it is
+ * set); the width a 15-bit display of w x h at vram_xy is presented with: its canvas's (a:b at the display's pixel
+ * aspect), or 0 when it stays 4:3. render_gpu_present and render_gpu_readback show the canvas for that width. */
 void render_gpu_wide_enable(void);
 void render_gpu_wide_set(int on);
+void render_gpu_wide_set_aspect(int a, int b);
 int render_gpu_wide_width(const int vram_xy[2], int w, int h);
 /* Releases everything, the window's claim, then the device (before SDL_Quit: video.c port_video_quit). */
 void render_gpu_close(void);

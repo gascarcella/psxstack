@@ -20,6 +20,7 @@ typedef struct PortSettings {
     int window;      /* video.window (default 1) */
     int scale;       /* video.scale, 1..16 (default 2) */
     int fullscreen;  /* video.fullscreen (default 0) */
+    int scaling;     /* video.scaling: PORT_SCALING_* (default 0, "fit"): the picture's size in the window */
     int refresh;     /* video.refresh, 50 or 60 (default 50) */
     int gpu;         /* video.renderer: 0 "software" (default), 1 "gpu" (the hardware renderer; issue #31) */
     int internal_scale; /* video.internal_scale, 1..8 (default 1): the hardware renderer's resolution, x 1024x512 */

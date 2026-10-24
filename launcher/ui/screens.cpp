@@ -136,6 +136,29 @@ void Screens::draw_settings() {
     ImGui::SameLine();
     wrap_for(ImGui::CalcTextSize("(F11 in the game, by default)").x, label_w);
     ImGui::TextDisabled("(F11 in the game, by default)");
+    // video.scaling: the picture's size in the window (the game's runtime/video.c video_dest), applied live.
+    {
+        static const char *const labels[] = { "Fit", "Integer", "Stretch" };
+        static_assert(SDL_arraysize(labels) == SDL_arraysize(SCALING_NAMES), "a label per scaling");
+        ImGui::TextDisabled("Scaling");
+        ImGui::SameLine(label_w);
+        for (int i = 0; i < (int)SDL_arraysize(labels); i++) {
+            if (i > 0) {
+                ImGui::SameLine();
+                wrap_for(radio_width(labels[i]), label_w);
+            }
+            if (ImGui::RadioButton(labels[i], s.scaling == SCALING_NAMES[i])) {
+                s.scaling = SCALING_NAMES[i];
+                dirty_ = true;
+            }
+        }
+        ImGui::Indent(label_w);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Fit: as large as the screen allows. Integer: every line the same height, with black bars "
+                            "where the screen is not a whole multiple. Stretch: the whole screen, out of shape.");
+        ImGui::PopTextWrapPos();
+        ImGui::Unindent(label_w);
+    }
     // video.menu_size: the in-game menu's size, applied as soon as it is chosen (launcher/ui/menu.cpp).
     {
         static const char *const labels[] = { "Smaller", "Auto", "Larger" };

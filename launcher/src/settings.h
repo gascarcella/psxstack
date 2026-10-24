@@ -62,6 +62,8 @@ struct MemoryCard {
 
 // video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
 inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt", "smooth" };
+// video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Settings screen's order.
+inline const char *const SCALING_NAMES[] = { "fit", "integer", "stretch" };
 // video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
 inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
 // input.player2's values (the game's runtime/input.c): none, or the gamepad by connection order that is player 2.
@@ -85,6 +87,7 @@ struct Settings {
     std::string disc_sha1; // the SHA-1 the launcher verified for disc_path ("" = not verified)
     int scale = 2;         // the window: 320*scale x 240*scale (1..16)
     bool fullscreen = false;
+    std::string scaling = "fit"; // the picture's size in the window (video.scaling): one of SCALING_NAMES
     int refresh = GAME_RATE; // 50 or 60: the nominal rate, or the game's other one (docs/LAUNCHER.md "The rate")
     std::string renderer = "software"; // "software" or "gpu" (the hardware renderer; docs/LAUNCHER.md "Members")
     int internal_scale = 1;            // the hardware renderer's resolution, 1..8 times the PS1's
