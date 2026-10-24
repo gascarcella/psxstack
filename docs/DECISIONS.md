@@ -281,3 +281,14 @@ every change waits for Steam to be closed; the launcher asks, it never stops Ste
 launcher (the AppImage path the self-update keeps), so an update needs no change in Steam. The artwork is the game's
 choice (game.json `launcher.steam_art`, optional): embedded in the launcher at build time, so a release stays the
 launcher and the game with nothing beside them, and written as the files Steam's own grid folder holds per appid.
+
+## Player 2: a gamepad by connection order, off by default, never a hotkey (2026-10-24)
+
+A second pad (issue #101) is one gamepad chosen by `input.player2` (`"first"` or `"second"`, by SDL's instance ids,
+which grow with each connection), not by SDL's player index: Linux's evdev and uinput devices, the virtual pads a
+streaming host (Sunshine) creates among them, usually have none. The default stays `"off"`, so a one-pad setup and
+every existing record are unchanged and port 1 is connected only while player 2's gamepad is there. Player 2 shares
+the gamepad map and never reaches a hotkey: the host's player owns pause, the menu and the save states. Whoever owns
+the pad (the window, a script) sets both ports every vsync, since the shim's "connected" is part of a save state. The
+runtime's players are arrays of `PORT_PADS` and the setting is `player<n>`, so a multitap can add players without a
+new format.

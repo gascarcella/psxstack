@@ -66,10 +66,14 @@ void port_state_sha1(char full[41], char stable[41]);
 /* ---- The per-frame log's events (framelog.c), from the runtime and the script */
 /* A file copied into a slot (port_overlay_load): `name` is the overlay's, or NULL for a data file. */
 void port_framelog_overlay_load(int tier, s32 file, const char *name, u32 word0, u32 size);
-/* The pad the script holds this frame (psyq_pad_set's bits, active high): a change goes to the log and to the record's
- * `inputs` ({frame, buttons: [names]}, as run.lua's apply_pad); the record has `inputs` once this has been called. */
-void port_framelog_input(u16 buttons);
-u16 port_framelog_last_input(void); /* the buttons last given (0 before any): the debug channel's status */
+/* The pads the runtime drives: port 0 and port 1 (psyq_pad_set's ports; a multitap would add more). */
+#define PORT_PADS 2
+/* A port's pad this frame, as given to psyq_pad_set (`connected`, the buttons: active high; port 0 is always
+ * connected): a change goes to the log and to the record's `inputs` ({frame, buttons: [names]}, as run.lua's
+ * apply_pad; port 1's entries say "port": 1, and "connected": false while nothing is there); the record has `inputs`
+ * once this has been called. Port 1 starts unconnected, so a run that never connects it logs nothing for it. */
+void port_framelog_input(int port, int connected, u16 buttons);
+u16 port_framelog_last_input(int port); /* the buttons last given (0 before any): the debug channel's status */
 
 /* ---- The interrupt pump (pump.c) */
 extern long port_max_frames;  /* --max-frames: port_wait() exits 0 after this many vsync ticks (0: no cap) */

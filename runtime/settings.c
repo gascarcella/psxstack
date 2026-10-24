@@ -12,7 +12,8 @@
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off
- *     "input":    { "keyboard": {...}, "gamepad": {...}, "hotkeys": {...} },   input.c (port_input_settings)
+ *     "input":    { "keyboard": {...}, "gamepad": {...}, "hotkeys": {...},
+ *                   "player2": "off" },                                   input.c (port_input_settings)
  *     "mods":     { "<id>": { "enabled": false, "<option>": value } },          mods.c (port_mods_settings)
  *     "launcher": { ... } }                                                the launcher's own; never read
  *

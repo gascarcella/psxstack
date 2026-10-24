@@ -133,21 +133,25 @@ time between vsyncs changes: the log and the record of a window run are the head
 window nothing is paced.
 
 **Input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad (`psyq_pad_set`),
-once per vsync. Keys (by position): arrows the D-pad; X cross, C circle, Z square, S triangle; Enter (or keypad Enter)
+once per vsync. With `input.player2` (`"first"` or `"second"`: that gamepad by connection order; docs/LAUNCHER.md
+"Input bindings") one gamepad is player 2 instead: it drives pad 2 (port 1) with the same gamepad map, port 1 is
+connected while it is there, and it never fires a hotkey (player 2's Back+Start reaches the game). The default, `"off"`,
+leaves port 1 empty, as a one-pad console. Keys (by position): arrows the D-pad; X cross, C circle, Z square, S triangle; Enter (or keypad Enter)
 START; Backspace (or right Shift) SELECT; Q L1, E R1, 1 L2, 3 R2; F11 fullscreen, P pause. Gamepads (SDL's positional
 buttons, the PlayStation layout): south cross, east circle, west square, north triangle, back SELECT, start START,
 shoulders L1/R1, triggers L2/R2, the D-pad and the left stick the D-pad. All of it is rebindable in the settings
 (`input.keyboard`, `input.gamepad`, `input.hotkeys`; docs/LAUNCHER.md "Input bindings"), and the mods add hotkeys. A
 hotkey never reaches the pad: a completed trigger masks its inputs until they are all released. **The pause** stops the
 game between two vsyncs (the window keeps presenting the last image, the audio device pauses) until the key again.
-**The quick state**: F5 saves the whole game to the quick slot, F9 goes on from it ("Save states" below). Every change of the pad goes to the log's `I` lines and the
+**The quick state**: F5 saves the whole game to the quick slot, F9 goes on from it ("Save states" below). Every change of a pad goes to the log's `I` lines and the
 record's `inputs`, as a script's do. With `--script` the script owns the pad: the window's input never reaches it.
 Closing the window (or SIGINT/SIGTERM, which SDL turns into a quit) ends the run: `port_exit(0, "window closed")`, the
 log and the record written. `--input-test` checks the path: it injects every key of the map (`SDL_PushEvent`), then
 attaches a virtual SDL gamepad and presses each of its buttons, triggers and stick directions, and a chord, one per
 frame with its release in the next, then every hotkey trigger, and requires the buttons sent to `psyq_pad_set` to be the
 map's (none for a hotkey's, which must fire; with `--script`: none sent, and the script's log stays byte-identical to a
-run without the test), then (without a script) the pause's round trip, the quick slot's, and the in-game menu's
+run without the test), then the players: a second virtual gamepad, a gamepad input on each and on both, the gamepad-only
+hotkey triggers on the second, then each unplugged, with both ports as `input.player2` says after every poll, then (without a script) the pause's round trip, the quick slot's, and the in-game menu's
 (a build with `PSXSTACK_MENU`; docs/LAUNCHER.md "In-game menu"); exit 0 when all the checks pass, 6 otherwise. With `--config` it tests the settings' map. The first game's CI runs it on SDL's offscreen driver, with the defaults and with a rebound settings file.
 
 **The mods** (`runtime/mods.c`; docs/LAUNCHER.md "Mod manifest", "Mod runtime"): the registry (the stack's
@@ -394,7 +398,8 @@ far (an event between two ticks carries the last tick's number, as an emulator's
 | `M <frame> map 0x<map>` | A map-sequence entry: the map changed (frame 1 always) |
 | `L <frame> tier <t> file 0x<id> <name> word0 0x<8 hex> size 0x<n>` | A file copied into a slot (`port_overlay_load`): the overlay's name, or `(data)`; its first word; its size |
 | `C <frame> <name> stage <stage> map 0x<map> rnd <index> sha1 <40 hex> stable <40 hex>` | A checkpoint; `... rnd <index> image false` for a checkpoint step with `"image": false` (no hashes) |
-| `I <frame> buttons 0x<4 hex>` | The script's pad changed (`port_framelog_input`; PS1 bit order, active high) |
+| `I <frame> buttons 0x<4 hex>` | Pad 1 changed (the script's, the window's or the debug channel's: `port_framelog_input`; PS1 bit order, active high) |
+| `I <frame> port 1 buttons 0x<4 hex>`, `I <frame> port 1 none` | Pad 2 changed, or was unplugged (`none`); a run that never connects one has no such line |
 | `R <frame> reset` | The console's reset (the script's `reset` step): the next frame runs the game from `main()` again |
 | `X <frame> status <status> <reason>` | The exit (`port_exit`) |
 
@@ -402,7 +407,8 @@ far (an event between two ticks carries the last tick's number, as an emulator's
 JSON written at exit, with the keys of the first game's emulator records (its `replay.py` reads it as it is):
 `runner` (`"port"`), `status` (the exit status), `reason`, `frames`, `checkpoints` (`name`, `frame`, `stage`, `map`,
 `random_index`, `gamestate_sha1`, `gamestate_sha1_stable`, as the emulator runner records them; a checkpoint whose script step says `"image": false` has `"image": false` instead of the two hashes, and a record without `image` means true), `overlay_sequence`
-(`{frame, stage, file}`), `map_sequence` (`{frame, map}`), and `inputs` (`{frame, buttons: [names]}`, the names sorted) once the script has called `port_framelog_input`. The sequences follow the emulator runner's vsync
+(`{frame, stage, file}`), `map_sequence` (`{frame, map}`), and `inputs` (`{frame, buttons: [names]}`, the names sorted) once the script has called `port_framelog_input`; pad 2's
+entries add `"port": 1`, and `"connected": false` (with no buttons) when it was unplugged. The sequences follow the emulator runner's vsync
 listener: an entry at every change, the first frame always (`{1, 0, 0}`, map 0).
 
 ## The replay runners (`tools/replay/`)

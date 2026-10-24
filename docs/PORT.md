@@ -256,7 +256,7 @@ bare binary, the replays and the goldens are unchanged. The ops:
   boundary (the pump's pause, shared with the window's pause key). `step frames`: exactly N vsyncs, then pause.
 - `wait`: run until a host or PS1 read, the stage or the map equals a value, or a timeout in frames; leaves the game
   paused. `pad buttons frames release [sync]`: the channel owns pad 1 (`psyq_pad_set` each vsync) until `pad_free`;
-  a script keeps precedence.
+  a script keeps precedence; the window keeps pad 2.
 - `peek` / `poke`: raw host memory, any range `/proc/self/maps` says is mapped (a bad address never faults the game).
   `peek_ps1` / `poke_ps1`: a PS1 address, through the adapter's state map first (`game_state_host`, 1/2/4 bytes: the
   host objects behind PS1 addresses, an overlay's globals in the slots among them), else the arena (from the first
@@ -343,7 +343,7 @@ and the shim lacks stops the run with `port_unimplemented(name)` (status 3) and 
 | LIBPRESS | MDEC movie decoding (`libpress.c`, `mdec.c`) |
 | LIBSND | The sequencer and voices over the SPU core (`libsnd*.c`; `docs/SOUND.md` in the first game): SEPs and SEQs, ticked by the game (`SS_NOTICK`) or by `SsStart` once per vsync |
 | LIBSPU | The voice and common attributes and the reverb work area a game sets itself (`libspu.c`) |
-| LIBPAD | A digital pad on port 0; actuator calls accepted and ignored |
+| LIBPAD | A digital pad on port 0, and on port 1 while the runtime connects one (`input.player2`); actuator calls accepted and ignored |
 | LIBMCRD | Real, over `.mcd` images (`libmcrd.c`), whose card store LIBCARD shares |
 | LIBAPI | Events, root counter 3 (the vblank: its event's handler runs inside the vsync tick and may preempt a fiber), critical sections (`libapi.c`); the BIOS's file calls on the memory cards (`bu00:`, `bu10:`) with LIBCARD (`libcard.c`). `open`, `read`, `write`, `lseek`, `close` and `EnterCriticalSection`/`ExitCriticalSection` are also the host's names: the game's units get `include/psxstack/psyq_names.h` forced in, which renames them to the shim's `psyq_api_*` (and LIBC2's `rand`/`srand` to `psyq_c2_*`), so the runtime and libc keep the host's |
 | LIBCARD | `InitCARD`, `StartCARD`, `_bu_init`, `_card_info`/`_load`/`_clear`/`_format`: real over the `.mcd` images, completing on the vsync tick with SwCARD/HwCARD events (`libcard.c`) |
@@ -498,7 +498,9 @@ same with it on or off.
 
 ## Input
 - **Window input** (`runtime/input.c`): the keyboard and every gamepad SDL sees are ORed into pad 1, a digital pad,
-  once per vsync. Bindings are by key position and SDL's positional (PlayStation-layout) gamepad buttons, rebindable
+  once per vsync; with `input.player2` one gamepad (by connection order) drives pad 2 instead, port 1 connected while
+  it is there, and never a hotkey. Whoever owns the pad sets both ports every vsync (a script leaves port 1 empty), so
+  a save state never carries a second pad into a run that has none. Bindings are by key position and SDL's positional (PlayStation-layout) gamepad buttons, rebindable
   in the settings file; hotkeys (fullscreen, pause, the quick state's save and load, the in-game menu, the mods')
   never reach the pad. The mapping and defaults are in `docs/RUNTIME.md` "The window".
 - **The in-game menu** (`include/psxstack/menu.h`, `launcher/ui/menu.cpp`; `docs/LAUNCHER.md` "In-game menu"): the
@@ -581,8 +583,8 @@ main thread and reports its registers and stack. The `.dmp` opens in WinDbg or V
 stack overflow gets the text (the filter runs on what the guard page leaves) and perhaps no dump.
 
 ## Known limitations
-- **Pads:** one digital pad on port 0; no analog mode, no rumble (`PadSetAct` is accepted and ignored), no second
-  port or multitap.
+- **Pads:** digital pads on port 0 and, from the window's input only, port 1; no analog mode, no rumble (`PadSetAct` is
+  accepted and ignored), no multitap. The script and the debug channel drive port 0 only.
 - **No reset key** in the window (the console reset exists only as a script step and a debug-channel op).
 - **Timing stand-ins:** the CD seek times (3 ticks + 1 per 8192 sectors, at most 40) and `StGetNext`'s 5000 polls
   per vsync are estimates, not measurements.

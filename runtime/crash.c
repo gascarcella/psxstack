@@ -210,6 +210,10 @@ static void crash_write_context(const char *kind, int status) {
     cw_dec(game_state_map());
     cw_str("\npad: ");
     cw_hex(psyq_pad_get(0), 4);
+    if (psyq_pad_present(1)) {
+        cw_str("\npad 2: ");
+        cw_hex(psyq_pad_get(1), 4);
+    }
     cw_str("\nscript: ");
     cw_str(port_script_active ? "yes" : "no");
     cw_str("\n\nlog (last ");

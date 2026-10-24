@@ -1,8 +1,12 @@
 /* The window's input (M2; docs/PORT.md "Input"; rebindable: docs/LAUNCHER.md "Input bindings"): the
  * keyboard and every SDL gamepad, ORed into pad 1 (a digital pad: SELECT, START, the D-pad, L1/L2/R1/R2 and the four
  * face buttons; psyq_pad_set, psyq.h's bit order), once per vsync from pump.c; and the hotkey actions (pause,
- * fullscreen, the mods' bindings). Only in a build configured with -DPSXSTACK_SDL=ON (PSXSTACK_SDL); the headless build
- * has no input but the script's (its actions never fire; the settings' names are checked for their shape only).
+ * fullscreen, the mods' bindings). With `input.player2` ("first" or "second": that gamepad by connection order, SDL's
+ * instance ids growing with each connection) one gamepad is player 2 instead: it drives pad 2 (port 1, connected
+ * while that gamepad is there, with the same gamepad map) and never a hotkey; player 1 keeps the keyboard and every
+ * other gamepad. "off" (the default): port 1 stays empty, as on a console with one pad. Only in a build configured
+ * with -DPSXSTACK_SDL=ON (PSXSTACK_SDL); the headless build has no input but the script's (its actions never fire; the
+ * settings' names are checked for their shape only).
  *
  * Inputs: every keyboard key (an SDL scancode: the key's place, whatever the layout) and the gamepad inputs of
  * input_pad_names (SDL's positional buttons, then the triggers and the stick directions past half way, all gamepads
@@ -29,11 +33,15 @@
  *
  * `--input-test` (a self-test of the mapping, for CI and after a change here): from frame 2 on, it injects the key
  * events of every keyboard input of the pad map with SDL_PushEvent (a press in one frame, the release in the next),
- * then attaches a virtual SDL gamepad and does the same with each gamepad input of the map, then one chord of two keys
- * and a gamepad input, then every hotkey trigger; after each step's poll the buttons sent to psyq_pad_set must be the
- * map's bits for the inputs held (none for a hotkey's: masked; with a script: nothing sent at all) and a hotkey step
- * must have fired its action (the actions do nothing during the test). Without --config it tests the defaults; with
- * one, the settings' map and hotkeys. Then (without a script) the pause: its key pressed, released and pressed again
+ * then attaches a virtual SDL gamepad (player 1's: with `input.player2` "first", a second one is attached before it)
+ * and does the same with each gamepad input of the map, then one chord of two keys and a gamepad input, then every
+ * hotkey trigger; after each step's poll the buttons sent to psyq_pad_set must be the map's bits for the inputs held
+ * (none for a hotkey's: masked; with a script: nothing sent at all) and a hotkey step must have fired its action (the
+ * actions do nothing during the test). Without --config it tests the defaults; with one, the settings' map and
+ * hotkeys. Then the players: a second virtual gamepad, a gamepad input pressed on each pad and on both, every hotkey
+ * trigger made of gamepad inputs on the second (player 2: it reaches pad 2 and fires nothing), then the second
+ * detached; after each poll both ports must be what `input.player2` says (with "off" everything is pad 1's and port 1
+ * stays empty). Then (without a script) the pause: its key pressed, released and pressed again
  * while paused; the pause must poll without a vsync and give back the game; the quick slot's round trip; then the
  * menu's (a build with PSXSTACK_MENU, menu.h): its hotkey pressed at a vsync, the menu must be shown in the pause's
  * polls (the second present with it up is the <PREFIX>_PORT_MENU_SHOT picture), the hotkey again gives back the game.
@@ -124,6 +132,11 @@ int port_action_pause = -1, port_action_fullscreen = -1, port_action_save_state 
 int port_action_menu = -1;
 static int input_test;      /* --input-test running */
 static int input_test_mute; /* the actions do nothing for their consumers (the test's steps) */
+/* input.player<n> (n >= 2; a multitap would add players): the gamepad that player has, by connection order (1 the
+ * first, 2 the second; 0 none: that player's port stays empty). Player 1 has the keyboard and every other gamepad. */
+static int input_player_gamepad[PORT_PADS];
+static const char *const input_player_names[] = { "off", "first", "second" };
+#define INPUT_PLAYER_NAMES ((int)(sizeof(input_player_names) / sizeof(input_player_names[0])))
 
 /* ---- The names (the settings' grammar; docs/LAUNCHER.md "Input bindings") */
 
@@ -345,12 +358,37 @@ static void input_map_section(const PortJson *obj, int pad) {
     }
 }
 
+/* input.player2: "off", "first" or "second". */
+static void input_players_section(const PortJson *input) {
+    int p, k;
+    for (p = 1; p < PORT_PADS; p++) {
+        char key[16], where[32];
+        const PortJson *v;
+        snprintf(key, sizeof(key), "player%d", p + 1);
+        snprintf(where, sizeof(where), "input.%s", key);
+        v = port_json_get(input, key);
+        if (v == NULL) {
+            continue;
+        }
+        for (k = 0; k < INPUT_PLAYER_NAMES; k++) {
+            if (v->type == PORT_JSON_STRING && strcmp(v->string, input_player_names[k]) == 0) {
+                break;
+            }
+        }
+        if (k == INPUT_PLAYER_NAMES) {
+            port_settings_fail(where, "\"off\", \"first\" or \"second\" (the gamepad by connection order)");
+        }
+        input_player_gamepad[p] = k;
+    }
+}
+
 void port_input_settings(const PortJson *input) {
-    static const char *const known[] = { "keyboard", "gamepad", "hotkeys", NULL };
+    static const char *const known[] = { "keyboard", "gamepad", "hotkeys", "player2", NULL };
     const PortJson *hotkeys = NULL;
     size_t i;
     input_map_defaults();
     input_action_count = 0;
+    memset(input_player_gamepad, 0, sizeof(input_player_gamepad));
     if (input != NULL) {
         for (i = 0; i < input->count; i++) {
             const char *const *k;
@@ -362,6 +400,7 @@ void port_input_settings(const PortJson *input) {
         }
         input_map_section(port_json_get(input, "keyboard"), 0);
         input_map_section(port_json_get(input, "gamepad"), 1);
+        input_players_section(input);
         hotkeys = port_json_get(input, "hotkeys");
         if (hotkeys != NULL && hotkeys->type != PORT_JSON_OBJECT) {
             port_settings_fail("input.hotkeys", "an object (an action -> a binding)");
@@ -394,10 +433,12 @@ void port_input_settings(const PortJson *input) {
 #define INPUT_MAX_GAMEPADS 8
 
 static u8 input_key_down[INPUT_KEYS];  /* from the key events */
-static u8 input_down[INPUT_IDS];       /* every input, at the last poll */
-static u8 input_masked[INPUT_IDS];     /* inputs of a latched trigger */
+static u8 input_down[PORT_PADS][INPUT_IDS]; /* every input of each player, at the last poll (the keys: player 1's) */
+static u8 input_masked[INPUT_IDS];     /* player 1's inputs of a latched trigger */
 static SDL_Gamepad *input_gamepads[INPUT_MAX_GAMEPADS];
-static u16 input_applied;              /* the buttons last sent to psyq_pad_set */
+static SDL_JoystickID input_player_id[PORT_PADS]; /* the gamepad of player 2.. (0: none); player 1 has the others */
+static u16 input_applied[PORT_PADS];   /* the buttons last sent to psyq_pad_set, per port */
+static int input_applied_connected[PORT_PADS]; /* and whether it said connected */
 static int input_applied_any;          /* psyq_pad_set was called by this file */
 
 /* ---- --input-test */
@@ -405,8 +446,10 @@ static int input_test_step;  /* the current step (input_test_steps: done) */
 static int input_test_phase; /* 0: press now, 1: release now */
 static int input_test_checks, input_test_failures;
 static long input_test_wait;          /* frames spent waiting for the virtual gamepad */
-static SDL_JoystickID input_test_pad; /* the virtual gamepad (0: not attached) */
+static SDL_JoystickID input_test_pad; /* the virtual gamepad, player 1's (0: not attached) */
 static SDL_Joystick *input_test_joy;
+static SDL_JoystickID input_test_pad2; /* the second (the players' part; with player2 "first" attached before it) */
+static SDL_Joystick *input_test_joy2;
 /* The steps: each a set of inputs pressed together, and the action it must fire (-1: none). */
 #define TEST_MAX_STEPS 192
 static struct {
@@ -449,7 +492,42 @@ static int input_gamepad_open(SDL_JoystickID id) {
     return 0;
 }
 
-/* Every input's state: the keys from their events, the gamepads read now (all of them ORed). */
+/* Who has which gamepad (input.player<n>): player n the n-th setting's gamepad by connection order (SDL's instance ids
+ * grow with each connection, so sorting the open ones gives it), player 1 every other gamepad. */
+static void input_assign(void) {
+    SDL_JoystickID ids[INPUT_MAX_GAMEPADS];
+    int n = 0, i, j, p;
+    for (i = 0; i < INPUT_MAX_GAMEPADS; i++) {
+        if (input_gamepads[i] != NULL) {
+            SDL_JoystickID id = SDL_GetGamepadID(input_gamepads[i]);
+            for (j = n++; j > 0 && ids[j - 1] > id; j--) {
+                ids[j] = ids[j - 1];
+            }
+            ids[j] = id;
+        }
+    }
+    for (p = 1; p < PORT_PADS; p++) {
+        int k = input_player_gamepad[p];
+        input_player_id[p] = k > 0 && k <= n ? ids[k - 1] : 0;
+    }
+}
+
+static int input_gamepad_player(SDL_JoystickID id) {
+    int p;
+    for (p = 1; p < PORT_PADS; p++) {
+        if (input_player_id[p] == id) {
+            return p;
+        }
+    }
+    return 0;
+}
+
+/* A player's port has a pad in it: player 1's always, another's while its gamepad is there. */
+static int input_connected(int player) {
+    return player == 0 || input_player_id[player] != 0;
+}
+
+/* Every input's state: the keys from their events (player 1's), the gamepads read now (each ORed into its player's). */
 static void input_read(void) {
     static const SDL_GamepadAxis axes[] = { SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
                                             SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_LEFTX,
@@ -457,26 +535,30 @@ static void input_read(void) {
                                             SDL_GAMEPAD_AXIS_RIGHTX, SDL_GAMEPAD_AXIS_RIGHTX,
                                             SDL_GAMEPAD_AXIS_RIGHTY, SDL_GAMEPAD_AXIS_RIGHTY };
     int i, j;
-    memcpy(input_down, input_key_down, INPUT_KEYS);
-    memset(input_down + INPUT_KEYS, 0, INPUT_PAD_INPUTS);
+    input_assign();
+    memset(input_down, 0, sizeof(input_down));
+    memcpy(input_down[0], input_key_down, INPUT_KEYS);
     for (i = 0; i < INPUT_MAX_GAMEPADS; i++) {
         SDL_Gamepad *g = input_gamepads[i];
+        u8 *down;
         if (g == NULL) {
             continue;
         }
+        down = input_down[input_gamepad_player(SDL_GetGamepadID(g))];
         for (j = 0; j < INPUT_PAD_BUTTONS; j++) {
-            input_down[INPUT_PAD(j)] |= SDL_GetGamepadButton(g, (SDL_GamepadButton)j) ? 1 : 0;
+            down[INPUT_PAD(j)] |= SDL_GetGamepadButton(g, (SDL_GamepadButton)j) ? 1 : 0;
         }
         for (j = 0; j < INPUT_PAD_INPUTS - INPUT_PAD_BUTTONS; j++) {
             Sint16 v = SDL_GetGamepadAxis(g, axes[j]);
             /* the triggers and the + directions: above half way; the - directions: below minus half way */
             int on = (j < 2 || (j & 1)) ? v > INPUT_AXIS_PRESSED : v < -INPUT_AXIS_PRESSED;
-            input_down[INPUT_PAD(INPUT_PAD_BUTTONS + j)] |= on ? 1 : 0;
+            down[INPUT_PAD(INPUT_PAD_BUTTONS + j)] |= on ? 1 : 0;
         }
     }
 }
 
-/* The actions from the inputs: triggers completed (an action pressed), held, latched; the masked inputs. */
+/* The actions from player 1's inputs (no other player's reach a hotkey): triggers completed (an action pressed),
+ * held, latched; the masked inputs. */
 static void input_actions_update(void) {
     int a, t, k;
     memset(input_masked, 0, sizeof(input_masked));
@@ -486,8 +568,8 @@ static void input_actions_update(void) {
             InputTrigger *tr = &input_actions[a].triggers[t];
             int all = 1, any = 0;
             for (k = 0; k < tr->n; k++) {
-                all &= input_down[tr->ids[k]];
-                any |= input_down[tr->ids[k]];
+                all &= input_down[0][tr->ids[k]];
+                any |= input_down[0][tr->ids[k]];
             }
             if (all && !tr->complete) {
                 input_actions[a].pressed = 1;
@@ -507,11 +589,12 @@ static void input_actions_update(void) {
     }
 }
 
-static u16 input_buttons(void) {
+/* A player's pad from the map (player 1's without the inputs a hotkey masks). */
+static u16 input_buttons(int player) {
     u16 bits = 0;
     int i;
     for (i = 0; i < input_map_count; i++) {
-        if (input_down[input_map[i].id] && !input_masked[input_map[i].id]) {
+        if (input_down[player][input_map[i].id] && !(player == 0 && input_masked[input_map[i].id])) {
             bits |= input_map[i].bits;
         }
     }
@@ -530,26 +613,43 @@ static void input_push_key(SDL_Scancode key, int down) {
     }
 }
 
-/* The virtual gamepad: every button in SDL_GamepadButton order (south .. touchpad) and 6 axes in SDL_GamepadAxis
+/* A virtual gamepad: every button in SDL_GamepadButton order (south .. touchpad) and 6 axes in SDL_GamepadAxis
  * order (SDL's virtual driver maps them one to one when the masks are 0). */
-static void input_test_attach(void) {
+static void input_test_attach_one(const char *name, SDL_JoystickID *pad, SDL_Joystick **joy) {
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
     desc.nbuttons = INPUT_PAD_BUTTONS;
     desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
-    desc.name = PSXSTACK_GAME_ID " input test";
-    input_test_pad = SDL_AttachVirtualJoystick(&desc);
-    if (input_test_pad == 0) {
+    desc.name = name;
+    *pad = SDL_AttachVirtualJoystick(&desc);
+    if (*pad == 0) {
         port_fatal("input test: SDL_AttachVirtualJoystick: %s", SDL_GetError());
     }
-    input_test_joy = SDL_OpenJoystick(input_test_pad);
-    if (input_test_joy == NULL) {
+    *joy = SDL_OpenJoystick(*pad);
+    if (*joy == NULL) {
         port_fatal("input test: SDL_OpenJoystick: %s", SDL_GetError());
     }
 }
 
-static void input_test_set(int id, int down) {
+static void input_test_detach_one(SDL_JoystickID *pad, SDL_Joystick **joy) {
+    if (*pad != 0) {
+        SDL_CloseJoystick(*joy);
+        SDL_DetachVirtualJoystick(*pad);
+        *pad = 0;
+        *joy = NULL;
+    }
+}
+
+/* Player 1's virtual gamepad; with input.player2 "first" the second one is attached before it (it is player 2's). */
+static void input_test_attach(void) {
+    if (input_player_gamepad[1] == 1 && input_test_pad2 == 0) {
+        input_test_attach_one(PSXSTACK_GAME_ID " input test 2", &input_test_pad2, &input_test_joy2);
+    }
+    input_test_attach_one(PSXSTACK_GAME_ID " input test", &input_test_pad, &input_test_joy);
+}
+
+static void input_test_set_on(SDL_Joystick *joy, int id, int down) {
     static const SDL_GamepadAxis axes[] = { SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
                                             SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_LEFTX,
                                             SDL_GAMEPAD_AXIS_LEFTY, SDL_GAMEPAD_AXIS_LEFTY,
@@ -562,12 +662,16 @@ static void input_test_set(int id, int down) {
     }
     p = id - INPUT_KEYS;
     if (p < INPUT_PAD_BUTTONS) {
-        SDL_SetJoystickVirtualButton(input_test_joy, p, down != 0);
+        SDL_SetJoystickVirtualButton(joy, p, down != 0);
     } else {
         int j = p - INPUT_PAD_BUTTONS;
         Sint16 rest = j < 2 ? -32768 : 0, on = (j < 2 || (j & 1)) ? 32767 : -32768;
-        SDL_SetJoystickVirtualAxis(input_test_joy, axes[j], down ? on : rest);
+        SDL_SetJoystickVirtualAxis(joy, axes[j], down ? on : rest);
     }
+}
+
+static void input_test_set(int id, int down) {
+    input_test_set_on(input_test_joy, id, down);
 }
 
 static int input_test_has(int id) {
@@ -625,6 +729,19 @@ static void input_test_plan(void) {
 }
 
 static u16 input_test_expected;
+static int input_test_players;  /* the players' part: 1 plan, 2 both gamepads open, 3 the steps, 4..7 the unplugs */
+#define TEST_MAX_PSTEPS 16
+static struct {
+    int pads; /* 1 the first virtual gamepad, 2 the second, 3 both */
+    int n;
+    int ids[INPUT_CHORD];
+} input_test_psteps[TEST_MAX_PSTEPS];
+static int input_test_pcount, input_test_photkeys, input_test_pstep, input_test_pphase, input_test_ppending;
+static int input_test_pchecks, input_test_pfailures;
+static u16 input_test_pexpected[PORT_PADS];
+static int input_test_pconnected[PORT_PADS];
+static int input_test_players_before(void);
+static void input_test_players_after(void);
 static int input_test_pending; /* a step's input was applied this frame: check after the poll */
 static int input_test_pause;   /* the pause's round trip: 1 press now, 2 paused (then released) */
 static int input_test_pause_polls;
@@ -658,7 +775,8 @@ static int input_test_needs_pad(int step) {
 /* Before the poll: this frame's step (a press or its release). */
 static void input_test_before(void) {
     int k, i, masked;
-    if (input_test_pause_before() || input_test_state_before() || input_test_menu_before()) {
+    if (input_test_players_before() || input_test_pause_before() || input_test_state_before() ||
+        input_test_menu_before()) {
         return;
     }
     if (port_frames < 2 || input_test_step >= input_test_count) {
@@ -699,6 +817,10 @@ static void input_test_before(void) {
 /* After the poll: the pad must show the step's bits (nothing at all with a script), a hotkey must have fired. */
 static void input_test_after(void) {
     int ok, action;
+    if (input_test_players != 0) {
+        input_test_players_after();
+        return;
+    }
     if (!input_test_pending) {
         return;
     }
@@ -706,9 +828,9 @@ static void input_test_after(void) {
     input_test_checks++;
     action = input_test_steps[input_test_step].action;
     if (port_script_active) {
-        ok = !input_applied_any && input_buttons() == input_test_expected;
+        ok = !input_applied_any && input_buttons(0) == input_test_expected;
     } else {
-        ok = input_applied == input_test_expected;
+        ok = input_applied[0] == input_test_expected;
     }
     if (action >= 0 && input_test_phase == 0) {
         ok &= input_actions[action].pressed;
@@ -716,7 +838,7 @@ static void input_test_after(void) {
     if (!ok) {
         input_test_failures++;
         port_log("input test: frame %ld step %d %s: pad 0x%04X (computed 0x%04X), expected 0x%04X%s%s%s", port_frames,
-                 input_test_step, input_test_phase == 0 ? "press" : "release", input_applied, input_buttons(),
+                 input_test_step, input_test_phase == 0 ? "press" : "release", input_applied[0], input_buttons(0),
                  input_test_expected, port_script_active ? " and nothing sent (a script owns the pad)" : "",
                  action >= 0 ? ", the action " : "", action >= 0 ? input_actions[action].name : "");
     }
@@ -731,13 +853,16 @@ static void input_test_after(void) {
     port_log("input test: %d of %d checks passed (%d keys, %d gamepad inputs, 1 chord, %d hotkey triggers)%s",
              input_test_checks - input_test_failures, input_test_checks, input_test_keys, input_test_pads,
              input_test_hotkeys, port_script_active ? "; the script owned the pad: nothing was sent" : "");
-    if (input_test_pad != 0) {
-        SDL_CloseJoystick(input_test_joy);
-        SDL_DetachVirtualJoystick(input_test_pad);
-    }
     if (input_test_failures != 0) {
         port_exit(6, "input test failed");
     }
+    input_test_players = 1; /* then the players' part */
+}
+
+/* After the players' part: the virtual gamepads go, then (without a script) the pause's round trip. */
+static void input_test_players_done(void) {
+    input_test_detach_one(&input_test_pad2, &input_test_joy2);
+    input_test_detach_one(&input_test_pad, &input_test_joy);
     if (!port_script_active && input_actions[port_action_pause].count > 0) {
         input_test_pause = 1; /* then the pause's round trip */
         return;
@@ -746,6 +871,223 @@ static void input_test_after(void) {
     if (!port_script_active) {
         port_exit(0, "input test passed");
     }
+}
+
+/* The players' part (after the steps): `input.player2` decides where each virtual gamepad goes. The first (player 1's
+ * by construction: with "first" the second was attached before it) always drives port 0; the second drives port 1
+ * with "first" or "second", else port 0 too, and port 1 is connected exactly then. Steps: a gamepad input of the map
+ * (one no single-input hotkey takes) on the first, on the second, on both; with a player 2, each hotkey trigger made of
+ * gamepad inputs only, on the second (it must reach pad 2 and fire nothing). Each a press in one frame, the release in
+ * the next; then the second detached (port 1 then has the first with "first", nothing otherwise), then the first
+ * (nothing at all). Skipped when the map has no such gamepad input, or other gamepads are open. */
+static void input_test_players_add(int pads, int n, const int *ids) {
+    if (input_test_pcount == TEST_MAX_PSTEPS) {
+        port_fatal("input test: more than %d players' steps", TEST_MAX_PSTEPS);
+    }
+    input_test_psteps[input_test_pcount].pads = pads;
+    input_test_psteps[input_test_pcount].n = n;
+    memcpy(input_test_psteps[input_test_pcount].ids, ids, sizeof(int) * (size_t)n);
+    input_test_pcount++;
+}
+
+static int input_test_single_hotkey(int id) {
+    int a, t;
+    for (a = 0; a < input_action_count; a++) {
+        for (t = 0; t < input_actions[a].count; t++) {
+            if (input_actions[a].triggers[t].n == 1 && input_actions[a].triggers[t].ids[0] == id) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void input_test_players_plan(void) {
+    int i, a, t, k, g = -1;
+    for (i = 0; i < input_map_count && g < 0; i++) {
+        if (input_map[i].id >= INPUT_KEYS && !input_test_single_hotkey(input_map[i].id)) {
+            g = input_map[i].id;
+        }
+    }
+    input_test_pcount = 0;
+    if (g < 0) {
+        return;
+    }
+    input_test_players_add(1, 1, &g);
+    input_test_players_add(2, 1, &g);
+    input_test_players_add(3, 1, &g);
+    for (a = 0; a < input_action_count && input_player_gamepad[1] != 0; a++) {
+        for (t = 0; t < input_actions[a].count; t++) {
+            const InputTrigger *tr = &input_actions[a].triggers[t];
+            int pads_only = 1;
+            for (k = 0; k < tr->n; k++) {
+                pads_only &= tr->ids[k] >= INPUT_KEYS;
+            }
+            if (pads_only) {
+                input_test_players_add(2, tr->n, tr->ids);
+                input_test_photkeys++;
+            }
+        }
+    }
+}
+
+static int input_test_gamepads_open(void) {
+    int i, n = 0;
+    for (i = 0; i < INPUT_MAX_GAMEPADS; i++) {
+        n += input_gamepads[i] != NULL;
+    }
+    return n;
+}
+
+/* Before the poll. Returns 1 while the players' part runs (the other parts wait). */
+static int input_test_players_before(void) {
+    int k, q, pad;
+    switch (input_test_players) {
+    case 1: /* the plan and the second gamepad */
+        input_test_players_plan();
+        if (input_test_pcount == 0) {
+            port_log("input test: the players: skipped (no gamepad input in the map that no hotkey takes alone)");
+            input_test_players = 0;
+            input_test_players_done();
+            return 1;
+        }
+        if (input_test_pad == 0) {
+            input_test_attach();
+        }
+        if (input_test_pad2 == 0) {
+            input_test_attach_one(PSXSTACK_GAME_ID " input test 2", &input_test_pad2, &input_test_joy2);
+        }
+        input_test_wait = 0;
+        input_test_players = 2;
+        return 1;
+    case 2: /* both open (their SDL_EVENT_GAMEPAD_ADDED come with a poll) */
+        if (!input_gamepad_open(input_test_pad) || !input_gamepad_open(input_test_pad2)) {
+            if (++input_test_wait > 10) {
+                port_fatal("input test: the second virtual gamepad was not opened after 10 frames");
+            }
+            return 1;
+        }
+        if (input_test_gamepads_open() != 2) {
+            port_log("input test: the players: skipped (%d other gamepads are open)", input_test_gamepads_open() - 2);
+            input_test_players = 0;
+            input_test_players_done();
+            return 1;
+        }
+        input_test_pstep = input_test_pphase = 0;
+        input_test_players = 3; /* the first step at once */
+        /* fallthrough */
+    case 3:
+        memset(input_test_pexpected, 0, sizeof(input_test_pexpected));
+        input_test_pconnected[0] = 1;
+        input_test_pconnected[1] = input_player_gamepad[1] != 0;
+        for (pad = 1; pad <= 2; pad++) {
+            if (!(input_test_psteps[input_test_pstep].pads & pad)) {
+                continue;
+            }
+            q = pad == 2 && input_player_gamepad[1] != 0 ? 1 : 0;
+            for (k = 0; k < input_test_psteps[input_test_pstep].n; k++) {
+                int id = input_test_psteps[input_test_pstep].ids[k], i;
+                input_test_set_on(pad == 1 ? input_test_joy : input_test_joy2, id, input_test_pphase == 0);
+                for (i = 0; i < input_map_count && input_test_pphase == 0; i++) {
+                    if (input_map[i].id == id) {
+                        input_test_pexpected[q] |= input_map[i].bits;
+                    }
+                }
+            }
+        }
+        input_test_ppending = 1;
+        return 1;
+    case 4: /* unplug the second, then the first */
+    case 6:
+        if (input_test_players == 4) {
+            input_test_detach_one(&input_test_pad2, &input_test_joy2);
+        } else {
+            input_test_detach_one(&input_test_pad, &input_test_joy);
+        }
+        input_test_wait = 0;
+        input_test_players++;
+        return 1;
+    case 5:
+    case 7:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* After the poll: both ports as expected, no hotkey fired; the unplugs once their gamepad is closed. */
+static void input_test_players_after(void) {
+    const char *mode = input_player_names[input_player_gamepad[1]], *fired = NULL;
+    int ok = 1, p, a;
+    if (input_test_players == 5 || input_test_players == 7) {
+        if (input_gamepad_open(input_test_players == 5 ? input_test_pad2 : input_test_pad)) {
+            /* not yet: SDL_EVENT_GAMEPAD_REMOVED comes with a poll */
+            if (++input_test_wait > 10) {
+                port_fatal("input test: a detached virtual gamepad was still open after 10 frames");
+            }
+            return;
+        }
+        memset(input_test_pexpected, 0, sizeof(input_test_pexpected));
+        input_test_pconnected[0] = 1;
+        /* the first is now the only gamepad: player 2's with "first" */
+        input_test_pconnected[1] = input_test_players == 5 && input_player_gamepad[1] == 1;
+    } else if (input_test_players != 3 || !input_test_ppending) {
+        return;
+    }
+    input_test_ppending = 0;
+    input_test_pchecks++;
+    for (p = 0; p < PORT_PADS; p++) {
+        u16 sent = port_script_active ? input_buttons(p) : input_applied[p];
+        int connected = port_script_active ? input_connected(p) : input_applied_connected[p];
+        ok &= sent == input_test_pexpected[p] && connected == input_test_pconnected[p];
+    }
+    if (port_script_active) {
+        ok &= !input_applied_any;
+    }
+    for (a = 0; a < input_action_count; a++) {
+        if (input_actions[a].pressed) {
+            fired = input_actions[a].name;
+            ok = 0;
+        }
+    }
+    if (!ok) {
+        input_test_pfailures++;
+        port_log("input test: frame %ld the players (input.player2 \"%s\"), %s: port 0 0x%04X, port 1 0x%04X%s; "
+                 "expected 0x%04X, 0x%04X%s%s%s%s",
+                 port_frames, mode,
+                 input_test_players == 3 ? (input_test_pphase == 0 ? "press" : "release")
+                 : input_test_players == 5 ? "the second unplugged" : "the first unplugged",
+                 port_script_active ? input_buttons(0) : input_applied[0],
+                 port_script_active ? input_buttons(1) : input_applied[1],
+                 (port_script_active ? input_connected(1) : input_applied_connected[1]) ? "" : " (none)",
+                 input_test_pexpected[0], input_test_pexpected[1], input_test_pconnected[1] ? "" : " (none)",
+                 port_script_active ? " and nothing sent (a script owns the pad)" : "",
+                 fired != NULL ? ", and no hotkey, but this fired: " : "", fired != NULL ? fired : "");
+    }
+    if (input_test_players == 5 || input_test_players == 7) {
+        input_test_players++;
+    } else if (input_test_pphase == 0) {
+        input_test_pphase = 1;
+        return;
+    } else {
+        input_test_pphase = 0;
+        if (++input_test_pstep == input_test_pcount) {
+            input_test_players = 4;
+        }
+        return;
+    }
+    if (input_test_players != 8) {
+        return;
+    }
+    port_log("input test: the players (input.player2 \"%s\"): %d of %d checks passed (%d presses, %d hotkey triggers "
+             "on the second gamepad, 2 unplugs)%s",
+             mode, input_test_pchecks - input_test_pfailures, input_test_pchecks,
+             input_test_pcount - input_test_photkeys, input_test_photkeys, port_script_active ? "; the script owned the pad: nothing was sent" : "");
+    input_test_players = 0;
+    if (input_test_pfailures != 0) {
+        port_exit(6, "input test failed");
+    }
+    input_test_players_done();
 }
 
 /* The pause's round trip (after the steps, without a script): the pause key's first trigger pressed at a vsync (the
@@ -1053,12 +1395,17 @@ void port_input_frame(void) {
         input_test_before();
     }
     input_poll();
-    if (!port_script_active && !port_debug_pad_owned) {
-        u16 bits = input_buttons();
-        psyq_pad_set(0, 1, bits);
-        port_framelog_input(bits);
-        input_applied = bits;
-        input_applied_any = 1;
+    if (!port_script_active) {
+        int p;
+        for (p = port_debug_pad_owned ? 1 : 0; p < PORT_PADS; p++) { /* the debug channel drives port 0 */
+            int connected = input_connected(p);
+            u16 bits = connected ? input_buttons(p) : 0;
+            psyq_pad_set(p, connected, bits);
+            port_framelog_input(p, connected, bits);
+            input_applied[p] = bits;
+            input_applied_connected[p] = connected;
+            input_applied_any = 1;
+        }
     }
     if (input_test) {
         input_test_after();

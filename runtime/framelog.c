@@ -38,6 +38,8 @@ typedef struct PortCheckpoint {
 typedef struct PortInput {
     long frame;
     u16 buttons;
+    u8 port;      /* 0, or 1: the second pad */
+    u8 connected; /* port 1: 0 while nothing is there (no buttons) */
 } PortInput;
 
 static FILE *port_log_file;
@@ -51,7 +53,8 @@ static size_t port_overlay_cap, port_map_cap, port_checkpoint_cap, port_input_ca
 static int port_sampled, port_inputs_used;
 static s32 port_last_stage, port_last_file;
 static u32 port_last_map;
-static u16 port_last_buttons;
+static u16 port_last_buttons[PORT_PADS];
+static u8 port_last_connected[PORT_PADS] = { 1, 0 };
 
 /* The PS1 pad's button names by bit (PCSX.CONSTS.PAD.BUTTON, as run.lua records them). */
 static const char *const port_button_names[16] = {
@@ -217,19 +220,33 @@ void port_framelog_reset(void) {
     port_logf("R %ld reset", port_frames);
 }
 
-void port_framelog_input(u16 buttons) {
+void port_framelog_input(int port, int connected, u16 buttons) {
+    if (port < 0 || port >= PORT_PADS) {
+        return;
+    }
     port_inputs_used = 1;
-    if (buttons == port_last_buttons) {
+    connected = port == 0 || connected != 0;
+    if (!connected) {
+        buttons = 0;
+    }
+    if (buttons == port_last_buttons[port] && connected == port_last_connected[port]) {
         return;
     }
     *(PortInput *)port_append(&port_inputs, &port_input_n, &port_input_cap, sizeof(*port_inputs)) =
-        (PortInput){ port_frames, buttons };
-    port_last_buttons = buttons;
-    port_logf("I %ld buttons 0x%04X", port_frames, buttons);
+        (PortInput){ port_frames, buttons, (u8)port, (u8)connected };
+    port_last_buttons[port] = buttons;
+    port_last_connected[port] = (u8)connected;
+    if (port == 0) {
+        port_logf("I %ld buttons 0x%04X", port_frames, buttons);
+    } else if (connected) {
+        port_logf("I %ld port %d buttons 0x%04X", port_frames, port, buttons);
+    } else {
+        port_logf("I %ld port %d none", port_frames, port);
+    }
 }
 
-u16 port_framelog_last_input(void) {
-    return port_last_buttons;
+u16 port_framelog_last_input(int port) {
+    return port >= 0 && port < PORT_PADS ? port_last_buttons[port] : 0;
 }
 
 /* ---- The record (JSON) */
@@ -307,7 +324,12 @@ static void port_write_record(int status, const char *reason) {
     if (port_inputs_used) {
         fputs(",\n \"inputs\": [", f);
         for (i = 0; i < port_input_n; i++) {
-            fprintf(f, "%s\n  {\"frame\": %ld, \"buttons\": ", i ? "," : "", port_inputs[i].frame);
+            fprintf(f, "%s\n  {\"frame\": %ld, ", i ? "," : "", port_inputs[i].frame);
+            if (port_inputs[i].port != 0) {
+                fprintf(f, "\"port\": %d, %s", port_inputs[i].port,
+                        port_inputs[i].connected ? "" : "\"connected\": false, ");
+            }
+            fputs("\"buttons\": ", f);
             port_json_buttons(f, port_inputs[i].buttons);
             fputc('}', f);
         }
@@ -379,4 +401,5 @@ void port_framelog_state(PortState *s) {
     PORT_STATE_VAR(s, port_last_file);
     PORT_STATE_VAR(s, port_last_map);
     PORT_STATE_VAR(s, port_last_buttons);
+    PORT_STATE_VAR(s, port_last_connected);
 }
