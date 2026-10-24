@@ -6,8 +6,8 @@
 # 24.04 (SDL3 and Dear ImGui at their pins through scripts/setup.sh; the built tools cached on the pins,
 # scripts/setup.sh --pins, not on the script's text), and the Windows cross-build with its self-test under Wine. On pull
 # requests, pushes to main and by hand; a newer push to a pull request cancels the older run. Not on changes that touch
-# only documentation (paths-ignore: Markdown and LICENSE; no step reads them, and main's ruleset requires no check, so
-# such a pull request merges without a run). A change with any other file runs everything.
+# only documentation (paths-ignore: Markdown, LICENSE and .github/CODEOWNERS; no step reads them, and main's ruleset
+# requires no check, so such a pull request merges without a run). A change with any other file runs everything.
 name: CI
 on:
   push:
@@ -16,11 +16,13 @@ on:
       - "docs/**"
       - "**/*.md"
       - "LICENSE"
+      - ".github/CODEOWNERS"
   pull_request:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
       - "LICENSE"
+      - ".github/CODEOWNERS"
   workflow_dispatch:
 
 permissions:

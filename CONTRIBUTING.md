@@ -43,7 +43,7 @@ test the stack runs on its own.
 1. Open or pick an [issue](https://github.com/gascarcella/psxstack/issues): problems and plans live there.
 2. Branch from `main`; a large change goes in phases, each one reviewable on its own.
 3. Open a pull request to `main`. Its description says what was done and lists the gates that ran.
-4. CI must be green (`.github/workflows/ci.yml`; a change to Markdown or `LICENSE` alone runs nothing). A code owner
+4. CI must be green (`.github/workflows/ci.yml`; a change to Markdown, `LICENSE` or `.github/CODEOWNERS` alone runs nothing). A code owner
    (`.github/CODEOWNERS`) reviews and merges.
 
 ### Gates
