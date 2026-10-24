@@ -3,7 +3,7 @@
 
     python3 tests/hello_test.py [--build DIR] [--record]
     python3 tests/hello_test.py --exe build/hello-win/hello.exe --wine [--gpu]
-    python3 tests/hello_test.py --menu [--build DIR]
+    python3 tests/hello_test.py --menu [--gpu] [--build DIR]
 
 Configures and builds examples/hello (cmake, ninja, the host gcc and binutils; no SDL, no disc), checks `--version`
 names it, runs it for 40 vsyncs with a screenshot at vsync 30 (the software GPU: the same bytes on every machine) and
@@ -18,6 +18,10 @@ fail, 2 missing tool.
 (the prefix build/wine-prefix unless WINEPREFIX names one); --gpu also takes the hardware renderer's picture of the
 same vsync (an SDL build), which must be the software one byte for byte when a device opens (on Windows, Direct3D 12
 first) and is skipped, with the reason, when none does (CI's Wine has none).
+--menu builds hello with the window and the in-game menu instead and runs it on SDL's offscreen driver (menu_check);
+--menu --gpu also takes the menu's picture on the hardware renderer (Mesa's lavapipe when it is installed: NVIDIA's
+driver cannot present to the offscreen driver), which must be the software one but for a few edge pixels
+(GPU_MENU_LEVELS, GPU_MENU_EDGES).
 """
 import argparse
 import hashlib
@@ -26,6 +30,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,13 +117,14 @@ def script_check(runner, exe, build, env):
     return ok
 
 
-def menu_check(build, env):
+def menu_check(build, env, gpu):
     """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
     the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
-    build/menu.png; then the Mods page's at three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png;
-    then the input self-test again with each input.player2 that gives a second pad (PLAYER2: its players' part), the
-    first also with the picture of the Controls screen's Gamepad tab at 640x480, build/menu-controls-gamepad.png."""
+    build/menu.png; with gpu the same on the hardware renderer, build/menu-gpu.png (menu_gpu); then the Mods page's at
+    three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png; then the input self-test again with each
+    input.player2 that gives a second pad (PLAYER2: its players' part), the first also with the picture of the Controls
+    screen's Gamepad tab at 640x480, build/menu-controls-gamepad.png."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
         if not shutil.which(tool, path=env["PATH"]):
             print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
@@ -128,28 +134,19 @@ def menu_check(build, env):
                         "-DPSXSTACK_SDL=ON", "-DPSXSTACK_MENU=ON"], check=True, env=env, stdout=subprocess.DEVNULL)
     subprocess.run(["cmake", "--build", str(build)], check=True, env=env, stdout=subprocess.DEVNULL)
     exe, shot = build / "hello", build / "menu.png"
-    shot.unlink(missing_ok=True)
-    # A settings file for the run, so the menu's Settings, Controls and Mods pages have something to edit; the
-    # picture is the Settings page.
     cfg = build / "cfg"
     cfg.mkdir(exist_ok=True)
-    (cfg / "settings.json").write_text('{ "schema": 1 }\n')
-    # The live apply with a change (runtime/input.c HELLO_PORT_MENU_LIVE_FILE): a second file, put in place while the
-    # menu is up, rebinds the menu hotkey and switches fast-forward on; the round trip then closes the menu with the
-    # new key, and the mod's "on" line must follow.
-    (cfg / "live.json").write_text('{ "schema": 1, "input": { "hotkeys": { "menu": "F10" } }, '
-                                   '"mods": { "fast_forward": { "enabled": true } } }\n')
-    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot),
-                   HELLO_PORT_MENU_SCREEN="settings", HELLO_PORT_MENU_LIVE_FILE=str(cfg / "live.json"))
-    r = subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--mods-dir", str(cfg / "mods"),
-                        "--input-test", "--fps", "0"], capture_output=True, text=True, env=run_env, timeout=600)
+    r = menu_run(exe, cfg, shot, env)
     lines = r.stderr.strip().splitlines()
     menu = next((l for l in lines if "input test: the menu:" in l), "(no menu line)")
     live = next((l for l in lines if "re-applied live in the menu:" in l), "(no live line)")
     ff_on = any(l.endswith("mods: fast_forward on") for l in lines)
-    ok = r.returncode == 0 and "the menu: passed" in menu and "live in the menu: passed" in live and ff_on
+    opened = next((i for i, l in enumerate(lines) if l.endswith("audio: unmuted: the device opens")), None)
+    sound = opened is not None and any("audio: SDL audio driver" in l for l in lines[opened:])
+    ok = r.returncode == 0 and "the menu: passed" in menu and "live in the menu: passed" in live and ff_on and sound
     print(("ok   " if ok else "FAIL ") + f"the input self-test with the menu: status {r.returncode}; {menu}; {live}; "
-          f"fast-forward {'switched on live' if ff_on else 'NOT switched on'}")
+          f"fast-forward {'switched on live' if ff_on else 'NOT switched on'}; "
+          f"{'unmuted live: the device opened' if sound else 'unmuted live: NO device opened'}")
     if not ok:
         print("\n".join(lines[-15:]))
     fit = shot_fit(lines)
@@ -161,10 +158,116 @@ def menu_check(build, env):
     else:
         print("FAIL no PNG of the menu")
         ok = False
+    if gpu:
+        ok &= menu_gpu(exe, cfg, shot, env)
     ok &= menu_sizes(exe, cfg, env)
     ok &= players_check(exe, cfg, env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
+
+
+def menu_run(exe, cfg, shot, env, *extra):
+    """The input self-test with the menu on its Settings page, its picture to `shot`. The game starts muted, from a
+    settings file of its own, so the menu's pages have something to edit. The live apply with a change
+    (runtime/input.c HELLO_PORT_MENU_LIVE_FILE): a second file, put in place while the menu is up, rebinds the menu
+    hotkey, switches fast-forward on and the mute off; the round trip then closes the menu with the new key, the mod's
+    "on" line must follow, and the audio device must open (runtime/audio.c: a game started muted has none)."""
+    shot.unlink(missing_ok=True)
+    (cfg / "settings.json").write_text('{ "schema": 1, "audio": { "mute": true } }\n')
+    (cfg / "live.json").write_text('{ "schema": 1, "input": { "hotkeys": { "menu": "F10" } }, '
+                                   '"mods": { "fast_forward": { "enabled": true } }, "audio": { "mute": false } }\n')
+    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot),
+                   HELLO_PORT_MENU_SCREEN="settings", HELLO_PORT_MENU_LIVE_FILE=str(cfg / "live.json"))
+    return subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--mods-dir", str(cfg / "mods"),
+                           "--input-test", "--fps", "0", *extra], capture_output=True, text=True, env=run_env,
+                          timeout=600)
+
+
+# The hardware renderer's picture of the menu against the software one: ImGui's triangles rasterised by another API
+# round their anti-aliased edges differently (lavapipe against OpenGL: 5 % of the pixels, by at most 2 levels a
+# channel; NVIDIA's Direct3D 12: 67 pixels of a radio button's rim, by up to 33). At most GPU_MENU_EDGES of the
+# pixels may differ by more than GPU_MENU_LEVELS; a missing, misplaced or other page differs by far more (another
+# page: 18 % of the pixels).
+GPU_MENU_LEVELS = 8
+GPU_MENU_EDGES = 0.001
+LAVAPIPE = Path("/usr/share/vulkan/icd.d/lvp_icd.x86_64.json")
+
+
+def menu_gpu(exe, cfg, soft, env):
+    """--menu --gpu: the run of menu_run on the hardware renderer (render_gpu.c draws the present with the menu into a
+    texture it reads back), build/menu-gpu.png, on Mesa's lavapipe when it is installed (VK_DRIVER_FILES; NVIDIA's
+    driver cannot present to the offscreen driver and the window would fall back to SDL_Renderer)."""
+    shot = exe.parent / "menu-gpu.png"
+    run_env = dict(env)
+    if LAVAPIPE.exists() and "VK_DRIVER_FILES" not in env:
+        run_env["VK_DRIVER_FILES"] = str(LAVAPIPE)
+    r = menu_run(exe, cfg, shot, run_env, "--renderer", "gpu")
+    lines = r.stderr.strip().splitlines()
+    window = next((l.split("window: ", 1)[1] for l in lines if "window: SDL" in l), "(no window line)")
+    if "renderer gpu" not in window:
+        print(f"FAIL the menu on the hardware renderer: the window has none ({window}); install Mesa's lavapipe "
+              f"(mesa-vulkan-drivers), which presents to SDL's offscreen driver")
+        print("\n".join(l for l in lines if "renderer" in l))
+        return False
+    menu = next((l for l in lines if "input test: the menu:" in l), "(no menu line)")
+    fit = shot_fit(lines)
+    good = r.returncode == 0 and "the menu: passed" in menu and fit == "nothing wider than its window"
+    if good and shot.exists() and soft.exists():
+        (w, h, a), (sw, sh, b) = png_rgb(shot), png_rgb(soft)
+        if (w, h) != (sw, sh):
+            diff = f"{w}x{h}, the software one {sw}x{sh}"
+            good = False
+        else:
+            delta = [max(abs(a[i] - b[i]), abs(a[i + 1] - b[i + 1]), abs(a[i + 2] - b[i + 2]))
+                     for i in range(0, len(a), 3)]
+            pixels, far = sum(1 for d in delta if d), sum(1 for d in delta if d > GPU_MENU_LEVELS)
+            diff = (f"{pixels} of {w * h} pixels differ from the software one, by at most {max(delta)}; "
+                    f"{far} by more than {GPU_MENU_LEVELS} (at most {int(w * h * GPU_MENU_EDGES)})")
+            good = far <= w * h * GPU_MENU_EDGES
+    else:
+        diff = "no picture" if good else f"status {r.returncode}; {menu}; {fit}"
+        good = False
+    print(("ok   " if good else "FAIL ") + f"the menu on the hardware renderer ({window}): {diff}; {shot}")
+    if not good and r.returncode != 0:
+        print("\n".join(lines[-15:]))
+    return good
+
+
+def png_rgb(path):
+    """An 8-bit RGB or RGBA PNG, not interlaced (SDL_SavePNG's), as (width, height, its RGB bytes): no Pillow needed."""
+    data, pos, idat = path.read_bytes(), 8, b""
+    while pos < len(data):
+        n, kind = int.from_bytes(data[pos:pos + 4], "big"), data[pos + 4:pos + 8]
+        if kind == b"IHDR":
+            w, h = int.from_bytes(data[pos + 8:pos + 12], "big"), int.from_bytes(data[pos + 12:pos + 16], "big")
+            depth, ctype, interlace = data[pos + 16], data[pos + 17], data[pos + 20]
+            if depth != 8 or ctype not in (2, 6) or interlace:
+                raise ValueError(f"{path}: depth {depth}, colour type {ctype}, interlace {interlace}")
+            bpp = 3 if ctype == 2 else 4
+        elif kind == b"IDAT":
+            idat += data[pos + 8:pos + 8 + n]
+        pos += 12 + n
+    raw, stride = zlib.decompress(idat), w * bpp
+    prev, out = bytearray(stride), bytearray()
+    for y in range(h):
+        f, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + (a + b) // 2) & 255
+            elif f == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        out += line if bpp == 3 else bytes(v for i, v in enumerate(line) if i % 4 != 3)
+        prev = line
+    return w, h, bytes(out)
 
 
 # The Mods page's pictures (#92): a desktop's 1920x1080, the Steam Deck's 1280x800 and the smallest window, 640x480,
@@ -264,7 +367,7 @@ def main():
         if venv.exists():
             env["PATH"] = f"{venv}:{env['PATH']}"
         return menu_check(Path(args.build if args.build != str(ROOT / "build/hello") else ROOT / "build/hello-menu"),
-                          env)
+                          env, args.gpu)
     if args.exe:
         exe = Path(args.exe).resolve()
         build = exe.parent

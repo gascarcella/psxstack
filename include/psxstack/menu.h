@@ -43,6 +43,12 @@ int port_menu_frame(void);
  * swapchain texture into the present's command buffer, before its submit. */
 void port_menu_render_renderer(struct SDL_Renderer *renderer);
 void port_menu_render_gpu(struct SDL_GPUCommandBuffer *cb, struct SDL_GPUTexture *swapchain);
+/* The menu's picture from the hardware renderer (<PREFIX>_PORT_MENU_SHOT), whose swapchain cannot be read back:
+ * port_menu_shot_due says this present is the one to take it, and render_gpu.c then draws the picture and the menu
+ * into a texture of the swapchain's format, blits that into the swapchain and reads it back; port_menu_shot_save
+ * takes its pixels (4 bytes a pixel, w * 4 a row, B, G, R in memory when bgra, else R, G, B; the fourth ignored). */
+int port_menu_shot_due(void);
+void port_menu_shot_save(const void *pixels, int w, int h, int bgra);
 
 #ifdef __cplusplus
 }

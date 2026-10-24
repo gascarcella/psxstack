@@ -188,7 +188,9 @@ void port_audio_pause(int paused); /* the device paused (the pump's pause); noth
 /* The device muted (fast-forward): its queue cleared, then the samples rendered but not queued; unmuted, the queue
  * starts again from its target. The WAV and the SPU never change. */
 void port_audio_set_mute(int mute);      /* fast-forward's mute */
-void port_audio_set_user_mute(int mute); /* audio.mute changed in the menu (live.c): either source mutes */
+/* audio.mute: the settings' at the start (main.c), then as the menu changes it (live.c); either source mutes. A game
+ * started muted has no device: switched off, the mute opens it. */
+void port_audio_set_user_mute(int mute);
 
 /* ---- mods.c: the built-in mods (docs/LAUNCHER.md "Mod manifest", "Mod runtime") ----
  * port_mods_settings: the settings' `mods` section (NULL: every mod off) read against the registry; a bad value fails

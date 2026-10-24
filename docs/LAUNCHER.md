@@ -102,7 +102,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `video.filter` | `"none"`, `"sharp"`, `"scanlines"`, `"crt"` or `"smooth"` | `"none"` | The hardware renderer's present filter (docs/PORT.md "Rendering"): `none` shows the picture's pixels as whole blocks, `sharp` is sharp bilinear, `scanlines` sharp with dark lines, `crt` a TV, `smooth` xBR on the 1x picture (the internal scale does not apply to it). The software renderer shows the picture unfiltered and logs it. The launcher's "Filter" combo, shown for the GPU renderer; it writes the member only once it is set |
 | `video.crt` | `{ "scanlines", "mask", "curvature" }`, integers 0-100 | 50, 30, 0 | The filters' parameters: `scanlines` (the lines' strength) for `scanlines` and `crt`, `mask` (the aperture grille) and `curvature` for `crt`. The launcher's sliders under the Filter combo; written once set, as `video.filter` |
 | `video.menu_size` | `"smaller"`, `"auto"` or `"larger"` | `"auto"` | The in-game menu's size ("In-game menu"): its fit to the window, a step smaller or larger. The Settings screen's "Menu size"; written once set. The menu reads it, the runtime does not (`--print-settings` leaves it out); a game built before it logs the key and ignores it |
-| `audio.mute` | bool | false | No audio device |
+| `audio.mute` | bool | false | No audio device (switched off in the in-game menu: the device opens then) |
 | `memcard1`, `memcard2` | string or `null` | `"card1.mcd"`, `"card2.mcd"` | A `.mcd` image, created formatted when missing; `null`: no card in that slot. An empty string is an error |
 | `watchdog` | integer 0-3600 | 0 | Seconds without a vsync before the game exits 4; 0 is off. The bare binary (no `--config`) keeps its 10 s |
 | `input` | object | the game's | "Input bindings" |
@@ -474,23 +474,22 @@ at a time), where leaving the game for the launcher's window is a chore.
   submit). The window's events go to ImGui as well as to the runtime's keys (`runtime/input.c`): the menu navigates
   with the keyboard, the mouse and every gamepad; the pause, save and load hotkeys do not act while it is up. The
   hotkey again, or **Resume**, closes it and the game goes on; **Quit** ends the run with status 0.
-- **The pages** (the navigation on the left; the shoulder buttons or Ctrl+PageUp/PageDown step through them):
-  **Game** (the title, Resume, Quit) and the launcher's own **Settings**, **Controls** and **Mods** screens
+- **The pages** (the navigation on the left; the shoulder buttons or Ctrl+PageUp/PageDown step through them): **Game**
+  (the title, Resume, Quit) and the launcher's own **Settings**, **Controls** and **Mods** screens
   (`launcher/ui/screens.cpp`, the one implementation both draw; the update check, "Updates", is the window's own),
-  over the settings file the game was started with
-  (`--config`: the runtime's `settings.c` read it; the menu reads it again through the launcher's `SettingsFile` and
-  writes it as the launcher would, keeping every member it does not edit) and the mods beside the executable plus the
-  user's data mods (`--mods-dir`). A change is saved when no widget is in use (and when the menu closes), and the
-  runtime then re-reads the file and applies it (`runtime/live.c` `port_live_apply`): the window's scale and
-  fullscreen, the hardware renderer's filter and sub-pixel mode, `audio.mute`, the pad map and every hotkey (the
+  over the settings file the game was started with (`--config`: the runtime's `settings.c` read it; the menu reads it
+  again through the launcher's `SettingsFile` and writes it as the launcher would, keeping every member it does not
+  edit) and the mods beside the executable plus the user's data mods (`--mods-dir`). A change is saved when no widget
+  is in use (and when the menu closes), and the runtime then re-reads the file and applies it (`runtime/live.c`
+  `port_live_apply`): the window's scale and fullscreen, the hardware renderer's filter and sub-pixel mode,
+  `audio.mute` (a game started muted opens its audio device when the mute goes off), the pad map and every hotkey (the
   table starts over, the enabled mods' bindings registered again) and the mods (`port_mods_apply`: one switched on
   gets its hotkeys and its `start`, one switched off its `stop`, one that stays on with other values its `start`
-  again, since a mod's `start` is a setter: "Mod runtime" rule 6). What waits for the
-  next start is marked **(restart)** on the page: the disc, the renderer and its internal scale, the rate, the memory
-  cards, the data mods, and a mod whose manifest says `"applies": "restart"` ("Mod manifest"). A file that does not
-  read back is logged and changes nothing. A game started without `--config` has the Game page alone; one the
-  launcher started (`<PREFIX>_LAUNCHER` in its environment) says Quit *to launcher*. The disc stays the launcher's
-  window's.
+  again, since a mod's `start` is a setter: "Mod runtime" rule 6). What waits for the next start is marked
+  **(restart)** on the page: the disc, the renderer and its internal scale, the rate, the memory cards, the data mods,
+  and a mod whose manifest says `"applies": "restart"` ("Mod manifest"). A file that does not read back is logged and
+  changes nothing. A game started without `--config` has the Game page alone; one the launcher started
+  (`<PREFIX>_LAUNCHER` in its environment) says Quit *to launcher*. The disc stays the launcher's window's.
 - **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled to fit the launcher's canvas,
   its window at scale 1 (960x620, `launcher/ui/style.h` `CANVAS_W`/`CANVAS_H`), into the game's window, so a page the
   launcher fits fits the menu too: about 1.74 at 1920x1080, 1.29 at 1280x800, at least 1. `video.menu_size` steps
@@ -503,19 +502,23 @@ at a time), where leaving the game for the launcher's window is a chore.
   the widget it reaches.
 - **The test:** `--input-test` ends with the menu's round trip (its hotkey at a vsync, the menu shown in the pause's
   polls, the hotkey again, the next vsync follows the paused one), and `<PREFIX>_PORT_MENU_SHOT=PATH` writes the
-  window's output with the menu up as a PNG (the software renderer; the hardware renderer's present is not read
-  back with the menu in it), on the page `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names (`mods:<id>`:
-  with that mod chosen; `controls:keyboard|gamepad|hotkeys`: on that tab), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH` when it is set (SDL's
-  software renderer follows it: `SDL_RENDER_DRIVER=software`). The shot's log line names the windows whose content
-  reaches past their right edge ("nothing wider than its window" when none does).
+  window's output with the menu up as a PNG, on either renderer (the hardware renderer's swapchain cannot be read
+  back, so the present that takes it draws the picture and the menu into a texture of the swapchain's format, blits
+  that into the swapchain and reads it back: `runtime/render_gpu.c`), on the page
+  `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names (`mods:<id>`: with that mod chosen;
+  `controls:keyboard|gamepad|hotkeys`: on that tab), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH`
+  when it is set (SDL's software renderer follows it: `SDL_RENDER_DRIVER=software`). The shot's log line names the
+  windows whose content reaches past their right edge ("nothing wider than its window" when none does).
   The round trip also re-applies the settings live at its second poll, as the menu does after a save, and with
   `<PREFIX>_PORT_MENU_LIVE_FILE=PATH` that file is put in place of the settings first (the hotkey pressed next is the
   file's binding, so a rebinding must take). `tests/hello_test.py --menu` builds `examples/hello` that way and runs
-  both on SDL's offscreen driver with a settings file of its own (the live file rebinds the menu hotkey and switches
-  fast-forward on), the picture its Settings page, then the Mods page's at 1920x1080, 1280x800 and 640x480 and at
-  1280x800 "larger" (`tests/fixtures/mods/multipliers` chosen, a page larger than any a game ships so far), none of
-  them wider than its window; CI's `launcher` job runs it and keeps the pictures. The screens' logic is the launcher
-  self-test's.
+  both on SDL's offscreen driver with a settings file of its own, muted (the live file rebinds the menu hotkey,
+  switches fast-forward on and the mute off, so the audio device must open), the picture its Settings page (with
+  `--gpu` also on the hardware renderer, on Mesa's lavapipe, which presents to the offscreen driver: the software
+  picture but for the anti-aliased edges, at most 0.1 % of the pixels off by more than 8 levels), then the Mods page's
+  at 1920x1080, 1280x800 and 640x480 and at 1280x800 "larger" (`tests/fixtures/mods/multipliers` chosen, a page larger
+  than any a game ships so far), none of them wider than its window; CI's `launcher` job runs it and keeps the
+  pictures. The screens' logic is the launcher self-test's.
 - **The release:** a game that ships the menu links libstdc++ and libgcc statically with
   `-DPSXSTACK_MENU_STATIC_RUNTIME=ON`, as the launcher does (`launcher/README.md` "Releases").
 

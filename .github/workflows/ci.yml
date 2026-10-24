@@ -123,8 +123,11 @@ jobs:
         run: python3 tests/fixtures/steam/make_fixtures.py --check
       - name: Self-test (offscreen)
         run: SDL_VIDEO_DRIVER=offscreen DW3_SELFTEST_TAR="$(command -v bsdtar)" build/launcher/dw2003-launcher --self-test build/selftest
-      - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's picture (tests/hello_test.py --menu)"
-        run: python3 tests/hello_test.py --menu
+      # Mesa's lavapipe: a Vulkan device that presents to SDL's offscreen driver, for the menu on the hardware renderer.
+      - name: lavapipe
+        run: test -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json || (sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends mesa-vulkan-drivers)
+      - name: "hello with the window and the in-game menu: the input self-test offscreen, the menu's pictures on both renderers (tests/hello_test.py --menu --gpu)"
+        run: python3 tests/hello_test.py --menu --gpu
       - name: "The launcher of a disc-free game with Steam artwork (examples/hello): the pictures are make_art.py's, it builds, its self-test"
         run: |
           python3 examples/hello/steam/make_art.py --check

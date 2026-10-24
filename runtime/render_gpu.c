@@ -1428,11 +1428,89 @@ static int render_source(SDL_GPUCommandBuffer *cb, const u32 *pixels, int w, int
     return render_upload(cb, pixels, w, h);
 }
 
+/* The in-game menu's picture (menu.h port_menu_shot_due). SDL creates the swapchain's images to be drawn and blitted
+ * into, not read, so the present that takes it draws into a texture of the swapchain's format instead, blits that
+ * into the swapchain (the window shows what is saved) and downloads it; the menu gets the pixels once the frame is
+ * done. The texture and its buffer live for that one present. */
+typedef struct {
+    SDL_GPUTexture *texture;
+    SDL_GPUTransferBuffer *download;
+    Uint32 w, h;
+} RenderMenuShot;
+
+static SDL_GPUTexture *render_menu_shot_begin(RenderMenuShot *shot, Uint32 w, Uint32 h) {
+    shot->w = w;
+    shot->h = h;
+    shot->texture = render_texture(r.swap_format, (int)w, (int)h,
+                                   SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+    shot->download = render_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4);
+    if (shot->texture == NULL || shot->download == NULL) {
+        port_log("renderer: gpu: no %ux%u target for the menu's picture: %s", w, h, SDL_GetError());
+        port_menu_shot_save(NULL, (int)w, (int)h, 0);
+        SDL_ReleaseGPUTexture(r.device, shot->texture);
+        SDL_ReleaseGPUTransferBuffer(r.device, shot->download);
+        shot->texture = NULL;
+        shot->download = NULL;
+        return NULL;
+    }
+    return shot->texture;
+}
+
+/* After the picture and the menu were drawn into the shot's texture: into the swapchain, and on its way back. */
+static void render_menu_shot_record(SDL_GPUCommandBuffer *cb, RenderMenuShot *shot, SDL_GPUTexture *swap) {
+    SDL_GPUBlitInfo blit;
+    SDL_GPUCopyPass *copy;
+    SDL_GPUTextureRegion region;
+    SDL_GPUTextureTransferInfo info;
+    memset(&blit, 0, sizeof(blit));
+    blit.source.texture = shot->texture;
+    blit.source.w = shot->w;
+    blit.source.h = shot->h;
+    blit.destination.texture = swap;
+    blit.destination.w = shot->w;
+    blit.destination.h = shot->h;
+    blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+    blit.filter = SDL_GPU_FILTER_NEAREST;
+    SDL_BlitGPUTexture(cb, &blit);
+    memset(&region, 0, sizeof(region));
+    region.texture = shot->texture;
+    region.w = shot->w;
+    region.h = shot->h;
+    region.d = 1;
+    memset(&info, 0, sizeof(info));
+    info.transfer_buffer = shot->download;
+    info.pixels_per_row = shot->w;
+    info.rows_per_layer = shot->h;
+    copy = SDL_BeginGPUCopyPass(cb);
+    SDL_DownloadFromGPUTexture(copy, &region, &info);
+    SDL_EndGPUCopyPass(copy);
+}
+
+/* The submit of the shot's present: waits for the frame, hands the menu its pixels, releases the shot. 0 when the
+ * submit failed. */
+static int render_menu_shot_submit(SDL_GPUCommandBuffer *cb, RenderMenuShot *shot) {
+    SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cb);
+    const void *map = NULL;
+    if (fence != NULL) {
+        SDL_WaitForGPUFences(r.device, true, &fence, 1);
+        SDL_ReleaseGPUFence(r.device, fence);
+        map = SDL_MapGPUTransferBuffer(r.device, shot->download, false);
+    }
+    port_menu_shot_save(map, (int)shot->w, (int)shot->h, r.swap_format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM);
+    if (map != NULL) {
+        SDL_UnmapGPUTransferBuffer(r.device, shot->download);
+    }
+    SDL_ReleaseGPUTexture(r.device, shot->texture);
+    SDL_ReleaseGPUTransferBuffer(r.device, shot->download);
+    return fence != NULL;
+}
+
 int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, RenderDestFn dest) {
     SDL_GPUCommandBuffer *cb;
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
     int rect[4] = { 0, 0, 0, 0 }, wide[2];
+    RenderMenuShot shot = { NULL, NULL, 0, 0 };
 
     if (r.device == NULL || r.window == NULL) {
         return 0;
@@ -1456,12 +1534,19 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
     if (swap != NULL) { /* NULL: the window is minimised or occluded; nothing to draw this frame */
         SDL_GPUGraphicsPipeline *pipe = vram_xy != NULL ? (r.pipe_vram_swap ? r.pipe_vram_swap : r.pipe_vram_off)
                                                         : (r.pipe_swap ? r.pipe_swap : r.pipe_off);
+        SDL_GPUTexture *into = port_menu_shot_due() ? render_menu_shot_begin(&shot, sw, sh) : NULL;
+        if (into == NULL) {
+            into = swap;
+        }
         dest((int)sw, (int)sh, rect);
         render_clip(rect, (int)sw, (int)sh);
-        render_draw(cb, swap, pipe, w, h, vram_xy, rect, 1);
-        port_menu_render_gpu(cb, swap); /* the menu over the picture, while it is shown */
+        render_draw(cb, into, pipe, w, h, vram_xy, rect, 1);
+        port_menu_render_gpu(cb, into); /* the menu over the picture, while it is shown */
+        if (into != swap) {
+            render_menu_shot_record(cb, &shot, swap);
+        }
     }
-    if (!SDL_SubmitGPUCommandBuffer(cb)) {
+    if (shot.texture != NULL ? !render_menu_shot_submit(cb, &shot) : !SDL_SubmitGPUCommandBuffer(cb)) {
         goto failed;
     }
     return 1;

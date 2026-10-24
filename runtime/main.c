@@ -462,6 +462,7 @@ int main(int argc, char **argv) {
         port_spu_trace_open(spu_trace);
     }
     port_audio_open(window && !mute, wav);
+    port_audio_set_user_mute(port_settings.mute); /* the menu's audio.mute starts from the file's (live.c) */
     if (script != NULL) {
         port_script_load(script);
         port_script_active = 1;

@@ -7,10 +7,10 @@
 // (cmake/psxstack.cmake).
 //
 // <PREFIX>_PORT_MENU_SHOT=PATH writes the window's output with the menu up, once, as a PNG: the second present after
-// it is shown (the software renderer: the input self-test's picture; the hardware renderer's present cannot be read
-// back with the menu in it, logged). <PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods picks the page it opens on
-// (the picture of a page; default game), `mods:<id>` with that mod chosen, `controls:<tab>` on that tab (keyboard,
-// gamepad, hotkeys).
+// it is shown, on either present path (the hardware renderer's through a texture render_gpu.c reads back: menu.h
+// port_menu_shot_due). <PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods picks the page it opens on (the picture
+// of a page; default game), `mods:<id>` with that mod chosen, `controls:<tab>` on that tab (keyboard, gamepad,
+// hotkeys).
 #include "menu.h"
 
 #include <algorithm>
@@ -287,12 +287,14 @@ std::string menu_overflow() {
     return names;
 }
 
-void menu_shot_renderer(SDL_Renderer *renderer) {
-    if (mn.shot.empty() || mn.shot_done || mn.drawn < 2) {
-        return; // the second present: ImGui draws an auto-sized window from its second frame on
-    }
+// The shot is the second present with the menu: ImGui draws an auto-sized window from its second frame on.
+bool menu_shot_wanted() {
+    return !mn.shot.empty() && !mn.shot_done && mn.drawn >= 2;
+}
+
+// The window's output with the menu up (nullptr: it could not be read) as the shot's PNG, and the overflow line.
+void menu_shot_write(SDL_Surface *s) {
     mn.shot_done = true;
-    SDL_Surface *s = SDL_RenderReadPixels(renderer, nullptr);
     if (s == nullptr || !SDL_SavePNG(s, mn.shot.c_str())) {
         port_log("menu: shot %s: %s", mn.shot.c_str(), SDL_GetError());
     } else {
@@ -300,6 +302,14 @@ void menu_shot_renderer(SDL_Renderer *renderer) {
     }
     const std::string over = menu_overflow();
     port_log("menu: shot: %s", over.empty() ? "nothing wider than its window" : ("wider than its window: " + over).c_str());
+}
+
+void menu_shot_renderer(SDL_Renderer *renderer) {
+    if (!menu_shot_wanted()) {
+        return;
+    }
+    SDL_Surface *s = SDL_RenderReadPixels(renderer, nullptr);
+    menu_shot_write(s);
     SDL_DestroySurface(s);
 }
 
@@ -333,10 +343,6 @@ void port_menu_open_gpu(SDL_Window *window, SDL_GPUDevice *device) {
     info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
     ImGui_ImplSDLGPU3_Init(&info);
     port_log("menu: Dear ImGui %s on SDL_GPU", IMGUI_VERSION);
-    if (!mn.shot.empty()) {
-        port_log("menu: shot: the software renderer's present only; none from the hardware renderer");
-        mn.shot_done = true;
-    }
 }
 
 void port_menu_close(void) {
@@ -433,6 +439,22 @@ void port_menu_render_gpu(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *swapchain) {
         SDL_EndGPURenderPass(pass);
     }
     mn.drawn++;
+}
+
+int port_menu_shot_due(void) {
+    // the draw this present makes is the one the shot wants (port_menu_render_gpu counts it)
+    return menu_ready_to_draw() && mn.device != nullptr && !mn.shot.empty() && !mn.shot_done && mn.drawn + 1 >= 2;
+}
+
+void port_menu_shot_save(const void *pixels, int w, int h, int bgra) {
+    if (!menu_shot_wanted()) {
+        return;
+    }
+    SDL_Surface *s = pixels != nullptr ? SDL_CreateSurfaceFrom(w, h, bgra ? SDL_PIXELFORMAT_BGRX32 : SDL_PIXELFORMAT_RGBX32,
+                                                               const_cast<void *>(pixels), w * 4)
+                                       : nullptr;
+    menu_shot_write(s);
+    SDL_DestroySurface(s);
 }
 
 } // extern "C"

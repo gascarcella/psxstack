@@ -16,7 +16,8 @@
  * - `--wav FILE` (any build, headless too): the samples as a RIFF WAV, 44,100 Hz, 2 channels, signed 16-bit
  *   little-endian; the header's sizes are written at port_audio_close (port_exit): a run that is killed leaves them 0.
  *   Its length is (vsyncs rendered) x 882 x 4 bytes + the 44-byte header at 50 Hz.
- * - The device (a build with -DPSXSTACK_SDL=ON, window mode, unless --mute): an SDL3 audio stream (SDL resamples to the
+ * - The device (a build with -DPSXSTACK_SDL=ON, window mode, unless --mute or audio.mute; a game started with
+ *   audio.mute opens it when the in-game menu switches the mute off): an SDL3 audio stream (SDL resamples to the
  *   device's own format), fed the same samples. The window's pace (pump.c: vsync n due at n / fps seconds of
  *   CLOCK_MONOTONIC) and the device's sample clock are two clocks: they drift apart (a few hundred ppm on real hardware;
  *   a slow host or a pause makes it seconds). The queue (the frames put into the stream and not yet played, measured
@@ -109,6 +110,8 @@ static void audio_wav_write(const int16_t *s, int frames) {
 #define AUDIO_REPORT_SEC 10
 
 static SDL_AudioStream *audio_stream;
+static int audio_device_tried; /* audio_device_open ran: a device that failed is not asked for again */
+static int audio_paused;       /* the pump's pause (port_audio_pause): a device opened in it starts paused */
 static int audio_vsync_frames; /* V: one vsync's frames, nominal */
 static int audio_period;       /* P: the frames the device pulls at once */
 static int audio_target, audio_low, audio_high, audio_max;
@@ -158,6 +161,7 @@ static void audio_report(const char *what, long long vsyncs, int min, int max, d
 static void audio_device_open(void) {
     SDL_AudioSpec spec, dev;
     int frames = 0;
+    audio_device_tried = 1;
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         port_log("audio: no audio (SDL_InitSubSystem: %s); the run goes on silent", SDL_GetError());
         return;
@@ -187,7 +191,9 @@ static void audio_device_open(void) {
     port_log("audio: SDL audio driver %s, device %d Hz %d channels, %d frames a period; queue target %.1f ms (band "
              "%.1f..%.1f, drop above %.1f)", SDL_GetCurrentAudioDriver(), dev.freq, dev.channels, frames,
              audio_ms(audio_target), audio_ms(audio_low), audio_ms(audio_high), audio_ms(audio_max));
-    SDL_ResumeAudioStreamDevice(audio_stream);
+    if (!audio_paused) {
+        SDL_ResumeAudioStreamDevice(audio_stream);
+    }
 }
 
 static void audio_put(const void *data, int frames) {
@@ -333,8 +339,12 @@ void port_audio_set_mute(int mute) {
 
 void port_audio_set_user_mute(int mute) {
 #ifdef PSXSTACK_SDL
-    if (!mute && audio_stream == NULL && port_window) {
-        port_log("audio: the game started muted (no audio device): sound at the next start");
+    /* a game started muted has no device: unmuted in the menu, it opens now (in the menu's pause: paused until the
+     * game goes on); one that failed to open is not asked for again, and --mute alone keeps it shut (the settings'
+     * value at the start is main.c's first call here, so only a change of audio.mute opens it) */
+    if (audio_mute_user && !mute && audio_stream == NULL && port_window && !audio_device_tried) {
+        port_log("audio: unmuted: the device opens");
+        audio_device_open();
     }
 #endif
     audio_mute_user = mute;
@@ -343,6 +353,7 @@ void port_audio_set_user_mute(int mute) {
 
 void port_audio_pause(int paused) {
 #ifdef PSXSTACK_SDL
+    audio_paused = paused;
     if (audio_stream != NULL) {
         if (paused) {
             SDL_PauseAudioStreamDevice(audio_stream);
