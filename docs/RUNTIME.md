@@ -70,7 +70,7 @@ cmake -S port -B build/port-sdl -G Ninja -DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON   
 `menu` hotkey (Escape, or Back+Start on a gamepad), in a pause; docs/LAUNCHER.md "In-game menu". The game then
 links as C++ (`launcher/ui/`, Dear ImGui from `tools/imgui`); without the option nothing of it is in the binary. A
 change made in the menu is written to the settings file and applied live where the runtime can (`runtime/live.c`).
-`<PREFIX>_PORT_MENU_SHOT=PATH` writes the window with the menu up as a PNG (the software renderer), on the page
+`<PREFIX>_PORT_MENU_SHOT=PATH` writes the window with the menu up as a PNG (either renderer), on the page
 `<PREFIX>_PORT_MENU_SCREEN` names (`mods:<id>` with a mod chosen, `controls:<tab>` on a tab of Controls), at the size `<PREFIX>_PORT_MENU_WINDOW=WxH` gives
 the window (with `SDL_RENDER_DRIVER=software`).
 SDL's backends follow the `-dev` headers present when `setup.sh sdl3` runs: missing optional ones are turned off one by
@@ -501,7 +501,8 @@ build/port-sdl/<game> --disc <disc>.cue --window --mute     # no device
 SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=out.raw build/port-sdl/<game> --disc <disc>.cue --window --max-frames 3000
 ```
 `--wav FILE`: 44,100 Hz, stereo, signed 16-bit little-endian PCM; the header's sizes are written at exit
-(`port_exit`), so the file is `44 + vsyncs × 882 × 4` bytes (every vsync of the run, the last one too). The window's device (unless `--mute`) is an SDL3 audio stream fed the
+(`port_exit`), so the file is `44 + vsyncs × 882 × 4` bytes (every vsync of the run, the last one too). The window's device (unless `--mute` or `audio.mute`; a game started with
+`audio.mute` opens it when the in-game menu switches the mute off) is an SDL3 audio stream fed the
 same samples. Its clock and the window's pace (`CLOCK_MONOTONIC`, `pump.c`) drift apart; the queue (frames put and
 not yet played, measured before each vsync's put) is held without touching the game's timing or the samples: a moving
 average above the band (target ± one vsync, target = the device's period + two vsyncs: 63 ms ± 20 ms at 1,024 frames)

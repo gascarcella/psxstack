@@ -47,6 +47,17 @@ void port_menu_render_gpu(struct SDL_GPUCommandBuffer *cb, struct SDL_GPUTexture
     (void)swapchain;
 }
 
+int port_menu_shot_due(void) {
+    return 0;
+}
+
+void port_menu_shot_save(const void *pixels, int w, int h, int bgra) {
+    (void)pixels;
+    (void)w;
+    (void)h;
+    (void)bgra;
+}
+
 #else
 typedef int psxstack_menu_c_is_empty; /* ISO C forbids an empty translation unit */
 #endif
