@@ -151,7 +151,8 @@ C the game compiles into the port alongside the runtime. It implements:
   hooks are the game's; the option types, the manifest reader, the hotkeys, `--print-mods`, the settings section and
   the stack's own mods (fast-forward and faster loading, which every game gets) belong to the stack. The manifests (`mods/<id>/mod.json`) sit in the game
   repo and the build copies them next to the binary; `port_video_widescreen_enable()` and `port_video_widescreen(on)`
-  let a game mod show the scenes it names 16:9 (the hardware renderer's wide canvas: docs/PORT.md "Rendering");
+  let a game mod show the scenes it names wide, at the window's aspect up to 16:9 (the hardware renderer's wide
+  canvas: docs/PORT.md "Rendering");
   `port_fast_forward_request()` lets a game mod ask for
   fast-forward.
 - **Save states:** `game_savestate(PortState *s)` names the adapter's own state that lives across vsyncs outside the

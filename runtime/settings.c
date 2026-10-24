@@ -5,6 +5,7 @@
  *     "disc":     { "path": "dw2003.cue", "sha1": "457cb233..." },          none / none
  *     "video":    { "window": true, "scale": 2, "fullscreen": false, "refresh": 50, "renderer": "software",
  *                   "internal_scale": 1,
+ *                   "scaling": "fit",
  *                   "subpixel": "on",
  *                   "filter": "none",
  *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 },
@@ -159,6 +160,7 @@ static void settings_parse(PortSettings *s, const char *path) {
                                             "input", "mods", "mod_order", "launcher", NULL };
     static const char *const disc_keys[] = { "path", "sha1", NULL };
     static const char *const video_keys[] = { "window", "scale", "fullscreen", "refresh", "renderer", "internal_scale",
+                                              "scaling",
                                               "subpixel",
                                               "filter",
                                               "crt",
@@ -243,6 +245,10 @@ static void settings_parse(PortSettings *s, const char *path) {
             s->gpu = v->string[0] == 'g';
         }
         settings_int(obj, "video", "internal_scale", 1, 8, &s->internal_scale);
+        if ((v = settings_member(obj, "video", "scaling", PORT_JSON_STRING)) != NULL &&
+            (s->scaling = port_scaling_from_name(v->string)) < 0) {
+            port_settings_fail("video.scaling", "\"fit\", \"integer\" or \"stretch\", not \"%s\"", v->string);
+        }
         if ((v = settings_member(obj, "video", "subpixel", PORT_JSON_STRING)) != NULL) {
             if (strcmp(v->string, "off") != 0 && strcmp(v->string, "on") != 0 &&
                 strcmp(v->string, "perspective") != 0) {
@@ -344,6 +350,7 @@ void port_settings_print(FILE *f, const PortSettings *s) {
                "    \"refresh\": %d,\n    \"renderer\": \"%s\",\n    \"internal_scale\": %d",
             s->window ? "true" : "false", s->scale, s->fullscreen ? "true" : "false", s->refresh,
             s->gpu ? "gpu" : "software", s->internal_scale);
+    fprintf(f, ",\n    \"scaling\": \"%s\"", port_scaling_names[s->scaling]);
     fprintf(f, ",\n    \"subpixel\": \"%s\"", s->subpixel == 2 ? "perspective" : s->subpixel ? "on" : "off");
     fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
     fprintf(f, ",\n    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }", s->crt_scanlines, s->crt_mask,

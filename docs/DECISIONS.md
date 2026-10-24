@@ -145,7 +145,10 @@ a display buffer a second time into a wider canvas in a strip of its target besi
 textures sit beside the buffers), with full-screen untextured 2D stretched. The game's command stream, the frame hash
 and the software picture do not change; the VRAM part stays exact. Rejected: squeezing the GTE's projection (it
 changes what the game draws and stretches every 2D sprite). The game names the scenes (`port_video_widescreen`); a
-scene whose 2D ends at the screen's edge stays 4:3. The first game's issue #71 has the measurements.
+scene whose 2D ends at the screen's edge stays 4:3. The first game's issue #71 has the measurements. Since
+2026-10-24 the canvas follows the window's aspect up to 16:9 ("The picture fits the screen; whole multiples are a
+choice"): 16:9 is the widest the first game's scenes were checked at, and a 16:10 screen gets a 16:10 picture instead
+of a 16:9 one with bars.
 
 ## Texture keys by content, SHA-1, per VRAM word (2026-10-08)
 Texture replacement (docs/PORT.md "Texture replacement") names a texture by the transfer that loaded it and by its
@@ -281,6 +284,17 @@ every change waits for Steam to be closed; the launcher asks, it never stops Ste
 launcher (the AppImage path the self-update keeps), so an update needs no change in Steam. The artwork is the game's
 choice (game.json `launcher.steam_art`, optional): embedded in the launcher at build time, so a release stays the
 launcher and the game with nothing beside them, and written as the files Steam's own grid folder holds per appid.
+
+## The picture fits the screen; whole multiples are a choice (2026-10-24)
+
+The picture is placed by `video.scaling`, `"fit"` by default: as large as the window or the screen allows at its
+aspect. It used to be as tall as a whole multiple of the image's lines fits (every line the same height), which on a
+screen that is not such a multiple wastes much of it: 720 of the Steam Deck's 800 lines, 960 of 1080, and a 16:9
+picture a few pixels too wide for any 16:9 screen (428 columns at 4:3's pixel aspect is 1.3375 times 4:3, not 4/3)
+dropped a whole multiple, smaller than the 4:3 field. Integer scaling stays (`"integer"`) for those who want even
+lines, and `"stretch"` fills the screen out of shape. The wide canvas is now rounded down to whole columns (426 at
+16:9), so a whole multiple of it fits: integer shows it pixel for pixel, fit and stretch spread it to the screen's
+aspect (less than a column). Uneven lines at fit are what the `sharp` filter and the internal scale are for.
 
 ## Player 2: a gamepad by connection order, off by default, never a hotkey (2026-10-24)
 

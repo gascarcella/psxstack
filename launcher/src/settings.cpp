@@ -295,6 +295,11 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
             s.filter = "none";
         }
+        read_string(video, "video", "scaling", &s.scaling, w);
+        if (std::find(std::begin(SCALING_NAMES), std::end(SCALING_NAMES), s.scaling) == std::end(SCALING_NAMES)) {
+            warn(w, "video.scaling: expected \"fit\", \"integer\" or \"stretch\"; using \"fit\"");
+            s.scaling = "fit";
+        }
         read_string(video, "video", "menu_size", &s.menu_size, w);
         if (std::find(std::begin(MENU_SIZE_NAMES), std::end(MENU_SIZE_NAMES), s.menu_size) == std::end(MENU_SIZE_NAMES)) {
             warn(w, "video.menu_size: expected \"smaller\", \"auto\" or \"larger\"; using \"auto\"");
@@ -387,6 +392,9 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("subpixel", Json::string(s.subpixel));
     if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
         video.set("filter", Json::string(s.filter));
+    }
+    if (s.scaling != "fit" || video.find("scaling") != nullptr) { // as video.filter
+        video.set("scaling", Json::string(s.scaling));
     }
     if (s.menu_size != "auto" || video.find("menu_size") != nullptr) { // as video.filter
         video.set("menu_size", Json::string(s.menu_size));

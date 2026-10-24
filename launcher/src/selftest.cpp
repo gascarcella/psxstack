@@ -243,6 +243,31 @@ static void test_settings_file(const std::string &root) {
         g.load(sp);
         check(g.messages().size() == 1 && g.values.subpixel == "on", "a bad video.subpixel: one warning, \"on\"");
     }
+    // video.scaling: not added to a file that never chose one; "integer" read and written back; a bad value warned
+    // about, "fit" used.
+    {
+        const std::string sc = path_join(root, "scaling");
+        path_make_dir(sc, nullptr);
+        write(path_join(sc, SETTINGS_FILE), R"({"schema":1})");
+        SettingsFile f;
+        f.load(sc);
+        f.values.mute = true;
+        check(f.values.scaling == "fit" && f.save(&err) &&
+                  Json::parse(read(f.path()), nullptr).find("video")->find("scaling") == nullptr,
+              "a file that never chose a scaling gets no video.scaling");
+        write(path_join(sc, SETTINGS_FILE), R"({"schema":1,"video":{"scaling":"integer"}})");
+        SettingsFile h;
+        h.load(sc);
+        check(h.messages().empty() && h.values.scaling == "integer", "video.scaling \"integer\" is read");
+        h.values.scaling = "stretch";
+        check(h.save(&err) && Json::parse(read(h.path()), nullptr).find("video")->find("scaling")->as_string() ==
+                                  "stretch",
+              "video.scaling is written");
+        write(path_join(sc, SETTINGS_FILE), R"({"schema":1,"video":{"scaling":"zoom"}})");
+        SettingsFile g;
+        g.load(sc);
+        check(g.messages().size() == 1 && g.values.scaling == "fit", "a bad video.scaling: one warning, \"fit\"");
+    }
     // video.menu_size (the in-game menu's): not added to a file that never chose one; "larger" read and written back;
     // a bad value warned about, "auto" used.
     {

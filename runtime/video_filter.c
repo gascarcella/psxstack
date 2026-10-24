@@ -1,5 +1,5 @@
 /* The present's filters by name (port_harness.h "PortFilter"; docs/RUNTIME.md "The window"): `--filter
- * NAME[:KEY=V,...]` and video.filter. In every build: the headless build reads the same settings and options, and
+ * NAME[:KEY=V,...]` and video.filter; the scaling modes too (`--scaling`, video.scaling). In every build: the headless build reads the same settings and options, and
  * only the hardware renderer (render_gpu_present.c) draws them. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +8,18 @@
 #include "port_harness.h"
 
 const char *const port_filter_names[PORT_FILTER_COUNT] = { "none", "sharp", "scanlines", "crt", "smooth" };
+
+const char *const port_scaling_names[PORT_SCALING_COUNT] = { "fit", "integer", "stretch" };
+
+int port_scaling_from_name(const char *name) {
+    int i;
+    for (i = 0; i < PORT_SCALING_COUNT; i++) {
+        if (strcmp(name, port_scaling_names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
 
 /* The parameters a filter takes (`--filter NAME:KEY=V`): a bit per entry of keys[]. */
 static const char *const keys[] = { "scanlines", "mask", "curvature" };

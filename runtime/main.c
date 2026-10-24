@@ -51,7 +51,8 @@ static void usage(const char *argv0) {
             "          [--disc CUE|BIN] [--no-disc-check] [--cd-speed instant|realistic] [--memcard1|2 MCD|none]\n"
             "          [--script JSON]\n"
             "          [--log FILE] [--record FILE] [--max-frames N] [--watchdog SEC] [--trace]\n"
-            "          [--window] [--scale N] [--fullscreen] [--fps N] [--input-test] [--screenshot FRAME:PATH]\n"
+            "          [--window] [--scale N] [--fullscreen] [--scaling fit|integer|stretch] [--fps N] [--input-test]\n"
+            "          [--screenshot FRAME:PATH]\n"
             "          [--renderer software|gpu] [--internal-scale N] [--gpu-screenshot FRAME[@WxH]:PATH]\n"
             "          [--subpixel off|on|perspective]\n"
             "          [--filter NAME[:KEY=V,...]]\n"
@@ -94,6 +95,9 @@ static void usage(const char *argv0) {
             "                   script owns the pad\n"
             "  --scale N        the window's size: 320*N x 240*N (default 2; implies --window)\n"
             "  --fullscreen     a fullscreen window (implies --window)\n"
+            "  --scaling S      the picture's size in the window: fit (default: as large as it fits at its aspect),\n"
+            "                   integer (a whole multiple of its lines: every line the same height, bars around it)\n"
+            "                   or stretch (the whole window); --gpu-screenshot's @WxH too; overrides video.scaling\n"
             "  --fps N          the window's pace and the nominal rate: N vsyncs per second (default "
             PSXSTACK_STR(PSXSTACK_GAME_RATE) ", the game's video.rate;\n"
             "                   0: unthrottled at that rate)\n"
@@ -168,7 +172,7 @@ int main(int argc, char **argv) {
     int memcard_given[2] = { 0, 0 };
     int disc_check = 1, max_frames_given = 0;
     int window = 0, scale = 2, fullscreen = 0, input_test = 0, gpu = 0, gpu_shots = 0, internal_scale = 1;
-    int subpixel = 1, no_game = 0;
+    int subpixel = 1, no_game = 0, scaling = PORT_SCALING_FIT;
     const char *config = NULL;
     const char *quick_state = NULL;
     PortFilter filter = PORT_FILTER_DEFAULTS;
@@ -188,6 +192,7 @@ int main(int argc, char **argv) {
         window = port_settings.window;
         scale = port_settings.scale;
         fullscreen = port_settings.fullscreen;
+        scaling = port_settings.scaling;
         gpu = port_settings.gpu;
         internal_scale = port_settings.internal_scale;
         subpixel = port_settings.subpixel;
@@ -257,6 +262,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--fullscreen") == 0) {
             fullscreen = 1;
             window = 1;
+        } else if (strcmp(argv[i], "--scaling") == 0 && i + 1 < argc) {
+            if ((scaling = port_scaling_from_name(argv[++i])) < 0) {
+                fprintf(stderr, "port: --scaling: fit, integer or stretch\n");
+                return 64;
+            }
         } else if (strcmp(argv[i], "--fps") == 0 && i + 1 < argc) {
             fps = number(argv[i + 1], argv[i]);
             i++;
@@ -383,6 +393,7 @@ int main(int argc, char **argv) {
         eff.window = window;
         eff.scale = scale;
         eff.fullscreen = fullscreen;
+        eff.scaling = scaling;
         eff.mute = mute;
         eff.watchdog = port_watchdog_sec;
         eff.refresh = refresh;
@@ -424,6 +435,7 @@ int main(int argc, char **argv) {
     port_video_set_renderer(gpu ? "gpu" : "software");
     port_video_set_internal_scale(internal_scale);
     port_video_set_subpixel(subpixel);
+    port_video_set_scaling(scaling);
     port_video_set_filter(&filter);
     if (window && !port_video_available()) {
         fprintf(stderr, "port: --window: this build has no window: configure with -DPSXSTACK_SDL=ON "

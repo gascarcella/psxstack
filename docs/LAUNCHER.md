@@ -95,6 +95,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `video.window` | bool | true | false runs headless (tests, a check run) |
 | `video.scale` | integer 1-16 | 2 | The window is 320*scale x 240*scale |
 | `video.fullscreen` | bool | false | |
+| `video.scaling` | `"fit"`, `"integer"` or `"stretch"` | `"fit"` | The picture's size in the window or on the screen (fullscreen): as large as it allows at the picture's aspect; as tall as a whole multiple of the game's lines allows (every line the same height, black bars around it); or the whole of it, out of shape. Applied live from the in-game menu. The launcher writes it once chosen. A game built before it logs the key and ignores it (it scales by whole multiples) |
 | `video.refresh` | 50 or 60 | the game's nominal rate | The nominal rate, or the game's other one ("The rate") |
 | `video.renderer` | `"software"` or `"gpu"` | `"software"` | The window's renderer: SDL_Renderer, or the hardware renderer (SDL_GPU; it falls back to software when no device can present). The launcher's "Renderer" choice. A game built before it logs the key and ignores it |
 | `video.internal_scale` | integer 1-8 | 1 | The hardware renderer's resolution, N times the PS1's (1: the software picture). The launcher's "Resolution" slider, shown for the GPU renderer |
