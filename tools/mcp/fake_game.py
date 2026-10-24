@@ -28,10 +28,8 @@ class Model:
         self.pace = 0
         self.arena = bytearray(ARENA_SIZE)
         self.state_word = bytearray(4)
-        self.pad_owner = "none"
-        self.pad = 0
-        self.pad_frames = 0
-        self.pad_release = 0
+        # per port (0, and 1: the second pad): owner, buttons, frames left held, frames left released
+        self.pads = [{"owner": "none", "buttons": 0, "frames": 0, "release": 0} for _ in range(2)]
         self.want_reset = False
         self.want_load = None
         self.want_quit = None
@@ -46,13 +44,14 @@ class Model:
 
     def tick(self):
         self.frame += 1
-        if self.pad_owner == "debug":
-            if self.pad_frames > 0:
-                self.pad_frames -= 1
-                if self.pad_frames == 0:
-                    self.pad = 0
-            elif self.pad_release > 0:
-                self.pad_release -= 1
+        for p in self.pads:
+            if p["owner"] == "debug":
+                if p["frames"] > 0:
+                    p["frames"] -= 1
+                    if p["frames"] == 0:
+                        p["buttons"] = 0
+                elif p["release"] > 0:
+                    p["release"] -= 1
 
     def read(self, ps1, addr, n):
         if ps1:
@@ -101,7 +100,9 @@ def handle(m: Model, req: dict) -> dict:
     if op == "status":
         return {"frame": m.frame, "stage": m.stage, "file": 0, "map": m.map, "slot1_word0": 0,
                 "paused": int(m.paused), "pace": m.pace, "rate": 50, "window": 0, "script": 0,
-                "pad_owner": m.pad_owner, "pad": m.pad}
+                "pad_owner": m.pads[0]["owner"], "pad": m.pads[0]["buttons"],
+                "pad2_owner": m.pads[1]["owner"], "pad2": m.pads[1]["buttons"],
+                "pad2_connected": int(m.pads[1]["owner"] == "debug")}
     if op == "pause":
         m.paused = True
         return {"frame": m.frame}
@@ -126,16 +127,19 @@ def handle(m: Model, req: dict) -> dict:
         m.write(op == "poke_ps1", num(req["addr"]), data)
         return {"len": len(data)}
     if op == "pad":
-        m.pad_owner = "debug"
-        m.pad = num(req["buttons"]) & 0xFFFF
-        m.pad_frames = num(req.get("frames", 0))
-        m.pad_release = num(req.get("release", 0))
+        port = num(req.get("port", 0))
+        if port not in (0, 1):
+            raise ValueError("port: 0 or 1")
+        p = m.pads[port]
+        p.update(owner="debug", buttons=num(req["buttons"]) & 0xFFFF, frames=num(req.get("frames", 0)),
+                 release=num(req.get("release", 0)))
         if req.get("sync"):
-            for _ in range(m.pad_frames + m.pad_release):
+            for _ in range(p["frames"] + p["release"]):
                 m.tick()
         return {"frame": m.frame}
     if op == "pad_free":
-        m.pad_owner, m.pad = "none", 0
+        for port in ((0, 1) if "port" not in req else (num(req["port"]),)):
+            m.pads[port].update(owner="none", buttons=0)
         return {}
     if op == "wait":
         value = num(req["value"])

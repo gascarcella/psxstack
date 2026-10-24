@@ -255,8 +255,9 @@ bare binary, the replays and the goldens are unchanged. The ops:
 - `status`: frame, stage, file, map, paused, pace, pad owner. `pause` / `resume`: hold the game at the next vsync
   boundary (the pump's pause, shared with the window's pause key). `step frames`: exactly N vsyncs, then pause.
 - `wait`: run until a host or PS1 read, the stage or the map equals a value, or a timeout in frames; leaves the game
-  paused. `pad buttons frames release [sync]`: the channel owns pad 1 (`psyq_pad_set` each vsync) until `pad_free`;
-  a script keeps precedence; the window keeps pad 2.
+  paused. `pad buttons frames release [sync] [port]`: the channel owns that port (0 by default, 1 the second pad,
+  connected while owned; `psyq_pad_set` each vsync) until `pad_free`; a script keeps precedence; the window keeps the
+  ports the channel does not own.
 - `peek` / `poke`: raw host memory, any range `/proc/self/maps` says is mapped (a bad address never faults the game).
   `peek_ps1` / `poke_ps1`: a PS1 address, through the adapter's state map first (`game_state_host`, 1/2/4 bytes: the
   host objects behind PS1 addresses, an overlay's globals in the slots among them), else the arena (from the first
@@ -583,8 +584,8 @@ main thread and reports its registers and stack. The `.dmp` opens in WinDbg or V
 stack overflow gets the text (the filter runs on what the guard page leaves) and perhaps no dump.
 
 ## Known limitations
-- **Pads:** digital pads on port 0 and, from the window's input only, port 1; no analog mode, no rumble (`PadSetAct` is
-  accepted and ignored), no multitap. The script and the debug channel drive port 0 only.
+- **Pads:** digital pads on port 0 and port 1 (the window's `input.player2`, a script's `pad2`, the debug channel's
+  `port`); no analog mode, no rumble (`PadSetAct` is accepted and ignored), no multitap.
 - **No reset key** in the window (the console reset exists only as a script step and a debug-channel op).
 - **Timing stand-ins:** the CD seek times (3 ticks + 1 per 8192 sectors, at most 40) and `StGetNext`'s 5000 polls
   per vsync are estimates, not measurements.

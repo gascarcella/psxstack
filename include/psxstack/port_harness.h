@@ -220,7 +220,8 @@ void port_mods_data_start(int active);
  * (step, wait, a synced pad), then the socket's requests; a reset it was asked for is requested at its end.
  * port_debug_poll_paused: the requests only (pump.c's pause loop, every poll). port_debug_resumed: after the pause
  * loop (a reset asked for while paused runs here). port_debug_close: from port_exit (the socket file unlinked).
- * port_debug_pad_owned: the channel owns the pad (a pad op until pad_free): input.c sends nothing to the pad. */
+ * port_debug_pad_owned: the ports the channel owns, bit p for port p (a pad op on it until pad_free): input.c sends
+ * nothing to those. */
 extern int port_debug_active;
 extern int port_debug_pad_owned;
 void port_debug_open(const char *path);

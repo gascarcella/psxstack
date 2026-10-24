@@ -288,14 +288,16 @@ class Game:
         return self.request("poke_ps1", addr=int(addr), data=bytes(data).hex())["len"]
 
     def pad(self, buttons, frames: int = 0, release: int = 0, sync: bool = False,
-            timeout: float | None = None) -> int:
-        """Own the pad and press `buttons` (a mask or names) for `frames` vsyncs (0 = until the next pad op), then
-        `release` frames of nothing. With sync the call returns after frames + release vsyncs (deferred)."""
+            timeout: float | None = None, port: int = 0) -> int:
+        """Own the pad on `port` (0, or 1: the second pad, connected while owned) and press `buttons` (a mask or
+        names) for `frames` vsyncs (0 = until the next pad op), then `release` frames of nothing. With sync the call
+        returns after frames + release vsyncs (deferred)."""
         return self.request("pad", timeout_s=timeout if sync else 10.0, buttons=button_mask(buttons),
-                            frames=int(frames), release=int(release), sync=bool(sync))["frame"]
+                            frames=int(frames), release=int(release), sync=bool(sync), port=int(port))["frame"]
 
-    def pad_free(self) -> dict:
-        return self.request("pad_free")
+    def pad_free(self, port: int | None = None) -> dict:
+        """Give `port` back to the window (or to nobody), or every port the channel owns."""
+        return self.request("pad_free") if port is None else self.request("pad_free", port=int(port))
 
     def wait(self, addr: int | None = None, ps1: int | None = None, ps1_stage: int | None = None,
              ps1_map: int | None = None, value: int | None = None, size: int = 4, signed: bool = False,

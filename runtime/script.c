@@ -14,7 +14,9 @@
  *
  * The buttons are the physical pad's (PCSX.CONSTS.PAD.BUTTON numbers them as the PS1 pad's bits, which psyq_pad_set
  * takes, active high); the game itself rotates the face buttons for non-Japanese languages (pad_read_buttons), so they
- * pass through unchanged. Numbers in a script may be JSON numbers or hex strings ("0x2D7"). Anything a step does not
+ * pass through unchanged. The script owns both ports: port 1 is empty unless the script says `"pad2": true` (a pad
+ * there from the start, nothing pressed), and then a `press` step with `"port": 1` holds its buttons there (run.lua's
+ * second pad, SIO0 slot 2); the other steps drive port 0. Numbers in a script may be JSON numbers or hex strings ("0x2D7"). Anything a step does not
  * define (`comment`, ...) is ignored, as run.lua ignores it; everything it defines is checked when the script is
  * loaded (run.lua would fail only on reaching the step), except a wait_mem or write_mem address, which is fatal (status
  * 1) only when its step runs if the port does not map it, so the steps before it still run. A step's start goes to
@@ -87,6 +89,7 @@ typedef struct ScriptStep {
     int has_repeat;
     long repeat;   /* press */
     u16 buttons;   /* press */
+    int port;      /* press: 0, or 1 (the script's pad2) */
     double x, y, tol; /* walk */
     char *name;    /* checkpoint, vram (default "unnamed") */
     int no_image;  /* checkpoint with "image": false: the image is not dumped nor hashed */
@@ -104,7 +107,8 @@ static long script_max_frames;
 
 static int script_index;               /* the current step (0-based; run.lua's step_index - 1) */
 static long script_step_started = -1;  /* the frame the current step started, -1 before it runs */
-static u16 script_held;                /* the buttons held (run.lua's `held`), applied every frame */
+static int script_pad2;                /* the script's "pad2": a pad in port 1 */
+static u16 script_held[PORT_PADS];     /* the buttons held per port (run.lua's `held`, `held2`), applied every frame */
 static int script_reset_pending;       /* a `reset` step ran this frame: the console resets at the frame's end */
 static long script_frame0;              /* the frame the script started at: 0, or a loaded state's (max_frames) */
 
@@ -332,6 +336,10 @@ static void script_load_step(const PortJson *obj, ScriptStep *s, long default_ti
         break;
     case SCRIPT_PRESS:
         s->buttons = script_buttons(obj, step);
+        s->port = (int)script_frames(obj, "port", 0, 0, step);
+        if (s->port > 1 || (s->port == 1 && !script_pad2)) {
+            script_error(step, "press: `port` is 0, or 1 with the script's \"pad2\": true");
+        }
         s->frames = script_frames(obj, "frames", 2, 0, step);
         s->release = script_frames(obj, "release", 2, 0, step);
         if (s->frames + s->release == 0) {
@@ -394,7 +402,7 @@ void port_script_load(const char *path) {
     long size;
     char err[256];
     PortJson *root;
-    const PortJson *steps, *name;
+    const PortJson *steps, *name, *pad2;
     long long v;
     long default_timeout;
     size_t i;
@@ -435,6 +443,12 @@ void port_script_load(const char *path) {
     if (script_int(root, "default_timeout", &v, 0, 0)) {
         default_timeout = (long)v;
     }
+    if ((pad2 = port_json_get(root, "pad2")) != NULL) {
+        if (pad2->type != PORT_JSON_BOOL) {
+            script_error(0, "`pad2`: true or false");
+        }
+        script_pad2 = pad2->boolean;
+    }
     steps = port_json_get(root, "steps");
     if (steps == NULL || steps->type != PORT_JSON_ARRAY) {
         script_error(0, "`steps` (an array) missing");
@@ -454,8 +468,12 @@ void port_script_load(const char *path) {
 /* ---- Running */
 
 static void script_state(char *buf, size_t size) {
-    snprintf(buf, size, "frame=%ld stage=%d file=%d map=0x%X rnd=%d held=0x%04X", port_frames, game_state_stage(),
-             game_state_file(), (u32)game_state_map(), game_state_random_index(), script_held);
+    int n = snprintf(buf, size, "frame=%ld stage=%d file=%d map=0x%X rnd=%d held=0x%04X", port_frames,
+                     game_state_stage(), game_state_file(), (u32)game_state_map(), game_state_random_index(),
+                     script_held[0]);
+    if (script_pad2 && n > 0 && (size_t)n < size) {
+        snprintf(buf + n, size - (size_t)n, " held2=0x%04X", script_held[1]);
+    }
 }
 
 /* run.lua's fail(): the run ends with status 5 and the message. */
@@ -593,7 +611,7 @@ static int script_run_step(const ScriptStep *s, int *instant) {
         /* run.lua: held = {}, PCSX.hardResetEmulator() (RAM cleared, the memory cards kept), done but not instant: the
          * frame ends as any other (the released pad, the input trace, the end of the script), then port_script_frame
          * resets the console (port_reset_request: back to main(), game_main again). */
-        script_held = 0;
+        memset(script_held, 0, sizeof(script_held));
         script_reset_pending = 1;
         return 1;
     case SCRIPT_PRESS: {
@@ -601,7 +619,7 @@ static int script_run_step(const ScriptStep *s, int *instant) {
         long phase = elapsed % cycle, count = elapsed / cycle;
         if (s->has_until) {
             if (script_cond_met(&s->cond)) {
-                script_held = 0;
+                script_held[s->port] = 0;
                 *instant = 1;
                 return 1;
             }
@@ -611,10 +629,10 @@ static int script_run_step(const ScriptStep *s, int *instant) {
             }
         }
         if (phase < s->frames) {
-            script_held = s->buttons;
+            script_held[s->port] = s->buttons;
             return 0;
         }
-        script_held = 0;
+        script_held[s->port] = 0;
         if (s->has_until && !s->has_repeat) {
             return 0;
         }
@@ -623,7 +641,7 @@ static int script_run_step(const ScriptStep *s, int *instant) {
     case SCRIPT_WALK: {
         double x, y;
         int found = game_state_player_pos(&x, &y); /* run.lua player_pos, the adapter's */
-        script_held = 0;
+        script_held[0] = 0;
         if (found && fabs(s->x - x) <= s->tol && fabs(s->y - y) <= s->tol) {
             *instant = 1;
             return 1;
@@ -640,14 +658,14 @@ static int script_run_step(const ScriptStep *s, int *instant) {
         }
         if (found) {
             if (s->x - x > s->tol) {
-                script_held |= SCRIPT_BUTTON_RIGHT;
+                script_held[0] |= SCRIPT_BUTTON_RIGHT;
             } else if (x - s->x > s->tol) {
-                script_held |= SCRIPT_BUTTON_LEFT;
+                script_held[0] |= SCRIPT_BUTTON_LEFT;
             }
             if (s->y - y > s->tol) {
-                script_held |= SCRIPT_BUTTON_DOWN;
+                script_held[0] |= SCRIPT_BUTTON_DOWN;
             } else if (y - s->y > s->tol) {
-                script_held |= SCRIPT_BUTTON_UP;
+                script_held[0] |= SCRIPT_BUTTON_UP;
             }
         }
         return 0;
@@ -690,12 +708,13 @@ void port_script_frame(void) {
             break;
         }
     }
-    /* run.lua apply_pad: the held buttons on pad 1, every frame; the record's input trace gets the changes. The script
-     * owns both ports: port 1 has nothing connected (so a state saved with a second pad in goes on without it) */
-    psyq_pad_set(0, 1, script_held);
-    port_framelog_input(0, 1, script_held);
-    psyq_pad_set(1, 0, 0);
-    port_framelog_input(1, 0, 0);
+    /* run.lua apply_pad: the held buttons on each pad, every frame; the record's input trace gets the changes. The
+     * script owns both ports: port 1 has a pad only with "pad2" (so a state saved with a second pad in goes on
+     * without it) */
+    psyq_pad_set(0, 1, script_held[0]);
+    port_framelog_input(0, 1, script_held[0]);
+    psyq_pad_set(1, script_pad2, script_held[1]);
+    port_framelog_input(1, script_pad2, script_held[1]);
     if (script_index >= script_step_count) {
         port_exit(0, "script complete");
     }
@@ -713,7 +732,8 @@ void port_script_state(PortState *s) {
     char name[256];
     int index = script_index, reset_pending = script_reset_pending;
     long started = script_step_started, frame0 = script_frame0;
-    u16 held = script_held;
+    u16 held[PORT_PADS];
+    memcpy(held, script_held, sizeof(held));
     memset(name, 0, sizeof(name));
     if (!port_state_loading(s) && script_name != NULL) {
         snprintf(name, sizeof(name), "%s", script_name);
@@ -730,14 +750,14 @@ void port_script_state(PortState *s) {
     if (name[0] != '\0' && strncmp(name, script_name, sizeof(name) - 1) == 0) {
         script_index = index;
         script_step_started = started;
-        script_held = held;
+        memcpy(script_held, held, sizeof(held));
         script_reset_pending = reset_pending;
         script_frame0 = frame0;
         port_log("script: %s resumed at step %d of %d", script_name, script_index + 1, script_step_count);
     } else {
         script_index = 0;
         script_step_started = -1;
-        script_held = 0;
+        memset(script_held, 0, sizeof(script_held));
         script_reset_pending = 0;
         script_frame0 = port_frames;
         port_log("script: %s starts at the loaded frame %ld", script_name, port_frames);

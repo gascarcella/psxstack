@@ -10,7 +10,10 @@ names it, runs it for 40 vsyncs with a screenshot at vsync 30 (the software GPU:
 compares the PPM's SHA-1 with EXPECTED; --record prints the hash to put there. Then the script check: a script's
 write_mem steps (a value, a masked value, `data`; through the example's adapter probe, examples/hello/adapter.c, and
 into the arena) read back by wait_mem in the same frame (timeout 0), and a write to an address nothing maps ends the
-run with status 1. Exit 0 pass, 1 fail, 2 missing tool.
+run with status 1. Then the second pad (PAD2): a script with "pad2" and a press on port 1 traces port 1 in its log and
+record, and hello (which tints its gradient from pad 2) draws another picture than with the press on port 0 or none; a
+press on port 1 without "pad2", and a "pad2" that is not a boolean, are refused when the script loads. Exit 0 pass, 1
+fail, 2 missing tool.
 --exe tests a given build instead (CI: the Windows cross-build with -DPSXSTACK_SDL=ON); --wine runs it through `wine`
 (the prefix build/wine-prefix unless WINEPREFIX names one); --gpu also takes the hardware renderer's picture of the
 same vsync (an SDL build), which must be the software one byte for byte when a device opens (on Windows, Direct3D 12
@@ -43,6 +46,54 @@ WRITES = [
     {"type": "write_mem", "addr": "0x80100000", "data": "00" * 256},
     {"type": "checkpoint", "name": "written"},
 ]
+
+
+# The second pad (#101): the same press on port 1 (with "pad2") and on port 0, and no press; hello shows a press 4
+# vsyncs after it (its read at the next vsync, its double buffer), so vsync 8 has the press of vsync 4.
+PAD2_PRESS = [{"type": "wait_frames", "frames": 3}, {"type": "press", "buttons": ["CROSS"], "frames": 4, "release": 2}]
+PAD2 = {
+    "port1": {"pad2": True, "steps": [dict(PAD2_PRESS[0]), dict(PAD2_PRESS[1], port=1)]},
+    "port0": {"steps": PAD2_PRESS},
+    "none": {"steps": [{"type": "wait_frames", "frames": 9}]},
+}
+PAD2_LOG = ["I 1 port 1 buttons 0x0000", "I 4 port 1 buttons 0x4000", "I 8 port 1 buttons 0x0000"]
+PAD2_BAD = {
+    "port1_without_pad2": ({"steps": [{"type": "press", "port": 1, "buttons": ["CROSS"]}]}, "`port` is 0, or 1"),
+    "pad2_not_bool": ({"pad2": 1, "steps": []}, "`pad2`: true or false"),
+}
+
+
+def pad2_check(runner, exe, build, env):
+    """PAD2: port 1 from a script, traced and seen by the game; the refusals."""
+    ok, shots = True, {}
+    for name, script in PAD2.items():
+        path, log, rec, shot = (build / f"pad2_{name}{ext}" for ext in (".json", ".log", ".record.json", ".ppm"))
+        path.write_text(json.dumps(dict(script, name=f"pad2_{name}", max_frames=100)))
+        shot.unlink(missing_ok=True)
+        r = subprocess.run([*runner, str(exe), "--script", str(path), "--log", str(log), "--record", str(rec),
+                            "--screenshot", f"8:{shot}"], capture_output=True, text=True, env=env, timeout=600)
+        good = r.returncode == 0 and shot.exists()
+        shots[name] = shot.read_bytes() if shot.exists() else None
+        if name == "port1" and good:
+            lines = log.read_text().splitlines()
+            entries = [e for e in json.loads(rec.read_text())["inputs"] if e.get("port") == 1]
+            good = all(l in lines for l in PAD2_LOG) and [e["frame"] for e in entries] == [1, 4, 8]
+        print(("ok   " if good else "FAIL ") + f"script pad2_{name}: status {r.returncode}"
+              + ("; port 1 in the log and the record" if name == "port1" else ""))
+        ok &= good
+    differ = shots["port1"] not in (shots["port0"], shots["none"])
+    print(("ok   " if differ else "FAIL ") + "the press on port 1 reaches the game (vsync 8: another picture than "
+          "port 0's and none's)")
+    ok &= differ
+    for name, (script, msg) in PAD2_BAD.items():
+        path = build / f"pad2_{name}.json"
+        path.write_text(json.dumps(dict(script, name=name)))
+        r = subprocess.run([*runner, str(exe), "--script", str(path), "--crash-dir", str(build / f"pad2_{name}_crash")],
+                           capture_output=True, text=True, env=env, timeout=600)
+        good = r.returncode == 1 and msg in r.stderr
+        print(("ok   " if good else "FAIL ") + f"script {name}: refused (status {r.returncode})")
+        ok &= good
+    return ok
 
 
 def script_check(runner, exe, build, env):
@@ -276,6 +327,7 @@ def main():
         else:
             print(f"skip the hardware renderer's picture: {device}")
     ok &= script_check(runner, exe, build, env)
+    ok &= pad2_check(runner, exe, build, env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
 

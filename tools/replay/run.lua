@@ -21,7 +21,8 @@
 -- Every GPU vsync (one game frame) this script:
 --   1. records transitions of (stage, file) and of the map, with the frame number;
 --   2. applies the pad buttons the current step holds (SIO0 slot 1 pad 1 override; a pressed button is a cleared
---      override bit, PCSX.CONSTS.PAD.BUTTON gives the bit numbers, the PS1 pad's own);
+--      override bit, PCSX.CONSTS.PAD.BUTTON gives the bit numbers, the PS1 pad's own); with the script's `pad2`, a
+--      second pad is connected in slot 2 (PCSX-Redux's default has none) and a press with `port = 1` holds there;
 --   3. advances the step list: press (hold buttons for N frames, then release for `release` frames; optionally
 --      `repeat`ed or repeated `until` a wait condition holds), wait_frames, wait_stage / wait_map / wait_mem (with a
 --      timeout), walk (hold the d-pad toward a field position), reset (reboot the console), write_mem (write the
@@ -65,6 +66,10 @@ if speed then PCSX.settings.spu.Speed = speed end
 print('replay: spu.Speed = ' .. tostring(PCSX.settings.spu.Speed))
 
 local pad = PCSX.SIO0.slots[1].pads[1]
+-- The second pad (runtime/script.c's port 1): connected only with the script's `pad2` (set here, so the user's
+-- PCSX-Redux configuration never decides it), before the game's first poll.
+PCSX.settings.pads[2].Connected = script.pad2 == true
+local pad2 = script.pad2 == true and PCSX.SIO0.slots[2].pads[1] or nil
 -- Buttons are the controller's physical buttons (PCSX.CONSTS.PAD.BUTTON, the PS1 pad's bit numbers: 0 SELECT, 3 START,
 -- 4 UP, 5 RIGHT, 6 DOWN, 7 LEFT, 8 L2, 9 R2, 10 L1, 11 R1, 12 TRIANGLE, 13 CIRCLE, 14 CROSS, 15 SQUARE). A game may
 -- remap them itself (the first game rotates the face buttons for non-Japanese languages): a script names the
@@ -77,6 +82,7 @@ local step_index = 1
 local step_started = nil      -- frame the current step started
 local step_phase = nil        -- for press: 'hold' or 'release'
 local held = {}               -- button name -> true, applied each frame
+local held2 = {}              -- the same on the second pad (port 1)
 local result = {
     script = script.name or '?',
     frames = 0,
@@ -84,10 +90,12 @@ local result = {
     checkpoints = {},
     overlay_sequence = {},    -- { frame, stage, file } at every change of (stage, file)
     map_sequence = {},        -- { frame, map } at every change of the map
-    inputs = {},              -- { frame, buttons } at every change of the held set (the per-frame pad trace)
+    inputs = {},              -- { frame, buttons } at every change of the held set (the per-frame pad trace); the
+                              -- second pad's { frame, port = 1, buttons } from its first frame on
 }
 local last_stage, last_file, last_map = nil, nil, nil
 local last_input_key = ''
+local last_input_key2 = nil   -- nil: the second pad's first frame is recorded (connected, as the port's record)
 
 -- Minimal JSON writer for the result (numbers, strings, booleans, arrays, string-keyed tables).
 local function is_array(t)
@@ -180,17 +188,29 @@ local function write_mem(step)
     end
 end
 
-local function apply_pad()
+-- One pad's overrides from a held set; its sorted names and their key (the record's change detection).
+local function apply_held(p, h)
     for name, bitnum in pairs(BUTTON) do
-        if held[name] then pad.setOverride(bitnum) else pad.clearOverride(bitnum) end
+        if h[name] then p.setOverride(bitnum) else p.clearOverride(bitnum) end
     end
     local names = {}
-    for name in pairs(held) do names[#names + 1] = name end
+    for name in pairs(h) do names[#names + 1] = name end
     table.sort(names)
-    local key = table.concat(names, '+')
+    return names, table.concat(names, '+')
+end
+
+local function apply_pad()
+    local names, key = apply_held(pad, held)
     if key ~= last_input_key then
         result.inputs[#result.inputs + 1] = { frame = frame, buttons = names }
         last_input_key = key
+    end
+    if pad2 then
+        names, key = apply_held(pad2, held2)
+        if key ~= last_input_key2 then
+            result.inputs[#result.inputs + 1] = { frame = frame, port = 1, buttons = names }
+            last_input_key2 = key
+        end
     end
 end
 
@@ -248,7 +268,7 @@ local function run_step(step)
     elseif t == 'reset' then
         -- Reboot the console (PCSX-Redux hardResetEmulator: RAM cleared, the memory cards stay): back to the BIOS and
         -- the title, e.g. to load a save made earlier in the same script. The frame count goes on.
-        held = {}
+        held, held2 = {}, {}
         PCSX.hardResetEmulator()
         print('replay: reset ' .. state_string())
         return true, false
@@ -256,7 +276,11 @@ local function run_step(step)
         -- One press is `frames` held + `release` released. Optional: `repeat` N presses in a row; `until` a wait
         -- condition ({type = 'wait_stage' | 'wait_map' | 'wait_mem', ...}) checked every frame, which releases the
         -- buttons and ends the step on the frame it holds (a mash through dialogue of unknown length, or a tap until
-        -- the game reacts; fails after `timeout` frames). With `until`, `repeat` is a cap, not a count.
+        -- the game reacts; fails after `timeout` frames). With `until`, `repeat` is a cap, not a count. `port = 1`:
+        -- on the second pad (the script's `pad2`); the other pad is left as it is.
+        local port = step.port or 0
+        assert(port == 0 or (port == 1 and pad2), 'press: port is 0, or 1 with the script\'s pad2')
+        local function set_held(t) if port == 1 then held2 = t else held = t end end
         local hold = step.frames or 2
         local release = step.release or 2
         local cycle = hold + release
@@ -264,7 +288,7 @@ local function run_step(step)
         local phase = elapsed % cycle
         local count = math.floor(elapsed / cycle)
         if step['until'] then
-            if condition_met(step['until']) then held = {}; return true, true end
+            if condition_met(step['until']) then set_held({}); return true, true end
             if phase == 0 and elapsed >= (step.timeout or default_timeout) then
                 fail(string.format('step %d (press until %s) timed out after %d frames', step_index,
                     step['until'].type, elapsed))
@@ -272,14 +296,15 @@ local function run_step(step)
         end
         if phase < hold then
             if verbose and phase == hold - 1 then print('replay: pressing ' .. state_string()) end
-            held = {}
+            local h = {}
             for _, b in ipairs(step.buttons) do
                 assert(BUTTON[b], 'unknown button ' .. tostring(b))
-                held[b] = true
+                h[b] = true
             end
+            set_held(h)
             return false
         end
-        held = {}
+        set_held({})
         if step['until'] and not step['repeat'] then return false end
         return phase == cycle - 1 and count >= (step['repeat'] or 1) - 1, false
     elseif t == 'walk' then

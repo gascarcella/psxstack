@@ -1397,8 +1397,11 @@ void port_input_frame(void) {
     input_poll();
     if (!port_script_active) {
         int p;
-        for (p = port_debug_pad_owned ? 1 : 0; p < PORT_PADS; p++) { /* the debug channel drives port 0 */
+        for (p = 0; p < PORT_PADS; p++) {
             int connected = input_connected(p);
+            if (port_debug_pad_owned & (1 << p)) {
+                continue; /* the debug channel drives that port */
+            }
             u16 bits = connected ? input_buttons(p) : 0;
             psyq_pad_set(p, connected, bits);
             port_framelog_input(p, connected, bits);
