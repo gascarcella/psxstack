@@ -447,6 +447,11 @@ by the stack's CI: it needs a game, its disc and its pinned emulator.
   such a checkpoint, or lacks them for one with an image, does not belong to the script: the emulator runner and the
   port test report it as a failure, and do so for an expected file as well. Dump files are numbered by the
   checkpoint's position (`cp02_x.bin` is the second checkpoint), no-image ones included.
+- **The script's second pad:** `"pad2": true` at the script's top level puts a digital pad in port 1 from the first
+  frame (nothing pressed; without it port 1 is empty on both runners: run.lua sets PCSX-Redux's pad 2 `Connected`
+  either way), and a `press` step with `"port": 1` holds its buttons there (`{"type": "press", "port": 1, "buttons":
+  ["CROSS"]}`); the other steps, and a `press` without `port`, drive port 0. A press on port 1 without `pad2` is
+  refused when the script loads. The records' `inputs` trace port 1 from its first frame (`"port": 1` entries).
 - **The script's `write_mem` step** writes PS1 memory on both runners, instantly (the next step runs in the same
   frame): `{"type": "write_mem", "addr": "0x80010000", "value": 1}` (`size` 1, 2 or 4, default 4, little-endian;
   `"mask": "0x2"` sets only the mask's bits from `value` and keeps the others), or `{"type": "write_mem", "addr": ...,

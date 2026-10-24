@@ -26,7 +26,8 @@
  *   completes; the client sends nothing else meanwhile.
  * - Ops (args -> result):
  *   status: -> frame, stage, file, map, slot1_word0, paused (0/1), pace, rate, window (0/1), script (0/1),
- *     pad_owner ("debug"/"script"/"window"/"none"), pad (u16: the buttons last set).
+ *     pad_owner ("debug"/"script"/"window"/"none"), pad (u16: the buttons last set); the same for port 1, the second
+ *     pad: pad2_owner, pad2, and pad2_connected (0/1).
  *   pause: -> frame. Holds the game at the next vsync boundary (right after this frame when handled from
  *     port_frame). Idempotent. resume: -> frame; idempotent.
  *   step: frames (>= 1, default 1) -> frame. Runs exactly `frames` vsyncs then pauses; deferred.
@@ -39,11 +40,14 @@
  *     poke_ps1: addr, data -> len; the same mapping, written.
  *   pad: buttons (u16, PS1 bit order: SELECT=0, L3, R3, START, UP, RIGHT, DOWN, LEFT, L2, R2, L1, R1, TRIANGLE,
  *     CIRCLE, CROSS, SQUARE=15; active high), frames (>= 0; 0 = hold until the next pad op), release (>= 0, default
- *     0: frames of 0 after `frames`), sync (bool, default false) -> frame. The channel owns the pad from the first
- *     pad op until pad_free (window input no longer reaches it; a script keeps precedence: "script owns the pad");
- *     each vsync it calls psyq_pad_set(0, 1, value). With sync the answer waits until frames + release vsyncs ran,
- *     and a game that was paused when the op arrived is paused again then (a driven run stays at a known frame).
- *     pad_free: releases the pad to the window (or none).
+ *     0: frames of 0 after `frames`), sync (bool, default false), port (0, the default, or 1: the second pad) ->
+ *     frame. The channel owns the port from its first pad op until pad_free (window input no longer reaches it, and
+ *     still drives the other port; a script keeps precedence: "script owns the pad"); each vsync it calls
+ *     psyq_pad_set(port, 1, value): port 1 has a pad in it while the channel owns it. With sync the answer waits
+ *     until frames + release vsyncs ran, and a game that was paused when the op arrived is paused again then (a
+ *     driven run stays at a known frame).
+ *     pad_free: port (optional) -> releases that port, or every port the channel owns, to the window (or none: port
+ *     1 then has nothing in it).
  *   wait: one of addr (host) / ps1 (PS1 address) / ps1_stage / ps1_map, with size (1/2/4), signed (bool), value,
  *     timeout (frames, default 600) -> frame, hit (0/1). Runs until the read equals value (checked once before
  *     running, then after each vsync) or timeout frames passed; deferred; leaves the game paused. ps1_stage and
@@ -64,7 +68,7 @@
  *   quit: status (default 0); answers, then port_exit(status, "debug quit").
  * - Pause semantics: `paused` means the pump holds the game between vsyncs in its pause loop; the pause key and the
  *   channel share that state. While paused the channel keeps answering peek/poke/screenshot/status/hash; step runs
- *   frames from there. A client that disconnects drops its pending op, frees the pad and resumes the game, so a dead
+ *   frames from there. A client that disconnects drops its pending op, frees the pads and resumes the game, so a dead
  *   tool never leaves the game held. */
 #ifdef _WIN32
 /* The Windows build has no channel yet (a Unix socket, poll and /proc/self/maps are POSIX): --debug is refused; the
@@ -155,13 +159,18 @@ typedef struct DebugWait {
 } DebugWait;
 static DebugWait debug_wait;
 
-/* The pad: `buttons` for `hold` more vsyncs (or forever), then 0 for `release` vsyncs, then 0. Applied once per
- * frame (debug_pad_applied_frame), at the op itself and at every later port_debug_frame. */
-static u16 debug_pad_buttons;
-static long debug_pad_hold, debug_pad_release;
-static int debug_pad_forever;
-static int debug_pad_repause; /* the sync pad op found the game paused: pause it again when done */
-static long debug_pad_applied_frame = -1;
+/* A port's pad: `buttons` for `hold` more vsyncs (or forever), then 0 for `release` vsyncs, then 0. Applied once per
+ * frame (applied_frame), at the op itself and at every later port_debug_frame, while port_debug_pad_owned has the
+ * port's bit. */
+typedef struct DebugPad {
+    u16 buttons;
+    long hold, release;
+    int forever;
+    long applied_frame;
+} DebugPad;
+static DebugPad debug_pads[PORT_PADS] = { { 0, 0, 0, 0, -1 }, { 0, 0, 0, 0, -1 } };
+static int debug_pad_sync_port; /* the port of the pending sync pad op */
+static int debug_pad_repause;   /* the sync pad op found the game paused: pause it again when done */
 
 static int debug_reset_pending, debug_reset_repause; /* a reset asked for; it was asked for while paused */
 static int debug_load_pending, debug_load_repause;   /* a load_state asked for; it was asked for while paused */
@@ -170,17 +179,24 @@ static char debug_save_path[4096];                    /* DEBUG_SAVE's file */
 
 /* ---- The socket */
 
+/* The channel lets go of a port it owns: port 0 back to a pad with nothing pressed, port 1 to nothing in it, until its
+ * next owner (the window) sets it. */
+static void debug_pad_free_port(int port) {
+    if (port_debug_pad_owned & (1 << port)) {
+        port_debug_pad_owned &= ~(1 << port);
+        psyq_pad_set(port, port == 0, 0);
+        port_framelog_input(port, port == 0, 0);
+    }
+}
+
 static void debug_disconnect(const char *why) {
     port_log("debug: client disconnected (%s)", why);
     close(debug_client_fd);
     debug_client_fd = -1;
     debug_line_n = 0;
     debug_pending = DEBUG_NONE; /* its answer has no one to go to */
-    if (port_debug_pad_owned) {
-        port_debug_pad_owned = 0;
-        psyq_pad_set(0, 1, 0);
-        port_framelog_input(0, 1, 0);
-    }
+    debug_pad_free_port(0);
+    debug_pad_free_port(1);
     port_pump_resume_request(); /* a dead tool never leaves the game held */
 }
 
@@ -463,29 +479,32 @@ static int debug_wait_hit(void) {
 
 /* ---- The pad */
 
-static void debug_pad_apply(void) {
+static void debug_pad_apply(int port) {
+    DebugPad *d = &debug_pads[port];
     u16 v = 0;
-    if (debug_pad_forever) {
-        v = debug_pad_buttons;
-    } else if (debug_pad_hold > 0) {
-        v = debug_pad_buttons;
-        debug_pad_hold--;
-    } else if (debug_pad_release > 0) {
-        debug_pad_release--;
+    if (d->forever) {
+        v = d->buttons;
+    } else if (d->hold > 0) {
+        v = d->buttons;
+        d->hold--;
+    } else if (d->release > 0) {
+        d->release--;
     }
-    psyq_pad_set(0, 1, v);
-    port_framelog_input(0, 1, v);
-    debug_pad_applied_frame = port_frames;
+    psyq_pad_set(port, 1, v);
+    port_framelog_input(port, 1, v);
+    d->applied_frame = port_frames;
 }
 
 /* Once per vsync: a sync whose frames + release vsyncs all ran is answered, then the pad gets this vsync's value
  * (unless the op itself applied it at this frame: a pad op handled at frame F sets the pad the game reads during
  * F + 1). */
 static void debug_pad_frame(void) {
+    const DebugPad *sync = &debug_pads[debug_pad_sync_port];
+    int p;
     if (!port_debug_pad_owned) {
         return;
     }
-    if (debug_pending == DEBUG_PAD_SYNC && !debug_pad_forever && debug_pad_hold == 0 && debug_pad_release == 0) {
+    if (debug_pending == DEBUG_PAD_SYNC && !sync->forever && sync->hold == 0 && sync->release == 0) {
         debug_pending = DEBUG_NONE;
         if (debug_pad_repause) {
             port_pump_pause_request(); /* a press from the paused game leaves it paused: the tool's next call finds
@@ -493,18 +512,20 @@ static void debug_pad_frame(void) {
         }
         debug_ok(&debug_pending_req, "\"frame\": %ld", port_frames);
     }
-    if (debug_pad_applied_frame != port_frames) {
-        debug_pad_apply();
+    for (p = 0; p < PORT_PADS; p++) {
+        if ((port_debug_pad_owned & (1 << p)) && debug_pads[p].applied_frame != port_frames) {
+            debug_pad_apply(p);
+        }
     }
 }
 
 /* ---- The ops */
 
-static const char *debug_pad_owner(void) {
+static const char *debug_pad_owner(int port) {
     if (port_script_active) {
         return "script";
     }
-    if (port_debug_pad_owned) {
+    if (port_debug_pad_owned & (1 << port)) {
         return "debug";
     }
     return port_window ? "window" : "none";
@@ -513,10 +534,12 @@ static const char *debug_pad_owner(void) {
 static void debug_op_status(const DebugReq *req) {
     debug_ok(req,
              "\"frame\": %ld, \"stage\": %d, \"file\": %d, \"map\": %u, \"slot1_word0\": %u, \"paused\": %d, "
-             "\"pace\": %ld, \"rate\": %ld, \"window\": %d, \"script\": %d, \"pad_owner\": \"%s\", \"pad\": %u",
+             "\"pace\": %ld, \"rate\": %ld, \"window\": %d, \"script\": %d, \"pad_owner\": \"%s\", \"pad\": %u, "
+             "\"pad2_owner\": \"%s\", \"pad2\": %u, \"pad2_connected\": %d",
              port_frames, game_state_stage(), game_state_file(), (u32)game_state_map(), port_state_slot1_word0(),
              port_pump_paused(), port_pace_get(), port_rate, port_window != 0, port_script_active != 0,
-             debug_pad_owner(), port_framelog_last_input(0));
+             debug_pad_owner(0), port_framelog_last_input(0), debug_pad_owner(1), port_framelog_last_input(1),
+             psyq_pad_present(1));
 }
 
 static void debug_op_step(const DebugReq *req, const PortJson *obj) {
@@ -572,7 +595,8 @@ static void debug_op_poke(const DebugReq *req, const PortJson *obj, int ps1) {
 }
 
 static void debug_op_pad(const DebugReq *req, const PortJson *obj) {
-    long long buttons, frames, release;
+    long long buttons, frames, release, port;
+    DebugPad *d;
     int sync;
     if (port_script_active) {
         debug_error(req, "script owns the pad");
@@ -580,17 +604,20 @@ static void debug_op_pad(const DebugReq *req, const PortJson *obj) {
     }
     if (!debug_int_req(req, obj, "buttons", 0, 0xFFFF, &buttons) ||
         !debug_int_opt(req, obj, "frames", 0, 0, 0x7FFFFFFF, &frames) ||
-        !debug_int_opt(req, obj, "release", 0, 0, 0x7FFFFFFF, &release) || !debug_bool_opt(req, obj, "sync", &sync)) {
+        !debug_int_opt(req, obj, "release", 0, 0, 0x7FFFFFFF, &release) || !debug_bool_opt(req, obj, "sync", &sync) ||
+        !debug_int_opt(req, obj, "port", 0, 0, PORT_PADS - 1, &port)) {
         return;
     }
-    port_debug_pad_owned = 1;
-    debug_pad_buttons = (u16)buttons;
-    debug_pad_forever = frames == 0;
-    debug_pad_hold = (long)frames;
-    debug_pad_release = (long)release;
-    debug_pad_apply();
-    if (sync && !debug_pad_forever) {
+    port_debug_pad_owned |= 1 << port;
+    d = &debug_pads[port];
+    d->buttons = (u16)buttons;
+    d->forever = frames == 0;
+    d->hold = (long)frames;
+    d->release = (long)release;
+    debug_pad_apply((int)port);
+    if (sync && !d->forever) {
         debug_pending = DEBUG_PAD_SYNC;
+        debug_pad_sync_port = (int)port;
         debug_pending_req = *req;
         debug_pad_repause = port_pump_paused();
         port_pump_resume_request();
@@ -599,11 +626,16 @@ static void debug_op_pad(const DebugReq *req, const PortJson *obj) {
     debug_ok(req, "\"frame\": %ld", port_frames);
 }
 
-static void debug_op_pad_free(const DebugReq *req) {
-    if (port_debug_pad_owned) {
-        port_debug_pad_owned = 0;
-        psyq_pad_set(0, 1, 0);
-        port_framelog_input(0, 1, 0);
+static void debug_op_pad_free(const DebugReq *req, const PortJson *obj) {
+    long long port;
+    if (!debug_int_opt(req, obj, "port", -1, 0, PORT_PADS - 1, &port)) {
+        return;
+    }
+    if (port < 0 || port == 0) {
+        debug_pad_free_port(0);
+    }
+    if (port < 0 || port == 1) {
+        debug_pad_free_port(1);
     }
     debug_ok(req, NULL);
 }
@@ -859,7 +891,7 @@ static void debug_handle(const char *line, size_t n) {
     } else if (strcmp(op->string, "pad") == 0) {
         debug_op_pad(&req, root);
     } else if (strcmp(op->string, "pad_free") == 0) {
-        debug_op_pad_free(&req);
+        debug_op_pad_free(&req, root);
     } else if (strcmp(op->string, "wait") == 0) {
         debug_op_wait(&req, root);
     } else if (strcmp(op->string, "screenshot") == 0) {

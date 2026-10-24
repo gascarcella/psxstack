@@ -55,6 +55,17 @@ def test_client():
         check(g.status()["pad_owner"] == "debug", "pad owner is debug")
         g.pad_free()
         check(g.status()["pad_owner"] == "none", "pad_free")
+        f = g.pad(["CROSS"], frames=1, release=1, sync=True, port=1)
+        st = g.status()
+        check(f == 12 and st["pad2_owner"] == "debug" and st["pad2_connected"] == 1 and st["pad_owner"] == "none",
+              f"pad on port 1: frame {f}, {st}")
+        g.pad(["START"], port=0)
+        g.pad_free(port=1)
+        st = g.status()
+        check(st["pad2_owner"] == "none" and st["pad2_connected"] == 0 and st["pad_owner"] == "debug",
+              f"pad_free port 1 keeps port 0: {st}")
+        g.pad_free()
+        check(g.status()["pad_owner"] == "none", "pad_free frees every port")
         r = g.wait(ps1_stage=3, timeout=100)
         check(r["hit"] == 1 and r["frame"] == 30, f"wait ps1_stage 3 -> {r}")
         r = g.wait(ps1_map=0xE02, timeout=100)
@@ -156,6 +167,17 @@ def test_server():
     check(server.pad_hold(["cross", "UP"])["mask"] == (1 << 14) | (1 << 4), "pad_hold")
     check(server.pad_release()["frame"] == 7, "pad_release")
     check(server.pad_free()["pad_owner"] == "freed", "pad_free")
+    r = server.pad_press(["circle"], 1, 1, port=1)
+    st = server.game_status()
+    check(r["port"] == 1 and st["pad2_owner"] == "debug" and st["pad2_buttons"] == [], f"pad_press port 1 {r} {st}")
+    check(server.pad_hold(["l1"], port=1)["mask"] == 1 << 10 and server.game_status()["pad2_buttons"] == ["L1"],
+          "pad_hold port 1")
+    check(server.pad_free(port=1)["port"] == 1 and server.game_status()["pad2_owner"] == "none", "pad_free port 1")
+    try:
+        server.pad_press(["START"], port=2)
+        check(False, "port 2 is a tool error")
+    except ToolError as e:
+        check("port 2" in str(e), f"port 2 -> ToolError({e})")
     r = server.mem_write("ps1:0x80082CC0", [1, -2], 4)
     check(r["written"] == 8, f"mem_write ints {r}")
     r = server.mem_read("ps1:0x80082CC0", 4, 2, signed=True)

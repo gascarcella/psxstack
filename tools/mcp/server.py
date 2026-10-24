@@ -167,6 +167,7 @@ def _status_dict(g: Game) -> dict:
     d = {"running": True, "pid": g.pid, "socket": g.socket_path, "command": g.command}
     d.update(_call(g.status))
     d["pad_buttons"] = button_names(int(d.get("pad", 0)))
+    d["pad2_buttons"] = button_names(int(d.get("pad2", 0)))
     return d
 
 
@@ -252,7 +253,8 @@ def game_stop() -> dict:
 @mcp.tool()
 def game_status() -> dict:
     """The game's status: frame, stage (overlay slot index), file (overlay file id), map, paused, pace, rate, window,
-    script, pad_owner (debug/script/window/none), pad mask and names; running=false when no game is up."""
+    script, pad_owner (debug/script/window/none), pad mask and names, the same as pad2_* for the second pad (and
+    pad2_connected); running=false when no game is up."""
     if _game is None:
         return {"running": False}
     if not _game.alive:
@@ -319,43 +321,53 @@ def game_pace(fps: int) -> dict:
 
 # ---- the pad ----
 
+def _port(port: int) -> int:
+    if port not in (0, 1):
+        raise ToolError(f"port {port}: 0 (the first pad) or 1 (the second)")
+    return port
+
+
 @mcp.tool()
-def pad_press(buttons: list[str], frames: int = 2, release: int = 2) -> dict:
+def pad_press(buttons: list[str], frames: int = 2, release: int = 2, port: int = 0) -> dict:
     """Press buttons for `frames` vsyncs then release for `release` vsyncs; returns after they ran. Names: SELECT,
     L3, R3, START, UP, RIGHT, DOWN, LEFT, L2, R2, L1, R1, TRIANGLE, CIRCLE, CROSS, SQUARE (any case; several at
-    once). The channel owns the pad from the first pad_* call until pad_free. A menu needs ~2 frames pressed; the
-    opening movie's skip needs a long hold (30/30)."""
+    once). `port` 1 is the second pad (player 2; connected while the channel owns it). The channel owns a port from
+    its first pad_* call until pad_free. A menu needs ~2 frames pressed; the opening movie's skip needs a long hold
+    (30/30)."""
     g = _require()
     try:
         mask = button_mask(buttons)
     except ValueError as e:
         raise ToolError(str(e)) from e
-    frame = _call(g.pad, mask, frames, release, True)
-    return {"frame": frame, "buttons": button_names(mask), "mask": mask}
+    frame = _call(g.pad, mask, frames, release, True, port=_port(port))
+    return {"frame": frame, "buttons": button_names(mask), "mask": mask, "port": port}
 
 
 @mcp.tool()
-def pad_hold(buttons: list[str]) -> dict:
-    """Hold buttons down until the next pad_* call (returns at once; use game_step / wait_* to run frames)."""
+def pad_hold(buttons: list[str], port: int = 0) -> dict:
+    """Hold buttons down on `port` (0, or 1: the second pad) until the next pad_* call on it (returns at once; use
+    game_step / wait_* to run frames)."""
     g = _require()
     try:
         mask = button_mask(buttons)
     except ValueError as e:
         raise ToolError(str(e)) from e
-    return {"frame": _call(g.pad, mask, 0, 0, False), "buttons": button_names(mask), "mask": mask}
+    return {"frame": _call(g.pad, mask, 0, 0, False, port=_port(port)), "buttons": button_names(mask), "mask": mask,
+            "port": port}
 
 
 @mcp.tool()
-def pad_release() -> dict:
-    """Release every button (the channel keeps owning the pad)."""
-    return {"frame": _call(_require().pad, 0, 0, 0, False)}
+def pad_release(port: int = 0) -> dict:
+    """Release every button on `port` (the channel keeps owning it)."""
+    return {"frame": _call(_require().pad, 0, 0, 0, False, port=_port(port)), "port": port}
 
 
 @mcp.tool()
-def pad_free() -> dict:
-    """Give the pad back to the window (or to nobody)."""
-    _call(_require().pad_free)
-    return {"pad_owner": "freed"}
+def pad_free(port: int | None = None) -> dict:
+    """Give `port` back to the window (or to nobody: the second pad then has nothing in it), or every port the
+    channel owns when none is given."""
+    _call(_require().pad_free, None if port is None else _port(port))
+    return {"pad_owner": "freed", "port": "all" if port is None else port}
 
 
 # ---- memory ----
