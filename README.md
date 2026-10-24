@@ -5,26 +5,164 @@ interrupt pump, software and hardware rendering, SPU, input, memory cards, setti
 save states), a Psy-Q shim, a launcher (SDL3, Dear ImGui) with mod manifests, and the build and packaging scripts. A
 game repo (a matching decompilation) adds a small adapter and gets a Linux and Windows port, a launcher and a release.
 
-It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
-`launcher/`, which consume it as a git submodule since `v0.1.0`.
+The stack contains no game code and no game data; `docs/GAME_CONTRACT.md` is the line between the two. The first
+consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp), the Digimon World 2003 decompilation.
 
-**Status: `v0.3.13`** (Add to Steam: the launcher puts the game in the player's Steam library as a non-Steam shortcut and takes it out again, `launcher.steam`, the optional artwork `launcher.steam_art` in game.json; v0.3.12 the in-game menu fitted to the screen, its Menu size, a Mods page that fits 640x480; v0.3.11 the launcher checks the game's GitHub releases and updates itself: `launcher.updates` in game.json, Update now, `--no-update-check`; v0.3.10 the mods' `stop` callback and `applies` in force, for the in-game menu's live switch; v0.3.9 the in-game menu: the launcher's Settings, Controls and Mods inside the game's window on Escape or Back+Start, applied live, `PSXSTACK_MENU`; v0.3.8 faster loading: the `fast_loading` mod, movies at the drive's rate; v0.3.7 quick save and load hotkeys, F5/F9; v0.3.6 a `write_mem` script step, a clean fiber stack under ASan; v0.3.5 a game that needs its disc says so in game.json; v0.3.4 the launcher self-test's rate, the GPU's known differences; v0.3.3 LIBC2's rand and the nominal rates; v0.3.2 a checkpoint without an image; v0.3.1 brought the second game's shim: LIBGTE, LIBGPU, LIBGS, LIBAPI, LIBCD, LIBSND, LIBCARD; v0.3.0 brought
-an optional heap, the stack's own Psy-Q declarations, fibers for a game's tasks, the replay runners; v0.2.0 brought the hardware renderer on D3D12, sub-pixel precision, filters,
-texture packs, a wide canvas and save states). Everything a game needs is here: the contract (`docs/GAME_CONTRACT.md`), the game description
-and its generator (`schema/game.schema.json`, `tools/game_gen.py`), the runtime and the Psy-Q shim (`runtime/`,
-`psyq/`), the build (`cmake/psxstack.cmake`), the launcher (`launcher/`), the tools and the docs. One game builds on
-it so far; the second will widen the shim and the contract (releases follow semver, `PSXSTACK_API` counts
-incompatible contract changes).
+## Features
 
+### Runtime
+- **Memory and overlays:** an arena that keeps the PS1's distances between the game's memory slots, an N-slot overlay
+  manager with data reset and address tables, an optional heap (docs/PORT.md "Memory arena", "Overlays").
+- **Timing:** the interrupt pump at the game's nominal rate (50 PAL, 60 NTSC), root counters, vblank handlers
+  (docs/PORT.md "Interrupts, the pump and timing").
+- **Fibers:** a game's own tasks on host stacks of the runtime's, switched where its scheduler says and preempted at
+  the end of a vsync tick (docs/PORT.md "Fibers").
+- **Disc, memory cards and movies:** the disc image with a SHA-1 check against the game's known discs, memory cards
+  as files, MDEC movies and XA audio at the drive's rate (docs/PORT.md "Disc, memory cards and movies").
+- **Save states:** save and load anywhere, F5/F9 in the window, `--save-state`/`--load-state` on the command line
+  (docs/RUNTIME.md "Save states").
+- **Crash reports:** the build, the overlays, the game's state, the log's last lines and the stack, a minidump on
+  Windows (docs/PORT.md "Crash report").
+- **Debug channel** and an MCP server over it, for driving and inspecting a running game (`tools/mcp/README.md`).
+
+### Rendering
+- **The software GPU:** the PS1's picture pixel for pixel, headless or in a window.
+- **The hardware renderer** on SDL_GPU (Vulkan; Direct3D 12 on Windows): internal resolution up to 8x, sub-pixel
+  precision from the GTE's fractions, optional perspective-correct texturing (docs/PORT.md "Rendering",
+  "Sub-pixel precision").
+- **Present filters:** sharp bilinear, scanlines, CRT, xBR (docs/RUNTIME.md "The window").
+- **Screen fit:** fit, integer or stretch scaling; a wide 16:9 canvas a game's mod can turn on for the scenes that
+  widen.
+- **Texture dumps and texture packs**, keyed by content (docs/RUNTIME.md "Texture dump", "Texture packs").
+
+### Sound and input
+- **The SPU core** and the audio device over SDL3, a WAV dump for tests (docs/RUNTIME.md "The SPU core", "Audio").
+- **Input:** keyboard and gamepads with rebindable buttons and hotkeys, a second player on a second gamepad
+  (docs/LAUNCHER.md "Input bindings").
+- **Input scripts:** replays a script drives frame by frame, the same grammar in the emulator and on the port
+  (docs/RUNTIME.md "The replay runners").
+
+### The Psy-Q shim
+- Sony's libraries reimplemented over hardware models (`gpu.c`, `gte.c`, `mdec.c`, `xa.c`), never decompiled:
+  LIBAPI, LIBC2, LIBCARD, LIBCD, LIBETC, LIBGPU, LIBGS, LIBGTE, LIBMCRD, LIBPAD, LIBPRESS, LIBSND, LIBSPU (docs/PORT.md "The Psy-Q shim").
+- The stack's own Psy-Q declarations (`include/psxstack/psyq/`), checked against a game's (`tools/psyq_decls.py`).
+
+### Launcher and in-game menu
+- **The launcher:** disc check, video, audio, memory card, controls and mods settings, the game's crash report; every
+  string from the game's description (docs/LAUNCHER.md, `launcher/README.md`).
+- **Updates:** a check against the game's GitHub releases, Update now and the launcher's own update
+  (docs/LAUNCHER.md "Updates").
+- **Add to Steam:** the game as a non-Steam shortcut with its artwork, for Steam's library, Game Mode on the Steam
+  Deck and its controller configuration (docs/LAUNCHER.md "Steam").
+- **The in-game menu:** the launcher's Settings, Controls and Mods inside the game's window on Escape or Back+Start,
+  applied live (docs/LAUNCHER.md "In-game menu").
+
+### Mods
+- Mod manifests with generated settings pages, code mods in the game, data mods from a mods directory, a load order
+  (docs/LAUNCHER.md "Mod manifest", "Data mods", "Mod runtime").
+- The stack's own mods, which every game has: `fast_forward` (hold Tab) and `fast_loading`.
+
+### Build, platforms and tools
+- **One CMake call:** `psxstack_add_game()` (`cmake/psxstack.cmake`) builds the game's C for a 64-bit host, with
+  section renaming, post-link checks and a version stamp from the game's tags.
+- **Platforms:** Linux, and Windows cross-built from Linux with llvm-mingw (tested under Wine); release packages an
+  AppImage and a Windows zip.
+- **Gates:** the host-compile inventory (`tools/port_inventory.py`), sanitizer and `-m32` builds, the replay runners
+  against PCSX-Redux (`tools/replay/`), the launcher's self-test.
+- **Reproducible tools:** `scripts/setup.sh` pins SDL3, Dear ImGui, DXC, llvm-mingw and CMake into `tools/`, no sudo.
+
+## Contents
+- [Features](#features): [Runtime](#runtime) · [Rendering](#rendering) · [Sound and input](#sound-and-input) ·
+  [The Psy-Q shim](#the-psy-q-shim) · [Launcher and in-game menu](#launcher-and-in-game-menu) · [Mods](#mods) ·
+  [Build, platforms and tools](#build-platforms-and-tools)
+- [Using it from a game](#using-it-from-a-game): [What a game provides](#what-a-game-provides) ·
+  [Adding the stack](#adding-the-stack) · [Building the port](#building-the-port) ·
+  [Building the launcher](#building-the-launcher) · [Versions and releases](#versions-and-releases)
+- [Developing](#developing): [Setup](#setup) · [Tests](#tests) · [Layout](#layout) · [Docs](#docs) ·
+  [Contributing](#contributing)
+- [Background](#background): [Status](#status) · [How it got here](#how-it-got-here)
+- [License](#license)
+
+## Using it from a game
+
+### What a game provides
+A matching decompilation whose C also compiles for a 64-bit host, plus a small adapter (`docs/GAME_CONTRACT.md`
+"What the game provides"):
+1. **`game.json`**, the game description (`schema/game.schema.json`): its id, title, discs, rate, memory slots,
+   optional updates repository and Steam artwork. It is generated into a header at configure time; nothing reads it
+   at run time.
+2. **A hook header** holding the PS1 side of every hook macro and including `<psxstack/hooks.h>` under `PC_PORT`, so
+   the matching build never depends on the stack.
+3. **The hooks in its C** (`PLATFORM_WAIT`, `OVERLAY_COPY`, `SLOT_FUNC`, …).
+4. **Adapter units** implementing `<psxstack/game.h>`, and its own mods.
+5. **The build inputs:** the unit list, the overlay list, its symbol files.
+6. **Its tests:** the goldens, the replay scripts and the emulator's probes.
+
+### Adding the stack
+The stack is a git submodule pinned at a release tag:
 ```sh
-scripts/setup.sh sdl3 imgui              # or scripts/dev_link_tools.sh ../dw2003recomp/tools to reuse built tools
-cmake -S launcher -B build/launcher -G Ninja [-DPSXSTACK_GAME_JSON=path/to/game.json] && cmake --build build/launcher
-SDL_VIDEO_DRIVER=offscreen build/launcher/dw2003-launcher --self-test build/selftest
-python3 tests/game_gen_test.py           # the description generator's test
-python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU functions on their own
+git submodule add https://github.com/gascarcella/psxstack psxstack
+git -C psxstack checkout v0.3.16
 ```
 
-## Layout
+### Building the port
+```cmake
+include(psxstack/cmake/psxstack.cmake)          # the submodule, pinned at a tag
+psxstack_add_game(mygame GAME_JSON port/game/game.json UNITS build/gen/units.txt MAIN_UNIT src/main.c
+                  OVERLAYS build/gen/overlays.txt INCLUDE_DIRS include . ADAPTER port/game/state.c ...)
+```
+`cmake/psxstack.cmake` documents every argument and docs/RUNTIME.md "Build and run" the options and the command line.
+The consumers to copy from:
+- `examples/hello`, the smallest: one unit, no overlays, no disc;
+- `examples/tasks`, the same with its work in tasks on the stack's fibers;
+- dw2003recomp's `port/CMakeLists.txt`, the first real one.
+
+### Building the launcher
+The launcher is its own CMake project, branded from the game's description:
+```sh
+cmake -S psxstack/launcher -B build/launcher -G Ninja -DPSXSTACK_GAME_JSON=... -DPSXSTACK_VERSION_ROOT=...
+cmake --build build/launcher
+```
+`launcher/README.md` has the rest, the Windows build and the self-test among it.
+
+### Versions and releases
+Releases are semver tags; a game pins one, so a change here reaches it as a reviewable pin bump. `PSXSTACK_API`
+(`include/psxstack/game.h`) counts incompatible contract changes. A game's release packages are named so the
+launcher's update check finds them (docs/GAME_CONTRACT.md "Compatibility and versions", "Releases").
+
+## Developing
+
+### Setup
+`scripts/setup.sh` builds the pinned tools into `tools/<name>` (gitignored, no sudo, idempotent):
+```sh
+scripts/setup.sh                                  # sdl3 imgui link: enough for the launcher and the tests
+scripts/setup.sh dxc llvm-mingw sdl3-windows      # the hardware renderer's shaders, the Windows cross-build
+scripts/dev_link_tools.sh ../dw2003recomp/tools   # or reuse a game checkout's built tools
+scripts/setup.sh link                             # in a git worktree: link the main checkout's
+```
+A desktop window needs SDL3 built with the X11/Wayland `-dev` headers present (docs/RUNTIME.md "The window").
+
+### Tests
+None needs a disc or a game:
+```sh
+python3 tests/hello_test.py [--menu] [--gpu]      # the smoke test: examples/hello built through psxstack_add_game()
+python3 tests/tasks_test.py [--sanitize|--m32]    # the fibers, with save states
+python3 tests/shim_test.py [--sanitize|--m32]     # the shim's deterministic pieces on their own
+python3 tests/psyq_test.py [--sanitize]           # the shim's LIBGTE and LIBGPU
+python3 tests/game_gen_test.py                    # the description generator
+python3 tests/sha256_test.py                      # runtime/sha256.c
+python3 tests/replay_test.py                      # the replay runners against a fake emulator
+python3 tools/mcp/selftest.py                     # the MCP server against a fake game
+psyq/check.sh --compile                           # the shim with -Werror against the stack's declarations
+cmake -S launcher -B build/launcher -G Ninja && cmake --build build/launcher
+SDL_VIDEO_DRIVER=offscreen build/launcher/dw2003-launcher --self-test build/selftest
+```
+CI (`.github/workflows/ci.yml`) runs these on Linux and the Windows cross-build under Wine. A change to `runtime/`,
+`psyq/`, `cmake/` or the contract is also tested against a real game: in a dw2003recomp checkout,
+`cmake -S port -B build/port -G Ninja -DPSXSTACK_DIR=/path/to/psxstack` and its `scripts/test.sh` (it needs the
+game's disc).
+
+### Layout
 
 | Path | Contents |
 |---|---|
@@ -41,25 +179,59 @@ python3 tests/psyq_test.py [--sanitize]  # the shim's LIBGTE and LIBGPU function
 | `schema/` | `game.schema.json`: the game description |
 | `examples/` | `dw2003.game.json` (the first game's description); `hello/`, a disc-free Psy-Q program built through the stack: its smoke test; `tasks/`, the same with its work in tasks on the stack's fibers |
 | `docs/` | `GAME_CONTRACT.md`, `PORT.md`, `RUNTIME.md`, `LAUNCHER.md`, `DECISIONS.md`, `THIRD_PARTY.md` |
-| `tests/` | The stack's own tests: `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, `psyq_test.py` (the shim's LIBGTE and LIBGPU, its C in `tests/psyq/`), `shim_test.py` (the shim's deterministic pieces on their own: events, the memory card's BIOS calls, `CdSearchFile`; its C in `tests/shim/`), the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
+| `tests/` | The stack's own tests: `hello_test.py`, `tasks_test.py` (the fibers, with save states), `game_gen_test.py`, `psyq_test.py` (the shim's LIBGTE and LIBGPU, its C in `tests/psyq/`), `shim_test.py` (the shim's deterministic pieces on their own: events, the memory card's BIOS calls, `CdSearchFile`; its C in `tests/shim/`), `sha256_test.py`, `replay_test.py`, the launcher's fixtures (`launcher --self-test`, `tools/mcp/selftest.py`) |
 
-## Using it from a game
-```cmake
-include(psxstack/cmake/psxstack.cmake)          # the submodule, pinned at a tag
-psxstack_add_game(mygame GAME_JSON port/game/game.json UNITS build/gen/units.txt MAIN_UNIT src/main.c
-                  OVERLAYS build/gen/overlays.txt INCLUDE_DIRS include . ADAPTER port/game/state.c ...)
-```
-`cmake/psxstack.cmake` documents every argument; `docs/GAME_CONTRACT.md` what the game provides; `examples/hello` is
-the smallest consumer (`examples/tasks` the same with its work in tasks on the stack's fibers), dw2003recomp's
-`port/CMakeLists.txt` the first real one. The launcher is its own project:
-`cmake -S psxstack/launcher -B build/launcher -DPSXSTACK_GAME_JSON=... -DPSXSTACK_VERSION_ROOT=...`.
+### Docs
+| Doc | What it covers |
+|---|---|
+| `docs/GAME_CONTRACT.md` | What a game provides and what the stack provides |
+| `docs/PORT.md` | The runtime's design: hook macros, arena, overlays, pump, shim, rendering, sound, crash report |
+| `docs/RUNTIME.md` | Building, running, options and formats |
+| `docs/LAUNCHER.md` | The launcher/game contract, the settings file, mod manifests, updates, Steam, the in-game menu |
+| `docs/DECISIONS.md` | The decisions and why |
+| `docs/THIRD_PARTY.md` | Borrowings and pinned tools |
+| `tools/mcp/README.md` | The MCP server |
+| `launcher/README.md` | Building the launcher and its self-test |
 
-## How it got here
+### Contributing
+`CONTRIBUTING.md` has the ground rules (no game code, no game data, no Psy-Q SDK; no fact about a game in the stack;
+the contract first), the gates a change runs and how a pull request is made. Problems and plans are
+[GitHub issues](https://github.com/gascarcella/psxstack/issues); `.github/CODEOWNERS` names who reviews.
 
-Built in five phases out of dw2003recomp's port (its `docs/DECISIONS.md` "The port stack lives in psxstack"): the
-contract first, the port split in place behind it, the runtime and the launcher moved here against a scratch copy
-of the game, the game converged on the submodule, then `v0.1.0`. `docs/DECISIONS.md` has the decisions.
+## Background
+
+### Status
+**`v0.3.16`.** One game builds on it so far; the second will widen the shim and the contract. The recent releases:
+- **v0.3.16:** the picture fits the screen (`video.scaling`, fit by default), the wide canvas at the window's aspect.
+- **v0.3.15:** the in-game menu on the hardware renderer; unmuting a game started muted opens the audio device.
+- **v0.3.14:** the launcher's self-test inside an AppImage.
+- **v0.3.13:** Add to Steam (`launcher.steam`, the optional artwork `launcher.steam_art`).
+- **v0.3.12:** the in-game menu fitted to the screen, its Menu size, a Mods page that fits 640x480.
+- **v0.3.11:** the launcher checks the game's GitHub releases and updates itself (`launcher.updates`, Update now,
+  `--no-update-check`).
+- **v0.3.10:** the mods' `stop` callback and `applies`, for the in-game menu's live switch.
+- **v0.3.9:** the in-game menu: the launcher's Settings, Controls and Mods inside the game's window, applied live
+  (`PSXSTACK_MENU`).
+- **v0.3.8:** faster loading: the `fast_loading` mod, movies at the drive's rate.
+- **v0.3.7:** quick save and load hotkeys, F5/F9.
+- **v0.3.6:** a `write_mem` script step, a clean fiber stack under ASan.
+- **v0.3.5:** a game that needs its disc says so in game.json.
+- **v0.3.4:** the launcher self-test's rate, the GPU's known differences.
+- **v0.3.3:** LIBC2's rand and the nominal rates.
+- **v0.3.2:** a checkpoint without an image.
+- **v0.3.1:** the second game's shim: LIBGTE, LIBGPU, LIBGS, LIBAPI, LIBCD, LIBSND, LIBCARD.
+- **v0.3.0:** an optional heap, the stack's own Psy-Q declarations, fibers for a game's tasks, the replay runners.
+- **v0.2.0:** the hardware renderer on D3D12, sub-pixel precision, filters, texture packs, a wide canvas and save
+  states.
+
+### How it got here
+It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
+`launcher/`, which consume it as a git submodule since `v0.1.0`. It was built in five phases out of dw2003recomp's
+port (its `docs/DECISIONS.md` "The port stack lives in psxstack"): the contract first, the port split in place behind
+it, the runtime and the launcher moved here against a scratch copy of the game, the game converged on the submodule,
+then `v0.1.0`. `docs/DECISIONS.md` has the decisions.
 
 ## License
 
-MIT (`LICENSE`). The stack contains no game code and no game data.
+MIT (`LICENSE`). The stack contains no game code and no game data; `docs/THIRD_PARTY.md` lists what it borrows and the
+tools it pins.

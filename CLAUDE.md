@@ -55,7 +55,7 @@ The first consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp
 | `examples/` | `dw2003.game.json` (the first game's description, a copy; the game's own is the source), `hello/` (a disc-free Psy-Q program built through the stack; `steam/` its Steam artwork, drawn by `make_art.py`), `tasks/` (the same with its work in tasks on the stack's fibers, preempted by a root counter 3 event) |
 | `tests/` | `hello_test.py`, `tasks_test.py` (the fibers, with save states), `shim_test.py` and `shim/` (the shim's deterministic pieces, no runtime), `game_gen_test.py`, `sha256_test.py` (runtime/sha256.c against FIPS 180-4 and hashlib), `fixtures/` (the launcher self-test's mod manifests and GitHub's release answers; `mods/multipliers`, the menu test's large page; `steam/`, a `shortcuts.vdf` and a `loginusers.vdf` from its `make_fixtures.py`) |
 | `docs/` | See below |
-| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers; SHA-256, tests/sha256_test.py), `mcp`, `launcher` (build + self-test; hello with the in-game menu, its input self-test; hello's own launcher, its Steam artwork embedded), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game; not run for a change to Markdown or LICENSE alone |
+| `.github/workflows/ci.yml` | Jobs: `game-gen`, `hello` (hello and tasks, the latter also under the sanitizers; SHA-256, tests/sha256_test.py), `mcp`, `launcher` (build + self-test; hello with the in-game menu, its input self-test; hello's own launcher, its Steam artwork embedded), `windows` (cross-build + self-test under Wine, hello and tasks too); no disc, no game; not run for a change to Markdown, LICENSE or CODEOWNERS alone |
 
 ## Commands
 ```sh
