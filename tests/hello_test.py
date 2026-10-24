@@ -66,7 +66,8 @@ def menu_check(build, env):
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
     the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
     build/menu.png; then the Mods page's at three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png;
-    then the input self-test again with each input.player2 that gives a second pad (PLAYER2: its players' part)."""
+    then the input self-test again with each input.player2 that gives a second pad (PLAYER2: its players' part), the
+    first also with the picture of the Controls screen's Gamepad tab at 640x480, build/menu-controls-gamepad.png."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
         if not shutil.which(tool, path=env["PATH"]):
             print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
@@ -159,7 +160,8 @@ def menu_sizes(exe, cfg, env):
 
 
 # input.player2 with a second pad (#101): the self-test's players' part puts one virtual gamepad on each port and
-# checks player 2's never fires a hotkey (the default, "off", is the first run's: both on port 0).
+# checks player 2's never fires a hotkey (the default, "off", is the first run's: both on port 0). The first run also
+# takes the menu's Gamepad tab (its Player 2 row) at the smallest window, which must fit it.
 PLAYER2 = ["second", "first"]
 
 
@@ -170,6 +172,11 @@ def players_check(exe, cfg, env):
     for mode in PLAYER2:
         (players / "settings.json").write_text(json.dumps({"schema": 1, "input": {"player2": mode}}))
         run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy")
+        shot = exe.parent / "menu-controls-gamepad.png"
+        if mode == PLAYER2[0]:
+            shot.unlink(missing_ok=True)
+            run_env.update(SDL_RENDER_DRIVER="software", HELLO_PORT_MENU_SHOT=str(shot),
+                           HELLO_PORT_MENU_SCREEN="controls:gamepad", HELLO_PORT_MENU_WINDOW="640x480")
         r = subprocess.run([str(exe), "--config", str(players / "settings.json"), "--input-test", "--fps", "0"],
                            capture_output=True, text=True, env=run_env, timeout=600)
         lines = r.stderr.strip().splitlines()
@@ -177,6 +184,12 @@ def players_check(exe, cfg, env):
                      "checks passed" in l), "no players' line")
         good = r.returncode == 0 and line.startswith(f'the players (input.player2 "{mode}")')
         print(("ok   " if good else "FAIL ") + f"the input self-test, player2 {mode}: status {r.returncode}; {line}")
+        if mode == PLAYER2[0]:
+            fit = shot_fit(lines)
+            pic = shot.exists() and shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+            print(("ok   " if fit == "nothing wider than its window" and pic else "FAIL ") +
+                  f"the Gamepad tab at 640x480: {fit}; {shot if pic else 'no PNG'}")
+            good &= fit == "nothing wider than its window" and pic
         if not good:
             print("\n".join(lines[-15:]))
         ok &= good

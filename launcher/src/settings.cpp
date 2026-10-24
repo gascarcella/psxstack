@@ -179,6 +179,11 @@ static void read_input(const Json &doc, Settings *s, std::vector<std::string> *w
             (pad ? s->gamepad : s->keyboard)[b.id] = names;
         }
     }
+    read_string(input, "input", "player2", &s->player2, w);
+    if (std::find(std::begin(PLAYER2_NAMES), std::end(PLAYER2_NAMES), s->player2) == std::end(PLAYER2_NAMES)) {
+        warn(w, "input.player2: expected \"off\", \"first\" or \"second\"; using \"off\"");
+        s->player2 = "off";
+    }
     if (const Json *hotkeys = input->find("hotkeys")) {
         if (!hotkeys->is_object()) {
             warn(w, "input.hotkeys: expected an object; using the defaults");
@@ -204,7 +209,7 @@ static void read_input(const Json &doc, Settings *s, std::vector<std::string> *w
 // removed (a file never rebound has no input at all).
 static void write_input(const Settings &s, Json *doc) {
     Json *input = doc->find("input");
-    if (input == nullptr && s.keyboard.empty() && s.gamepad.empty() && s.hotkeys.empty()) {
+    if (input == nullptr && s.keyboard.empty() && s.gamepad.empty() && s.hotkeys.empty() && s.player2 == "off") {
         return;
     }
     if (input == nullptr || !input->is_object()) {
@@ -251,6 +256,9 @@ static void write_input(const Settings &s, Json *doc) {
         if (hotkeys->members().empty()) {
             input->erase("hotkeys");
         }
+    }
+    if (s.player2 != "off" || input->find("player2") != nullptr) { // as video.menu_size
+        input->set("player2", Json::string(s.player2));
     }
     if (input->members().empty()) {
         doc->erase("input");
