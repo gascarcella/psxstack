@@ -1,7 +1,8 @@
 /* examples/hello: a disc-free Psy-Q program on psxstack, the stack's own smoke test (tests/hello_test.py). It needs
  * no game and no disc: the stack's own Psy-Q declarations (include/psxstack/psyq/), a common.h that provides the
  * type names and the host hooks, and this file. The build renames main() to game_main (the runtime
- * owns main). It draws two polygons that change with the frame and the pad, double-buffered as a PS1 program would,
+ * owns main). It draws two polygons that change with the frame and the pads (the square with pad 1, the gradient with
+ * pad 2 while one is connected: byte 0 of its buffer 0), double-buffered as a PS1 program would,
  * initialises the sound library and sets the master volume (a key-on needs a VAB, which the example has none of). */
 #include "common.h"
 #include "psxstack/psyq/libetc.h"
@@ -37,6 +38,7 @@ int main(void) {
     for (;;) {
         u32 *ot = hello_ot[db];
         u16 buttons = (u16)~(((u16)hello_pad0[2] << 8) | hello_pad0[3]); /* active high: a pressed button tints */
+        u16 buttons2 = hello_pad1[0] == 0 ? (u16)~(((u16)hello_pad1[2] << 8) | hello_pad1[3]) : 0;
         POLY_F4 *q = &hello_quad[db];
         POLY_G4 *g = &hello_grad[db];
 
@@ -48,7 +50,7 @@ int main(void) {
         setPolyG4(g);
         setRGB0(g, 255, 0, 0);
         setRGB1(g, 0, 255, 0);
-        setRGB2(g, 0, 0, 255);
+        setRGB2(g, (u8)(buttons2 & 0xFF), (u8)(buttons2 >> 8), 255);
         setRGB3(g, (u8)(frame * 5), 255, 255);
         setXY4(g, 190, 50, 300, 70, 180, 180, 290, 200);
         addPrim(ot + 2, g);

@@ -690,9 +690,12 @@ void port_script_frame(void) {
             break;
         }
     }
-    /* run.lua apply_pad: the held buttons on pad 1, every frame; the record's input trace gets the changes */
+    /* run.lua apply_pad: the held buttons on pad 1, every frame; the record's input trace gets the changes. The script
+     * owns both ports: port 1 has nothing connected (so a state saved with a second pad in goes on without it) */
     psyq_pad_set(0, 1, script_held);
-    port_framelog_input(script_held);
+    port_framelog_input(0, 1, script_held);
+    psyq_pad_set(1, 0, 0);
+    port_framelog_input(1, 0, 0);
     if (script_index >= script_step_count) {
         port_exit(0, "script complete");
     }

@@ -114,7 +114,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 
 ### Input bindings
 
-`input` has three members; `--print-settings` prints it back as it was given.
+`input` has four members; `--print-settings` prints it back as it was given.
 
 - **`keyboard`**: PS1 button -> one key name or a list of them. **`gamepad`**: PS1 button -> one gamepad input name
   or a list. A button named replaces all of that button's entries of that kind; a button that is absent keeps its
@@ -126,7 +126,12 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 - **Gamepad input names are ours** (SDL's positional buttons): `south east west north back guide start leftstick
   rightstick leftshoulder rightshoulder dpup dpdown dpleft dpright misc1 paddle1 paddle2 paddle3 paddle4 touchpad`,
   and the axes past half way: `lefttrigger righttrigger leftx- leftx+ lefty- lefty+ rightx- rightx+ righty- righty+`
-  (`lefty-` is the left stick up). Every connected gamepad is ORed into pad 1.
+  (`lefty-` is the left stick up). Every connected gamepad is ORed into pad 1, unless it is player 2's.
+- **`player2`**: `"off"` (the default), `"first"` or `"second"`: the gamepad, by connection order, that is player 2.
+  It drives pad 2 (the PS1's port 1) with the `gamepad` map; port 1 has a pad in it only while that gamepad is there
+  (a game that reads port 0 alone is unaffected); the keyboard and every other gamepad stay player 1's, and player 2's inputs never
+  fire a hotkey. `"first"` suits a player 1 on the keyboard. A gamepad unplugged and plugged in again counts as the
+  newest. Anything else ends the game with status 64.
 - **Default map** (the runtime's `input.c`): arrows the D-pad, `X` cross, `C` circle, `Z` square, `S` triangle,
   `Return` and `Keypad Enter` START, `Backspace` and `Right Shift` SELECT, `Q`/`E` L1/R1, `1`/`3` L2/R2; gamepads:
   south cross, east circle, west square, north triangle, back SELECT, start START, the shoulders L1/R1, the triggers

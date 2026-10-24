@@ -65,7 +65,8 @@ def menu_check(build, env):
     """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
     the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
-    build/menu.png; then the Mods page's at three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png."""
+    build/menu.png; then the Mods page's at three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png;
+    then the input self-test again with each input.player2 that gives a second pad (PLAYER2: its players' part)."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
         if not shutil.which(tool, path=env["PATH"]):
             print(f"hello: no {tool} on PATH (scripts/setup.sh cmake; gcc, g++ and binutils from the system)")
@@ -109,6 +110,7 @@ def menu_check(build, env):
         print("FAIL no PNG of the menu")
         ok = False
     ok &= menu_sizes(exe, cfg, env)
+    ok &= players_check(exe, cfg, env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
 
@@ -151,6 +153,31 @@ def menu_sizes(exe, cfg, env):
                 shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n")
         print(("ok   " if good else "FAIL ") + f"the Mods page at {w}x{h}, {size}: {scale}; {fit}; {shot}")
         if not good and r.returncode != 0:
+            print("\n".join(lines[-15:]))
+        ok &= good
+    return ok
+
+
+# input.player2 with a second pad (#101): the self-test's players' part puts one virtual gamepad on each port and
+# checks player 2's never fires a hotkey (the default, "off", is the first run's: both on port 0).
+PLAYER2 = ["second", "first"]
+
+
+def players_check(exe, cfg, env):
+    ok = True
+    players = cfg / "players"
+    players.mkdir(exist_ok=True)
+    for mode in PLAYER2:
+        (players / "settings.json").write_text(json.dumps({"schema": 1, "input": {"player2": mode}}))
+        run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy")
+        r = subprocess.run([str(exe), "--config", str(players / "settings.json"), "--input-test", "--fps", "0"],
+                           capture_output=True, text=True, env=run_env, timeout=600)
+        lines = r.stderr.strip().splitlines()
+        line = next((l.split("input test: ", 1)[1] for l in lines if "input test: the players (" in l and
+                     "checks passed" in l), "no players' line")
+        good = r.returncode == 0 and line.startswith(f'the players (input.player2 "{mode}")')
+        print(("ok   " if good else "FAIL ") + f"the input self-test, player2 {mode}: status {r.returncode}; {line}")
+        if not good:
             print("\n".join(lines[-15:]))
         ok &= good
     return ok

@@ -179,7 +179,7 @@ static void debug_disconnect(const char *why) {
     if (port_debug_pad_owned) {
         port_debug_pad_owned = 0;
         psyq_pad_set(0, 1, 0);
-        port_framelog_input(0);
+        port_framelog_input(0, 1, 0);
     }
     port_pump_resume_request(); /* a dead tool never leaves the game held */
 }
@@ -474,7 +474,7 @@ static void debug_pad_apply(void) {
         debug_pad_release--;
     }
     psyq_pad_set(0, 1, v);
-    port_framelog_input(v);
+    port_framelog_input(0, 1, v);
     debug_pad_applied_frame = port_frames;
 }
 
@@ -516,7 +516,7 @@ static void debug_op_status(const DebugReq *req) {
              "\"pace\": %ld, \"rate\": %ld, \"window\": %d, \"script\": %d, \"pad_owner\": \"%s\", \"pad\": %u",
              port_frames, game_state_stage(), game_state_file(), (u32)game_state_map(), port_state_slot1_word0(),
              port_pump_paused(), port_pace_get(), port_rate, port_window != 0, port_script_active != 0,
-             debug_pad_owner(), port_framelog_last_input());
+             debug_pad_owner(), port_framelog_last_input(0));
 }
 
 static void debug_op_step(const DebugReq *req, const PortJson *obj) {
@@ -603,7 +603,7 @@ static void debug_op_pad_free(const DebugReq *req) {
     if (port_debug_pad_owned) {
         port_debug_pad_owned = 0;
         psyq_pad_set(0, 1, 0);
-        port_framelog_input(0);
+        port_framelog_input(0, 1, 0);
     }
     debug_ok(req, NULL);
 }

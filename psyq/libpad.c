@@ -1,7 +1,7 @@
-/* psyq/libpad.c: LIBPAD. One digital pad on port 0 (pad.c reads `buffers[port]`: byte 0 the status, 0 = ok,
- * 0xFF = nothing connected; byte 1 the id, 0x41 = digital pad, 0x80 = multitap; bytes 2-3 the buttons, active
- * low). The port's input script sets the buttons with psyq_pad_set; every vsync tick makes them "new data" for
- * PadChkVsync.
+/* psyq/libpad.c: LIBPAD. A digital pad on port 0, and one on port 1 while the runtime connects one there (pad.c reads
+ * `buffers[port]`: byte 0 the status, 0 = ok, 0xFF = nothing connected; byte 1 the id, 0x41 = digital pad, 0x80 =
+ * multitap; bytes 2-3 the buttons, active low). The runtime (the window's input, the script, the debug channel) sets
+ * the buttons with psyq_pad_set; every vsync tick makes them "new data" for PadChkVsync.
  *
  * Assumption to verify (M3, against the emulator): the id/mode numbers (PadInfoMode term 2 = the current mode id,
  * 4 for a digital pad, 7 for a DualShock in analog mode; term 3 = the id table, 0 here), PadGetState 6 = stable,
@@ -56,6 +56,10 @@ void psyq_pad_set(int port, int connected, u16 buttons) {
 
 u16 psyq_pad_get(int port) {
     return (port == 0 || port == 1) ? psyq_pad_buttons[port] : 0;
+}
+
+int psyq_pad_present(int port) {
+    return (port == 0 || port == 1) && psyq_pad_connected[port];
 }
 
 /* The console's reset (psyq.c psyq_reset): no buffers, not started, the default pads (port 0 connected with nothing
