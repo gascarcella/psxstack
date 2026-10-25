@@ -93,6 +93,7 @@ own `CLAUDE.md`; dw2003recomp's `port/CMakeLists.txt` is the reference consumer.
 - Commit messages say what and why in plain words; a pull request's description lists the gates that ran.
 
 ## Docs
+`CHANGELOG.md` every release, newest first (a release adds its entry and a GitHub release with the same notes) ·
 `docs/GAME_CONTRACT.md` what a game provides and what the stack provides · `docs/PORT.md` the runtime's design (hook
 macros, arena, overlays, pump, shim, rendering, sound, crash report) · `docs/RUNTIME.md` building, running, options and
 formats · `docs/LAUNCHER.md` the launcher/game contract, the settings file, mod manifests · `docs/DECISIONS.md` the

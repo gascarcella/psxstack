@@ -102,7 +102,7 @@ A matching decompilation whose C also compiles for a 64-bit host, plus a small a
 The stack is a git submodule pinned at a release tag:
 ```sh
 git submodule add https://github.com/gascarcella/psxstack psxstack
-git -C psxstack checkout v0.3.16
+git -C psxstack checkout v0.3.17
 ```
 
 ### Building the port
@@ -129,6 +129,7 @@ cmake --build build/launcher
 Releases are semver tags; a game pins one, so a change here reaches it as a reviewable pin bump. `PSXSTACK_API`
 (`include/psxstack/game.h`) counts incompatible contract changes. A game's release packages are named so the
 launcher's update check finds them (docs/GAME_CONTRACT.md "Compatibility and versions", "Releases").
+[`CHANGELOG.md`](CHANGELOG.md) lists what each release changed.
 
 ## Developing
 
@@ -184,6 +185,7 @@ game's disc).
 ### Docs
 | Doc | What it covers |
 |---|---|
+| `CHANGELOG.md` | Every release and what it changed |
 | `docs/GAME_CONTRACT.md` | What a game provides and what the stack provides |
 | `docs/PORT.md` | The runtime's design: hook macros, arena, overlays, pump, shim, rendering, sound, crash report |
 | `docs/RUNTIME.md` | Building, running, options and formats |
@@ -201,28 +203,8 @@ the contract first), the gates a change runs and how a pull request is made. Pro
 ## Background
 
 ### Status
-**`v0.3.16`.** One game builds on it so far; the second will widen the shim and the contract. The recent releases:
-- **v0.3.16:** the picture fits the screen (`video.scaling`, fit by default), the wide canvas at the window's aspect.
-- **v0.3.15:** the in-game menu on the hardware renderer; unmuting a game started muted opens the audio device.
-- **v0.3.14:** the launcher's self-test inside an AppImage.
-- **v0.3.13:** Add to Steam (`launcher.steam`, the optional artwork `launcher.steam_art`).
-- **v0.3.12:** the in-game menu fitted to the screen, its Menu size, a Mods page that fits 640x480.
-- **v0.3.11:** the launcher checks the game's GitHub releases and updates itself (`launcher.updates`, Update now,
-  `--no-update-check`).
-- **v0.3.10:** the mods' `stop` callback and `applies`, for the in-game menu's live switch.
-- **v0.3.9:** the in-game menu: the launcher's Settings, Controls and Mods inside the game's window, applied live
-  (`PSXSTACK_MENU`).
-- **v0.3.8:** faster loading: the `fast_loading` mod, movies at the drive's rate.
-- **v0.3.7:** quick save and load hotkeys, F5/F9.
-- **v0.3.6:** a `write_mem` script step, a clean fiber stack under ASan.
-- **v0.3.5:** a game that needs its disc says so in game.json.
-- **v0.3.4:** the launcher self-test's rate, the GPU's known differences.
-- **v0.3.3:** LIBC2's rand and the nominal rates.
-- **v0.3.2:** a checkpoint without an image.
-- **v0.3.1:** the second game's shim: LIBGTE, LIBGPU, LIBGS, LIBAPI, LIBCD, LIBSND, LIBCARD.
-- **v0.3.0:** an optional heap, the stack's own Psy-Q declarations, fibers for a game's tasks, the replay runners.
-- **v0.2.0:** the hardware renderer on D3D12, sub-pixel precision, filters, texture packs, a wide canvas and save
-  states.
+**`v0.3.17`.** One game builds on it so far; the second will widen the shim and the contract. Every release and what
+it brought is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ### How it got here
 It grew out of the [Digimon World 2003 decompilation](https://github.com/gascarcella/dw2003recomp)'s `port/` and
