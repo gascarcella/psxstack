@@ -79,7 +79,8 @@ Commit messages say what and why in plain words. One topic per commit.
 
 ## Releases
 Releases are semver tags (`vMAJOR.MINOR.PATCH`), cut by the owner. A game pins a tag, so a change here reaches it as
-a reviewable pin bump (docs/GAME_CONTRACT.md "Compatibility and versions").
+a reviewable pin bump (docs/GAME_CONTRACT.md "Compatibility and versions"). Each release has an entry in
+`CHANGELOG.md`, newest first, and a GitHub release with the same notes.
 
 ## License
 By contributing you agree that your contribution is licensed under the MIT license (`LICENSE`).
