@@ -19,7 +19,7 @@ extern "C" const char launcher_commit[];
 
 namespace psxstack {
 
-static const char *const SCREEN_NAMES[] = { "Play", "Disc", "Settings", "Controls", "Mods" };
+static const char *const SCREEN_NAMES[] = { "Play", "Disc", "Video", "Graphics", "Audio", "Controls", "Mods", "System" };
 static_assert(sizeof(SCREEN_NAMES) / sizeof(SCREEN_NAMES[0]) == (size_t)Screen::Count, "one name per screen");
 
 const char *screen_name(Screen s) {
@@ -101,12 +101,12 @@ App::App(SDL_Window *window, SDL_Renderer *renderer, const SettingsDir &location
         update_.start();
         update_auto_ = true;
     }
-    // The Settings screen's own parts (the in-game menu has neither): Updates when the game has a repository, Steam.
+    // The System screen's own parts (the in-game menu has neither): Updates when the game has a repository, Steam.
     steam_.configure(options.steam, &settings_, [this] {
         screens_.mark_dirty();
         screens_.flush();
     });
-    screens_.set_settings_extra([this](float label_w) {
+    screens_.set_system_extra([this](float label_w) {
         if (update_.available()) {
             draw_updates(label_w);
         }
@@ -607,8 +607,8 @@ void App::draw_update_prompt() {
     ImGui::EndPopup();
 }
 
-// The Settings screen's part (only when the description names a repository): the launcher's own, drawn through the
-// shared screen's hook (Screens::set_settings_extra), so the in-game menu has none of it.
+// The System screen's part (only when the description names a repository): the launcher's own, drawn through the
+// shared screen's hook (Screens::set_system_extra), so the in-game menu has none of it.
 void App::draw_updates(float label_w) {
     Settings &s = settings_.values;
     section_title("Updates");
@@ -828,14 +828,23 @@ void App::draw() {
     case Screen::Disc:
         draw_disc();
         break;
-    case Screen::Settings:
-        screens_.draw_settings();
+    case Screen::Video:
+        screens_.draw_video();
+        break;
+    case Screen::Graphics:
+        screens_.draw_graphics();
+        break;
+    case Screen::Audio:
+        screens_.draw_audio();
         break;
     case Screen::Controls:
         screens_.draw_controls();
         break;
     case Screen::Mods:
         screens_.draw_mods();
+        break;
+    case Screen::System:
+        screens_.draw_system();
         break;
     case Screen::Count:
         break;

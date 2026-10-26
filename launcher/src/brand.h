@@ -44,13 +44,13 @@ constexpr const char *ENV_UPDATE_NOW = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_UPDAT
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";
 constexpr const char *ENV_SELFTEST_VIDEO_DRIVER = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_VIDEO_DRIVER";
-// The rates: the nominal one (the settings' default) and the ones the Settings screen offers.
+// The rates: the nominal one (the settings' default) and the ones the Video screen offers.
 constexpr int GAME_RATE = PSXSTACK_GAME_RATE;
 constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 constexpr const char *GAME_RATE_NOTE = PSXSTACK_GAME_RATE_NOTE;
 // The scenes (the description's video.scenes): a present-filter set for the 2D scenes and one for the 3D scenes,
-// named by their labels in the Filter rows; the 2D set's default filter ("" = a copy of the 3D set's).
+// named by their labels in the Graphics screen's filter tabs; the 2D set's default filter ("" = a copy of the 3D set's).
 constexpr bool GAME_SCENES = PSXSTACK_GAME_SCENES != 0;
 constexpr const char *GAME_SCENE_2D_LABEL = PSXSTACK_GAME_SCENE_2D_LABEL;
 constexpr const char *GAME_SCENE_3D_LABEL = PSXSTACK_GAME_SCENE_3D_LABEL;

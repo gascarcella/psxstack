@@ -1,6 +1,6 @@
-// The Settings screen's Steam section (docs/LAUNCHER.md "Steam"): Add to Steam, Remove from Steam, Update shortcut,
-// over steam.h and the settings' launcher.steam. The launcher window's alone (drawn through the shared Settings
-// screen's hook, Screens::set_settings_extra; the in-game menu has none). Nothing looks for Steam until a button is
+// The System screen's Steam section (docs/LAUNCHER.md "Steam"): Add to Steam, Remove from Steam, Update shortcut,
+// over steam.h and the settings' launcher.steam. The launcher window's alone (drawn through the shared System
+// screen's hook, Screens::set_system_extra; the in-game menu has none). Nothing looks for Steam until a button is
 // pressed: the lookup, the running check and the files are all behind the actions below.
 #pragma once
 

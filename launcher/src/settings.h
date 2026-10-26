@@ -72,9 +72,9 @@ struct FilterSet {
     }
     bool operator!=(const FilterSet &o) const { return !(*this == o); }
 };
-// video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Settings screen's order.
+// video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Video screen's order.
 inline const char *const SCALING_NAMES[] = { "fit", "integer", "stretch" };
-// video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
+// video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Video screen's order.
 inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
 // input.player2's values (the game's runtime/input.c): none, or the gamepad by connection order that is player 2.
 inline const char *const PLAYER2_NAMES[] = { "off", "first", "second" };
@@ -106,7 +106,7 @@ struct Settings {
     FilterSet present;
     // video.scene_2d (a game with scenes only): its 2D scenes' set, scene_2d_default(present) when the file has none.
     // Written whole once it differs from that, or once the file has it. It is held as values: where the default is a
-    // copy of the 3D set, a change to the 3D set leaves it as it was (as the Filter rows show it), and it is written.
+    // copy of the 3D set, a change to the 3D set leaves it as it was (as the filter tabs show it), and it is written.
     FilterSet present_2d = scene_2d_default(FilterSet());
     std::string menu_size = "auto";    // the in-game menu's size (video.menu_size): one of MENU_SIZE_NAMES
     bool mute = false;

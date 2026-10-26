@@ -48,7 +48,7 @@ The first of these that applies:
 4. The per-user directory, `SDL_GetPrefPath("", "<id>")`: `~/.local/share/<id>/` on Linux (`$XDG_DATA_HOME` when
    set), `%APPDATA%\<id>\` on Windows.
 
-The status bar and the Settings screen show the directory and which rule chose it. The directory holds
+The status bar and the System screen show the directory and which rule chose it. The directory holds
 `settings.json`, the memory cards and `mods/` (data mods: texture packs; docs/LAUNCHER.md "Data mods").
 
 ## settings.json
@@ -111,10 +111,12 @@ A game build from before `--config` or `--crash-dir` (its usage, exit 64, at the
 
 ## Settings and controls
 
-**Settings:** the window's scale (1-16, with its size), fullscreen, the rate when the description offers two (the
-nominal one named by its TV standard; the other shows the description's note), the renderer, mute, the two memory
-card slots (a file name relative to the settings directory, or no card), the update check when the description names a
-repository ("Updates"), and the settings file's location and state.
+**Video:** the window's scale (1-16, with its size), fullscreen, the scaling, the rate when the description offers
+two (the nominal one named by its TV standard; the other shows the description's note), the in-game menu's size.
+**Graphics:** the renderer, then the hardware renderer's resolution, sub-pixel mode and filters (greyed out under the
+software renderer, with a line that says so). **Audio:** mute. **System:** the two memory card slots (a file name
+relative to the settings directory, or no card), the update check when the description names a repository
+("Updates"), Add to Steam ("Steam"), and the settings file's location and state.
 
 **Controls**, three tabs: **Keyboard** and **Gamepad** list the 14 PS1 buttons with their inputs as chips (x removes
 one, + adds one, Default restores the game's); **Hotkeys** has the port's actions (pause, fullscreen) with their
@@ -159,7 +161,7 @@ latest release at start, on a worker thread (`src/update.cpp`; docs/LAUNCHER.md 
 A release newer than the launcher's version stamp (an exact `X.Y.Z`: a development build is only told the latest)
 brings up a prompt over the Play screen, never while the game runs: **Update now** (the default), **Release page**
 (the browser), **Later** (Escape), **Skip this version** (`launcher.updates.skipped`: not offered again, a newer one
-is). The Settings screen has the checkbox "Check for updates when the launcher starts", the launcher's version, the
+is). The System screen has the checkbox "Check for updates when the launcher starts", the launcher's version, the
 last check's result, **Update now**, **Check now** (whatever the checkbox says; it only reports) and **Release page**.
 `--no-update-check` skips the check at start for one run. Without curl the check says so, and **Release page** opens
 the repository's latest release. `$<PREFIX>_LAUNCHER_FAKE_CURL` names a program to run in curl's place (the
@@ -205,7 +207,7 @@ with and without `--config`, one that rejects the file, one that crashes, one th
 the window, walks every screen with injected key events and a virtual gamepad, plays with the stand-in (a file of the
 first described disc's size stands for the verified disc), rebinds a key through the prompt and checks the file, shows
 the Gamepad tab with player 2 set and two virtual gamepads connected, the GPU renderer's rows (for a game with scenes
-the two Filter rows, the 2D one marked as the in-game menu marks the set on screen), drops a wrong file on the window,
+the two filter tabs, the 2D one marked and chosen as the in-game menu marks the set on screen), drops a wrong file on the window,
 renders the mods screen over the fixture manifests (`tests/fixtures/mods/`: the first game's `fast_forward` as shipped,
 the documented `skip_dialogues` example, one with every option type, one with presets and a slider whose toggle makes
 it a typed number; three unusable ones written at test time) and rebinds a mod's key through the prompt, and saves a picture of
@@ -218,7 +220,7 @@ version, a cut answer), `launcher.updates` in the file, `src/http.cpp` (a GET, c
 download with its progress, a cancel, a wrong size), then in the window: the prompt over Play (a picture), Escape as
 Later, the Release page, Skip and a newer release after it, the setting off with Check now, `--no-update-check`, the
 prompt waiting for a running game, curl missing, a cut answer, a development build and a description without a
-repository (pictures of the Settings screen's part). Then **Update now** in the window, the stand-in "downloading"
+repository (pictures of the System screen's part). Then **Update now** in the window, the stand-in "downloading"
 fixture packages (`<PREFIX>_SELFTEST_CURL_DOWNLOAD` is its answer for a download, the release's JSON being the check's):
 the line instead of the button when the plan is not possible (no `$APPIMAGE`), the progress and Cancel on a slow
 download (no check started meanwhile, the file removed, the install unchanged), a wrong digest and a missing one
@@ -234,7 +236,7 @@ again, unchanged), damaged files refused (cut short, bytes after the end, an unk
 are, the save's backup (once, as the file was), `loginusers.vdf` and the text form's comments, escapes and errors,
 and Steam's folders and accounts in a fixture home (a link to a folder counted once, Flatpak's, the most recent account
 first; Windows' order on the same folders); on Windows, the registry reader on a value of its own; a broken
-`launcher.steam` kept; the process list (this launcher found by its name). Then the Settings screen's section in the
+`launcher.steam` kept; the process list (this launcher found by its name). Then the System screen's section in the
 window, with a fixture lookup, a running check and launcher paths of its own: nothing looked up before Add to Steam,
 a running Steam refusing every button, Add, the next start, a moved launcher's Update shortcut, Remove (the file as it
 was before Add), and the not-found, already-removed and damaged-file cases, with a picture of each state; the artwork
@@ -293,9 +295,9 @@ libgcc static) against an SDL3 with the desktop backends (`scripts/setup.sh sdl3
 | `src/vdf.cpp`, `vdf.h` | Valve's KeyValues files: the binary form read and written back byte for byte, the text form read |
 | `src/steam.cpp`, `steam.h` | The Steam shortcut: where Steam is, its accounts, the shortcut added to and removed from `shortcuts.vdf` (docs/LAUNCHER.md "Steam") |
 | `src/steam_art.cpp` | The game's Steam artwork, embedded (`gen/steam_art.h`, from game.json `launcher.steam_art`) |
-| `src/steam_section.cpp`, `steam_section.h` | The Settings screen's Steam section: Add to Steam, Remove from Steam, Update shortcut, the running-Steam check, `launcher.steam` |
+| `src/steam_section.cpp`, `steam_section.h` | The System screen's Steam section: Add to Steam, Remove from Steam, Update shortcut, the running-Steam check, `launcher.steam` |
 | `src/selftest_steam.cpp` | The self-test's part for the Steam shortcut, on `tests/fixtures/steam/` and fixture folders, the section in the window included |
-| `ui/screens.cpp`, `screens.h` | The Settings, Controls and Mods screens and the input prompt, drawn by the window and by the game's in-game menu |
+| `ui/screens.cpp`, `screens.h` | The Video, Graphics, Audio, Controls, Mods and System screens and the input prompt, drawn by the window and by the game's in-game menu |
 | `ui/widgets.cpp`, `widgets.h`, `ui/style.cpp`, `style.h` | Small shared pieces and the look |
 | `ui/menu.cpp` | The in-game menu (`include/psxstack/menu.h`): compiled into a game built with `PSXSTACK_MENU`, never into the launcher; docs/LAUNCHER.md "In-game menu" |
 | `windows/launcher.rc.in`, `launcher.manifest.in` | The Windows resources, configured for the game's id |
