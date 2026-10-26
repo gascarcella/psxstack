@@ -130,6 +130,7 @@ static struct {
     int target_w, target_h;
     int submit_failed;
     char describe[160];
+    int scene;                             /* the present filter's slot the presents show (PORT_SCENE_*'s value) */
 
     /* The rasteriser. */
     int raster;
@@ -1346,7 +1347,7 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
     SDL_GPUTextureSamplerBinding bind;
     SDL_Rect scissor;
     RenderPresentView u; /* dst, src, disp (cut) as present*.frag.hlsl read them; param for a filter */
-    SDL_GPUGraphicsPipeline *filter = filtered ? render_present_pipeline(target != r.target) : NULL;
+    SDL_GPUGraphicsPipeline *filter = filtered ? render_present_pipeline(r.scene, target != r.target) : NULL;
 
     memset(&u, 0, sizeof(u));
     u.dst[0] = rect[0];
@@ -1372,8 +1373,8 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
     }
     if (filter != NULL) {
         u.cut[3] = h; /* the display's lines */
-        render_present_params(&u);
-        if (vram_xy != NULL && render_present_image()) {
+        render_present_params(r.scene, &u);
+        if (vram_xy != NULL && render_present_image(r.scene)) {
             /* a wide picture for a filter of the 1x image (render_gpu_present: the software image is 4:3): its canvas
              * at 1x, every N-th target pixel (a 1x pixel's N x N block's corner) */
             u.src[0] = w;
@@ -1381,7 +1382,7 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
             u.param[3] = (float)r.scale;
         }
         if (rect[2] > 0 && rect[3] > 0) { /* the filter's first pass, if any */
-            render_present_prepare(cb, vram_xy != NULL ? r.vram_target : r.image, r.sampler, &u);
+            render_present_prepare(r.scene, cb, vram_xy != NULL ? r.vram_target : r.image, r.sampler, &u);
         }
     }
     memset(&ct, 0, sizeof(ct));
@@ -1401,7 +1402,7 @@ static void render_draw(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *target, SDL_GP
         bind.sampler = r.sampler;
         SDL_BindGPUFragmentSamplers(pass, 0, &bind, 1);
         if (filter != NULL) {
-            render_present_bind(pass, r.sampler);
+            render_present_bind(r.scene, pass, r.sampler);
         }
         SDL_PushGPUFragmentUniformData(cb, 0, &u,
                                        filter != NULL    ? sizeof(u)
@@ -1528,7 +1529,7 @@ int render_gpu_present(const u32 *pixels, int w, int h, const int *vram_xy, Rend
     if (r.device == NULL || r.window == NULL) {
         return 0;
     }
-    if (render_present_image() && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
+    if (render_present_image(r.scene) && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
         vram_xy = NULL; /* the filter takes the 1x image (the target's units still run every vsync); a wide picture
                            keeps its canvas (render_draw) */
     }
@@ -1599,7 +1600,7 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
             return 0;
         }
     }
-    if (dest != NULL && render_present_image() && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
+    if (dest != NULL && render_present_image(r.scene) && vram_xy != NULL && !render_gpu_wide_cut(vram_xy, w, h, wide)) {
         vram_xy = NULL; /* a filtered picture from the 1x image, as the window's */
     }
     cb = SDL_AcquireGPUCommandBuffer(r.device);
@@ -1642,17 +1643,31 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
     return 1;
 }
 
-void render_gpu_set_filter(const PortFilter *f) {
+void render_gpu_set_filters(const PortFilter f[2], int sets) {
+    static const char *const slot_names[2] = { "3d", "2d" };
     char why[256];
+    int ok[2], i;
     if (r.device == NULL) {
         return;
     }
-    if (!render_present_set(r.device, r.vert, r.window != NULL ? r.swap_format : SDL_GPU_TEXTUREFORMAT_INVALID, f, why,
-                            sizeof(why))) {
-        port_log("renderer: gpu: filter %s unavailable (%s); none", port_filter_names[f->kind], why);
-    } else if (f->kind != PORT_FILTER_NONE) {
-        port_log("renderer: gpu: filter %s", port_filter_names[f->kind]);
+    render_present_set(r.device, r.vert, r.window != NULL ? r.swap_format : SDL_GPU_TEXTUREFORMAT_INVALID, f, ok, why,
+                       sizeof(why));
+    for (i = 0; i < sets; i++) {
+        if (!ok[i]) {
+            port_log("renderer: gpu: filter %s%s%s unavailable (%s); none", port_filter_names[f[i].kind],
+                     sets > 1 ? " for " : "", sets > 1 ? slot_names[i] : "", why);
+        }
     }
+    if (sets == 1 && ok[0] && f[0].kind != PORT_FILTER_NONE) {
+        port_log("renderer: gpu: filter %s", port_filter_names[f[0].kind]);
+    } else if (sets > 1 && (f[0].kind != PORT_FILTER_NONE || f[1].kind != PORT_FILTER_NONE)) {
+        port_log("renderer: gpu: filter %s (3d), %s (2d)", port_filter_names[ok[0] ? f[0].kind : PORT_FILTER_NONE],
+                 port_filter_names[ok[1] ? f[1].kind : PORT_FILTER_NONE]);
+    }
+}
+
+void render_gpu_set_scene(int slot) {
+    r.scene = slot == 1;
 }
 
 void render_gpu_close(void) {

@@ -167,10 +167,15 @@ static void settings_parse(PortSettings *s, const char *path) {
                                               "subpixel",
                                               "filter",
                                               "crt",
+#if PSXSTACK_GAME_SCENES
+                                              "scene_2d", /* the 2D set; a game without scenes logs it unknown */
+#endif
                                               "menu_size", /* the in-game menu's (launcher/ui/menu.cpp reads it) */
                                               NULL };
     static const char *const audio_keys[] = { "mute", NULL };
     static const char *const crt_keys[] = { "scanlines", "mask", "curvature", NULL };
+    static const char *const scene_keys[] = { "filter", "crt", NULL };
+    PortFilter f3d, f2d;
     const PortJson *root, *v, *obj;
     char err[256], *slash;
     FILE *f;
@@ -270,6 +275,30 @@ static void settings_parse(PortSettings *s, const char *path) {
             settings_int(v, "video.crt", "curvature", 0, 100, &s->crt_curvature);
         }
     }
+    /* the 2D set: the default from the 3D set (or game.json's), then what video.scene_2d names */
+    f3d.kind = s->filter;
+    f3d.scanlines = s->crt_scanlines;
+    f3d.mask = s->crt_mask;
+    f3d.curvature = s->crt_curvature;
+    port_filter_scene_2d_default(&f3d, &f2d);
+    s->filter_2d = f2d.kind;
+    s->crt_2d_scanlines = f2d.scanlines;
+    s->crt_2d_mask = f2d.mask;
+    s->crt_2d_curvature = f2d.curvature;
+    if (PSXSTACK_GAME_SCENES && obj != NULL &&
+        (obj = settings_member(obj, "video", "scene_2d", PORT_JSON_OBJECT)) != NULL) {
+        settings_unknown(obj, "video.scene_2d", scene_keys);
+        if ((v = settings_member(obj, "video.scene_2d", "filter", PORT_JSON_STRING)) != NULL &&
+            (s->filter_2d = port_filter_from_name(v->string)) < 0) {
+            port_settings_fail("video.scene_2d.filter", "%s, not \"%s\"", port_filter_choices(1), v->string);
+        }
+        if ((v = settings_member(obj, "video.scene_2d", "crt", PORT_JSON_OBJECT)) != NULL) {
+            settings_unknown(v, "video.scene_2d.crt", crt_keys);
+            settings_int(v, "video.scene_2d.crt", "scanlines", 0, 100, &s->crt_2d_scanlines);
+            settings_int(v, "video.scene_2d.crt", "mask", 0, 100, &s->crt_2d_mask);
+            settings_int(v, "video.scene_2d.crt", "curvature", 0, 100, &s->crt_2d_curvature);
+        }
+    }
     if ((obj = settings_member(root, "", "audio", PORT_JSON_OBJECT)) != NULL) {
         settings_unknown(obj, "audio", audio_keys);
         settings_bool(obj, "audio", "mute", &s->mute);
@@ -289,6 +318,17 @@ static void settings_parse(PortSettings *s, const char *path) {
         }
     }
     s->launcher = settings_member(root, "", "launcher", PORT_JSON_OBJECT);
+}
+
+void port_filter_scene_2d_default(const PortFilter *f3d, PortFilter *f2d) {
+    static const PortFilter defaults = PORT_FILTER_DEFAULTS;
+    int kind = port_filter_from_name(PSXSTACK_GAME_SCENE_2D_FILTER);
+    if (kind < 0) { /* "": the description names none */
+        *f2d = *f3d;
+        return;
+    }
+    *f2d = defaults;
+    f2d->kind = kind;
 }
 
 void port_settings_load(const char *path) {
@@ -358,6 +398,11 @@ void port_settings_print(FILE *f, const PortSettings *s) {
     fprintf(f, ",\n    \"filter\": \"%s\"", port_filter_names[s->filter]);
     fprintf(f, ",\n    \"crt\": { \"scanlines\": %d, \"mask\": %d, \"curvature\": %d }", s->crt_scanlines, s->crt_mask,
             s->crt_curvature);
+    if (PSXSTACK_GAME_SCENES) {
+        fprintf(f, ",\n    \"scene_2d\": { \"filter\": \"%s\", \"crt\": { \"scanlines\": %d, \"mask\": %d, "
+                   "\"curvature\": %d } }",
+                port_filter_names[s->filter_2d], s->crt_2d_scanlines, s->crt_2d_mask, s->crt_2d_curvature);
+    }
     fprintf(f, "\n  },\n  \"audio\": {\n    \"mute\": %s\n  },\n  \"memcard1\": ", s->mute ? "true" : "false");
     settings_print_path(f, s->memcard[0]);
     fputs(",\n  \"memcard2\": ", f);

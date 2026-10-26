@@ -55,7 +55,7 @@ static void usage(const char *argv0) {
             "          [--screenshot FRAME:PATH]\n"
             "          [--renderer software|gpu] [--internal-scale N] [--gpu-screenshot FRAME[@WxH]:PATH]\n"
             "          [--subpixel off|on|perspective]\n"
-            "          [--filter NAME[:KEY=V,...]]\n"
+            "          [--filter NAME[:KEY=V,...]] [--filter-2d NAME[:KEY=V,...]]\n"
             "          [--spu-trace FILE] [--wav FILE] [--mute] [--debug SOCKET] [--debug-hold] [--crash-dir DIR]\n"
             "          [--save-state WHEN:FILE] [--save-state-exit] [--load-state FILE] [--quick-state FILE]\n"
             "          [--version]\n"
@@ -120,7 +120,10 @@ static void usage(const char *argv0) {
             "                   crt[:scanlines=,mask=,curvature=] (video.crt's values otherwise; default 50, 30, 0)\n"
             "                   or smooth (xBR on the 1x software image, at any internal scale);\n"
             "                   the window and --gpu-screenshot's @WxH pictures; the software renderer shows the\n"
-            "                   picture unfiltered (overrides video.filter and video.crt)\n"
+            "                   picture unfiltered (overrides video.filter and video.crt; for a game with 2D and\n"
+            "                   3D scenes, both sets: video.scene_2d too)\n"
+            "  --filter-2d NAME[:KEY=V,...]  a game with 2D and 3D scenes (game.json video.scenes): the 2D scenes'\n"
+            "                   filter alone, as --filter (overrides video.scene_2d, and --filter for the 2D set)\n"
             "  --dump-textures DIR  every texture the game samples, the first time, as a PNG named by its key, and\n"
             "                   DIR/index.json (a build with -DPSXSTACK_SDL=ON; either renderer)\n"
             "  --texture-pack DIR  a texture pack (DIR/mod.json, PNGs named by key) for the hardware renderer;\n"
@@ -175,7 +178,10 @@ int main(int argc, char **argv) {
     int subpixel = 1, no_game = 0, scaling = PORT_SCALING_FIT;
     const char *config = NULL;
     const char *quick_state = NULL;
-    PortFilter filter = PORT_FILTER_DEFAULTS;
+    PortFilter filter = PORT_FILTER_DEFAULTS, filter_2d; /* the 3D set (a game without scenes: the one), the 2D set */
+    PortFilter filters[2];
+    const char *filter_2d_spec = NULL;
+    int filter_given = 0;
     int print_settings = 0, print_mods = 0, script_mods = 0;
     long fps = -1;
     int refresh = 0; /* --refresh, else the settings' video.refresh; 0: neither (the description's video.rate) */
@@ -200,12 +206,18 @@ int main(int argc, char **argv) {
         filter.scanlines = port_settings.crt_scanlines;
         filter.mask = port_settings.crt_mask;
         filter.curvature = port_settings.crt_curvature;
+        filter_2d.kind = port_settings.filter_2d;
+        filter_2d.scanlines = port_settings.crt_2d_scanlines;
+        filter_2d.mask = port_settings.crt_2d_mask;
+        filter_2d.curvature = port_settings.crt_2d_curvature;
         mute = port_settings.mute;
         port_watchdog_sec = port_settings.watchdog;
         for (i = 0; i < 2; i++) {
             memcard[i] = port_settings.memcard[i];
             memcard_given[i] = memcard[i] != NULL ? 1 : -1;
         }
+    } else {
+        port_filter_scene_2d_default(&filter, &filter_2d);
     }
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
@@ -331,6 +343,14 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "port: --filter: %s\n", err);
                 return 64;
             }
+            filter_given = 1;
+        } else if (strcmp(argv[i], "--filter-2d") == 0 && i + 1 < argc) {
+            if (!PSXSTACK_GAME_SCENES) {
+                fprintf(stderr, "port: --filter-2d: %s has one filter for every scene (no video.scenes): --filter\n",
+                        PSXSTACK_GAME_TITLE);
+                return 64;
+            }
+            filter_2d_spec = argv[++i]; /* after the loop: over --filter's, wherever it is */
         } else if (strcmp(argv[i], "--gpu-screenshot") == 0 && i + 1 < argc) {
             if (!port_video_gpu_screenshot_add(argv[++i])) {
                 fprintf(stderr, "port: --gpu-screenshot: FRAME[@WxH]:PATH (FRAME >= 1; at most 64): %s\n", argv[i]);
@@ -383,6 +403,19 @@ int main(int argc, char **argv) {
         port_mods_print_registry(stdout);
         return 0;
     }
+    /* --filter is both sets; --filter-2d then the 2D set alone, over it */
+    if (filter_given) {
+        filter_2d = filter;
+    }
+    if (filter_2d_spec != NULL) {
+        char err[160];
+        if (!port_filter_parse(filter_2d_spec, &filter_2d, err, sizeof(err))) {
+            fprintf(stderr, "port: --filter-2d: %s\n", err);
+            return 64;
+        }
+    }
+    filters[PORT_SCENE_3D] = filter;
+    filters[PORT_SCENE_2D] = filter_2d;
     if (print_settings) {
         PortSettings eff = port_settings;
         if (config == NULL) {
@@ -404,6 +437,10 @@ int main(int argc, char **argv) {
         eff.crt_scanlines = filter.scanlines;
         eff.crt_mask = filter.mask;
         eff.crt_curvature = filter.curvature;
+        eff.filter_2d = filter_2d.kind;
+        eff.crt_2d_scanlines = filter_2d.scanlines;
+        eff.crt_2d_mask = filter_2d.mask;
+        eff.crt_2d_curvature = filter_2d.curvature;
         for (i = 0; i < 2; i++) {
             eff.memcard[i] = memcard_given[i] > 0 && memcard[i] != NULL ? port_settings_abspath(memcard[i]) : NULL;
         }
@@ -436,7 +473,7 @@ int main(int argc, char **argv) {
     port_video_set_internal_scale(internal_scale);
     port_video_set_subpixel(subpixel);
     port_video_set_scaling(scaling);
-    port_video_set_filter(&filter);
+    port_video_set_filters(filters);
     if (window && !port_video_available()) {
         fprintf(stderr, "port: --window: this build has no window: configure with -DPSXSTACK_SDL=ON "
                         "(port/README.md \"The window\")\n");

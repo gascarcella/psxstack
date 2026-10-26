@@ -28,6 +28,10 @@ typedef struct PortSettings {
                       * internal scale 1 (2: textured perspective-correct too) */
     int filter;      /* video.filter: PORT_FILTER_* (default 0, "none"): the hardware renderer's present filter */
     int crt_scanlines, crt_mask, crt_curvature; /* video.crt: the filters' parameters, 0..100 (default 50, 30, 0) */
+    /* video.scene_2d { filter, crt } (a game with video.scenes; the fields above are then the 3D set): the 2D set.
+     * Absent: port_filter_scene_2d_default's (game.json's 2d.filter with the default crt, or a copy of the 3D set). */
+    int filter_2d;
+    int crt_2d_scanlines, crt_2d_mask, crt_2d_curvature;
     int mute;        /* audio.mute (default 0) */
     int watchdog;    /* watchdog: seconds, 0 off (default 0: a player's game is never killed by the debugging aid) */
     char *memcard[2]; /* memcard1/2, absolute; NULL: no card (null in the file); default card1.mcd/card2.mcd */

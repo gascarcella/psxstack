@@ -8,6 +8,7 @@
 #define PORT_HARNESS_H
 
 #include <setjmp.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "psxstack/types.h"
@@ -129,7 +130,15 @@ const char *port_filter_choices(int quoted);
 /* `--filter`'s argument into *f: the name, and the parameters it names (KEY=V, V 0..100; the others keep their value);
  * 0 with the reason in `err` when it is malformed. */
 int port_filter_parse(const char *spec, PortFilter *f, char *err, size_t err_size);
-void port_video_set_filter(const PortFilter *f);
+/* The two sets, indexed by PORT_SCENE_* (game.h): f[PORT_SCENE_3D] is video.filter and video.crt (`--filter`), the
+ * only set of a game without video.scenes; f[PORT_SCENE_2D] video.scene_2d (`--filter-2d`), ignored without scenes.
+ * The present uses the set of the scene game_state_scene() last said (read once per vsync; video.c); port_video_scene
+ * is that scene (PORT_SCENE_3D for a game without scenes): the in-game menu marks its set. */
+void port_video_set_filters(const PortFilter f[2]);
+int32_t port_video_scene(void);
+/* The 2D set when nothing names it (no video.scene_2d, no --config; settings.c): game.json's video.scenes.2d.filter
+ * with the default parameters, or a copy of the 3D set `f3d` when the description names none. */
+void port_filter_scene_2d_default(const PortFilter *f3d, PortFilter *f2d);
 /* The picture's size in the window (`--scaling`, video.scaling; video.c video_dest; video_filter.c the names): fit
  * (the default: as large as the window allows at the picture's aspect), integer (as tall as a whole multiple of its
  * lines allows: every line the same height, black bars where the window is not such a multiple) or stretch (the whole
@@ -138,9 +147,9 @@ enum { PORT_SCALING_FIT, PORT_SCALING_INTEGER, PORT_SCALING_STRETCH, PORT_SCALIN
 extern const char *const port_scaling_names[PORT_SCALING_COUNT];
 int port_scaling_from_name(const char *name); /* PORT_SCALING_*; -1 for another name */
 void port_video_set_scaling(int mode);
-/* The window's settings changed live (the menu; runtime/live.c): the scale, fullscreen, the scaling, the filter and
- * the sub-pixel mode; nothing without a window. */
-void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter *filter, int subpixel);
+/* The window's settings changed live (the menu; runtime/live.c): the scale, fullscreen, the scaling, the filters (both
+ * sets, as port_video_set_filters) and the sub-pixel mode; nothing without a window. */
+void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter filters[2], int subpixel);
 int port_video_gpu_screenshot_add(const char *spec);
 /* A run without a window that has --gpu-screenshot: the GPU device and the rasteriser opened now, before the game
  * draws (SDL build; logged and skipped without a device). */

@@ -71,7 +71,11 @@ static int video_shot_count;
 static long video_converted_frame = -1; /* the frame video_pixels was converted at (the debug channel's screenshot) */
 static int video_gpu_wanted;            /* --renderer gpu / video.renderer "gpu" */
 static int video_internal_scale = 1;    /* --internal-scale / video.internal_scale: the rasteriser's, 1..8 */
-static PortFilter video_filter;         /* --filter / video.filter: the hardware renderer's present (render_gpu_present.c) */
+/* --filter, --filter-2d / video.filter, video.scene_2d: the hardware renderer's present (render_gpu_present.c), a set
+ * per scene (PORT_SCENE_3D, PORT_SCENE_2D; a game without video.scenes uses the first, the second its copy) */
+static PortFilter video_filters[2];
+#define VIDEO_SETS (PSXSTACK_GAME_SCENES ? 2 : 1) /* the sets the game has */
+static int video_scene = PORT_SCENE_3D; /* the scene the present shows (game_state_scene, read every vsync) */
 static struct {
     long frame;
     int w, h; /* the output's size; 0: the image's own */
@@ -197,9 +201,27 @@ void port_video_set_subpixel(int mode) {
 #endif
 }
 
-void port_video_set_filter(const PortFilter *f) {
-    video_filter = *f;
+void port_video_set_filters(const PortFilter f[2]) {
+    video_filters[0] = f[0];
+    video_filters[1] = PSXSTACK_GAME_SCENES ? f[1] : f[0];
 }
+
+int32_t port_video_scene(void) {
+    return video_scene;
+}
+
+#ifdef PSXSTACK_SDL
+/* "filter: X needs the GPU renderer": once per set that has a filter (the software renderer shows none). */
+static void video_filters_unfiltered(void) {
+    int i;
+    for (i = 0; i < VIDEO_SETS; i++) {
+        if (video_filters[i].kind != PORT_FILTER_NONE && (i == 0 || video_filters[1].kind != video_filters[0].kind)) {
+            port_log("filter: %s needs the GPU renderer (--renderer gpu); the picture is unfiltered",
+                     port_filter_names[video_filters[i].kind]);
+        }
+    }
+}
+#endif
 
 void port_video_set_scaling(int mode) {
     video_scaling = mode >= 0 && mode < PORT_SCALING_COUNT ? mode : PORT_SCALING_FIT;
@@ -287,10 +309,9 @@ void port_video_open(int scale, int fullscreen) {
         }
     }
     if (video_gpu) {
-        render_gpu_set_filter(&video_filter);
-    } else if (video_filter.kind != PORT_FILTER_NONE) {
-        port_log("filter: %s needs the GPU renderer (--renderer gpu); the picture is unfiltered",
-                 port_filter_names[video_filter.kind]);
+        render_gpu_set_filters(video_filters, VIDEO_SETS);
+    } else {
+        video_filters_unfiltered();
     }
     if (!video_gpu) {
         video_renderer = SDL_CreateRenderer(video_window, NULL);
@@ -320,9 +341,10 @@ void port_video_toggle_fullscreen(void) {
 
 /* video.scale and video.fullscreen changed live (the menu, live.c): the fullscreen state follows; the window is
  * sized to the scale when it changed and the window is not fullscreen (a fullscreen window keeps the size for when
- * it leaves). The scaling (video_dest, from the next present), the filter (video.filter, video.crt) and the sub-pixel
- * mode follow through their setters. */
-void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter *filter, int subpixel) {
+ * it leaves). The scaling (video_dest, from the next present), the filters (video.filter, video.crt, video.scene_2d:
+ * both sets built again) and the sub-pixel mode follow through their setters. */
+void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter filters[2], int subpixel) {
+    PortFilter old[2];
     if (video_window == NULL) {
         return;
     }
@@ -341,13 +363,13 @@ void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter *
         }
         port_log("window: scale %d (%dx%d)", scale, 320 * scale, 240 * scale);
     }
-    if (memcmp(filter, &video_filter, sizeof(video_filter)) != 0) {
-        video_filter = *filter;
+    memcpy(old, video_filters, sizeof(old));
+    port_video_set_filters(filters);
+    if (memcmp(old, video_filters, sizeof(old)) != 0) {
         if (video_gpu) {
-            render_gpu_set_filter(&video_filter);
-        } else if (video_filter.kind != PORT_FILTER_NONE) {
-            port_log("filter: %s needs the GPU renderer (--renderer gpu); the picture is unfiltered",
-                     port_filter_names[video_filter.kind]);
+            render_gpu_set_filters(video_filters, VIDEO_SETS);
+        } else {
+            video_filters_unfiltered();
         }
     }
     port_video_set_subpixel(subpixel);
@@ -634,7 +656,7 @@ void port_video_gpu_headless(void) {
         port_log("renderer: gpu: no rasteriser (%s); the software image through SDL_GPU", why);
     }
     port_log("renderer: gpu for the screenshots (%s)", render_gpu_describe());
-    render_gpu_set_filter(&video_filter);
+    render_gpu_set_filters(video_filters, VIDEO_SETS);
 }
 
 int port_video_dump_textures(const char *dir) {
@@ -703,11 +725,11 @@ void port_video_open(int scale, int fullscreen) {
 void port_video_toggle_fullscreen(void) {
 }
 
-void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter *filter, int subpixel) {
+void port_video_apply(int scale, int fullscreen, int scaling, const PortFilter filters[2], int subpixel) {
     (void)scale;
     (void)fullscreen;
     (void)scaling;
-    (void)filter;
+    (void)filters;
     (void)subpixel;
 }
 
@@ -792,8 +814,35 @@ static int video_due(void) {
     return 1;
 }
 
+/* The scene (game.h game_state_scene; a game with video.scenes): read once per vsync, before the present. A change
+ * picks the other set's slot for the presents from this vsync on (render_gpu_set_scene: nothing is built) and is
+ * logged. A game without scenes never calls the probe. */
+static void video_scene_follow(void) {
+    int s;
+    if (!PSXSTACK_GAME_SCENES) {
+        return;
+    }
+    s = game_state_scene() == PORT_SCENE_2D ? PORT_SCENE_2D : PORT_SCENE_3D;
+    if (s != video_scene) {
+#ifdef PSXSTACK_SDL
+        if (render_gpu_active()) {
+            port_log("renderer: gpu: scene %s (filter %s)", s == PORT_SCENE_2D ? "2d" : "3d",
+                     port_filter_names[video_filters[s].kind]);
+        } else
+#endif
+        {
+            port_log("video: scene %s", s == PORT_SCENE_2D ? "2d" : "3d");
+        }
+    }
+    video_scene = s;
+#ifdef PSXSTACK_SDL
+    render_gpu_set_scene(s);
+#endif
+}
+
 void port_video_frame(void) {
     int i, shot = 0, present;
+    video_scene_follow();
 #ifdef PSXSTACK_SDL
     render_gpu_frame(); /* the rasteriser's units of this vsync, presented or not: its target is state */
     render_gpu_tex_frame();
