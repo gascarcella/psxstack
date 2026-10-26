@@ -52,7 +52,26 @@
           "type": "array", "items": { "enum": [50, 60] }, "uniqueItems": true,
           "description": "The rates the launcher offers (default: [rate]). A rate other than `rate` is passed to the game's game_apply_rate()."
         },
-        "rate_note": { "type": "string", "description": "The launcher's explanation of the alternative rate (dw2003: the NTSC patch's 60 Hz mode)." }
+        "rate_note": { "type": "string", "description": "The launcher's explanation of the alternative rate (dw2003: the NTSC patch's 60 Hz mode)." },
+        "scenes": {
+          "type": "object", "additionalProperties": false, "required": ["2d", "3d"],
+          "description": "Opt-in: two present-filter sets (a filter and its crt values), one for the game's 2D scenes and one for its 3D scenes, which the runtime switches between as the adapter's game_state_scene() says. Absent: one set, as before. The settings' video.filter and video.crt are the 3D set, video.scene_2d the 2D set.",
+          "properties": {
+            "2d": {
+              "type": "object", "additionalProperties": false, "required": ["label"],
+              "properties": {
+                "label": { "type": "string", "minLength": 1, "description": "What the 2D scenes are, for the launcher's Filter row: \"the field and the menus\"." },
+                "filter": { "enum": ["none", "sharp", "scanlines", "crt", "smooth"], "description": "The 2D set's default filter (with the default crt values). Absent: a copy of the 3D set." }
+              }
+            },
+            "3d": {
+              "type": "object", "additionalProperties": false, "required": ["label"],
+              "properties": {
+                "label": { "type": "string", "minLength": 1, "description": "What the 3D scenes are, for the launcher's Filter row: \"battles\"." }
+              }
+            }
+          }
+        }
       }
     },
     "memory": {

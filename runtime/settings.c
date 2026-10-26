@@ -8,8 +8,11 @@
  *                   "scaling": "fit",
  *                   "subpixel": "on",
  *                   "filter": "none",
- *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 },
- *                   "menu_size": "auto" },                                the in-game menu's own; not read here
+ *                   "crt": { "scanlines": 50, "mask": 30, "curvature": 0 },   the 3D set (without scenes: the one)
+ *                   "scene_2d": { "filter": "smooth",                     a game with video.scenes: the 2D set; absent:
+ *                                 "crt": { "scanlines": 50, ... } },      game.json's 2d.filter and the default crt,
+ *                                                                         else a copy of the 3D set; unknown otherwise
+ *                   "menu_size": "auto" },                               the in-game menu's own; not read here
  *     "audio":    { "mute": false },
  *     "memcard1": "card1.mcd", "memcard2": "card2.mcd",                    null: no card in that slot
  *     "watchdog": 0,                                                       seconds; 0 off

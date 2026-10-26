@@ -60,6 +60,14 @@ the port and the launcher stay single binaries. Contents:
   `--input-test` then runs the window's input self-test on the pump alone, without the game.
 - **Timing:** `video.rate` (the nominal vsyncs per second: 50 PAL, 60 NTSC), the rates the launcher offers and the
   text that explains the alternative.
+- **Scenes** (optional): `video.scenes`, `{ "2d": { "label", "filter" }, "3d": { "label" } }`: the game has two present
+  filter sets, one for its 2D scenes and one for its 3D scenes, and the runtime switches between them at the vsync
+  where the adapter's `game_state_scene()` changes ("4. The adapter units"). A set is a filter and its crt values;
+  the sub-pixel mode, the scale, fullscreen, the scaling and the internal scale stay global. `label` names each set in
+  the launcher's Filter rows (`"the field and the menus"`, `"battles"`); `2d.filter` (optional) is the 2D set's
+  default filter, with the default crt values (absent: the 2D set starts as a copy of the 3D set). The settings'
+  `video.filter` and `video.crt` are the 3D set, `video.scene_2d` the 2D set (docs/LAUNCHER.md "Settings file").
+  The sets are fixed, `2d` and `3d`. Absent: one set, and the probe is never read.
 - **Memory:** `memory.ram` (base, size), `memory.slots` (name, base, size, in address order, contiguous), `memory.heap`
   (PS1 start and end, the host heap size; optional: a game whose heap is its own data, an array in its `.bss`, has
   none, and the arena is then the slots alone), `memory.bios_standin` (addresses the game reads from the BIOS ROM and what
@@ -84,6 +92,7 @@ launcher and the game's adapter use by these exact names:
 | `PsxstackGameBiosStandin` (`address`, `text`), `PSXSTACK_GAME_BIOS_STANDIN_COUNT`, `PSXSTACK_GAME_BIOS_STANDINS` | `memory.bios_standin`; with none the count is 0 and the initializer holds one empty entry |
 | `PSXSTACK_GAME_ABOUT`, `PSXSTACK_GAME_DISC_HINT`, `PSXSTACK_GAME_WEBSITE` | `launcher.*`; `about` defaults to the title, the others to `""` |
 | `PSXSTACK_GAME_UPDATES_GITHUB` | `launcher.updates.github` (`"owner/repo"`), `""` when absent (no update check) |
+| `PSXSTACK_GAME_SCENES`, `PSXSTACK_GAME_SCENE_2D_LABEL`, `PSXSTACK_GAME_SCENE_3D_LABEL`, `PSXSTACK_GAME_SCENE_2D_FILTER` | `video.scenes`: 1 or 0; the labels; the 2D set's default filter by name, `""` when `2d.filter` is absent (a copy of the 3D set); all three strings `""` without scenes |
 
 `--cmake` writes the CMake variables: `PSXSTACK_GAME_ID`, `PSXSTACK_GAME_TITLE`, `PSXSTACK_GAME_ENV_PREFIX`,
 `PSXSTACK_GAME_RATE`, and `PSXSTACK_GAME_STEAM_ART_CAPSULE`, `_WIDE_CAPSULE`, `_HERO`, `_LOGO`, `_ICON` (`launcher.steam_art`'s
@@ -144,6 +153,14 @@ C the game compiles into the port alongside the runtime. It implements:
   writes, a script's `write_mem` and `poke_ps1`). The stack asks the adapter first and maps the arena itself for what the adapter does not. A game
   whose random index is LIBC2's `rand` state (the PS1's generator, the shim's: `psyq/libc2.c`) returns
   `port_rand_seed()` (`hooks.h`) from `game_state_random_index()`.
+- **The scene** (a game with `video.scenes`): `int32_t game_state_scene(void)`, `PORT_SCENE_3D` (0) or
+  `PORT_SCENE_2D` (1): which present-filter set the window shows now. The runtime reads it once per vsync, before the
+  present, and never for a game without scenes; the switch snaps at that vsync, with nothing built (both sets'
+  pipelines are kept). It is a probe the runtime pulls, like the others, because the adapter has no per-vsync hook and
+  its mods can be off. The game decides; the runtime does not detect a scene from what is drawn (a game draws rotated
+  2D sprites with the GTE, and counting polygons flickers). dw2003: 3D while its battle overlay is in slot 1, 2D
+  otherwise. Default: `PORT_SCENE_3D`. It reads the game's state and changes none, so replays, checkpoint hashes and
+  save states do not depend on it. Additive: no `PSXSTACK_API` bump.
 - **The mods:** `game_mod_count()` and `game_mods()` return the game's `PortMod` records (`<psxstack/mods.h>`): id,
   version, options, `start`/`frame`/`stop` callbacks (`start` a setter the in-game menu may run again, `stop` its undo:
   docs/LAUNCHER.md "Mod runtime" rule 6), an optional `status` (text for the window title) and `applies` (`"restart"`
@@ -206,7 +223,8 @@ the id as a bare token), `_TITLE`, `_ENV_PREFIX`, `_RATE`, `_RATE_COUNT`, `_RATE
 `_RAM_SIZE`; `PORT_SLOT_COUNT`, `PORT_SLOT<n>_BASE/SIZE/NAME/OFS`, `port_slot<n>`, `PORT_HEAP_START_ADDR`,
 `PORT_HEAP_END_ADDR`, `PORT_HEAP_OFS`, `PORT_HEAP_SIZE`, `PORT_ARENA_SIZE`; `PsxstackGameDisc`,
 `PSXSTACK_GAME_DISC_COUNT`, `PSXSTACK_GAME_DISCS`; `PsxstackGameBiosStandin`, `PSXSTACK_GAME_BIOS_STANDIN_COUNT`,
-`PSXSTACK_GAME_BIOS_STANDINS`; `PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`, `_UPDATES_GITHUB`. The runtime's
+`PSXSTACK_GAME_BIOS_STANDINS`; `PSXSTACK_GAME_ABOUT`, `_DISC_HINT`, `_WEBSITE`, `_UPDATES_GITHUB`;
+`PSXSTACK_GAME_SCENES`, `_SCENE_2D_LABEL`, `_SCENE_3D_LABEL`, `_SCENE_2D_FILTER`. The runtime's
 environment variables are `<PREFIX>_PORT_<NAME>`.
 
 ### 6. Tests

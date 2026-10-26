@@ -96,6 +96,20 @@ def validate_schema(game, schema):
     for r in video.get("rates", []):
         if r not in (50, 60):
             fail("video.rates: 50 or 60 each")
+    for k in video:
+        if k not in schema["properties"]["video"]["properties"]:
+            fail(f"video: unknown key: {k}")
+    if "scenes" in video:
+        sc = video["scenes"]
+        if not isinstance(sc, dict) or set(sc) != {"2d", "3d"}:
+            fail("video/scenes: an object with `2d` and `3d`")
+        for k, allowed in (("2d", {"label", "filter"}), ("3d", {"label"})):
+            if not isinstance(sc[k], dict) or not set(sc[k]) <= allowed:
+                fail(f"video/scenes/{k}: an object with " + " and ".join(f"`{a}`" for a in sorted(allowed)))
+            if not isinstance(sc[k].get("label"), str) or not sc[k]["label"]:
+                fail(f"video/scenes/{k}/label: a non-empty string")
+        if "filter" in sc["2d"] and sc["2d"]["filter"] not in FILTERS:
+            fail("video/scenes/2d/filter: one of " + ", ".join(FILTERS))
     mem = game["memory"]
     if not isinstance(mem, dict):
         fail("memory: an object")
@@ -127,6 +141,9 @@ def validate_schema(game, schema):
         if not isinstance(up["github"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", up["github"]):
             fail("launcher/updates/github: owner/repo")
 
+
+# The present filters' names (runtime/video_filter.c port_filter_names; the schema's video.scenes.2d.filter).
+FILTERS = ("none", "sharp", "scanlines", "crt", "smooth")
 
 # launcher.steam_art's pictures, in the order the launcher writes them: key, the file's name after the appid.
 STEAM_ART = (("capsule", "p.png"), ("wide_capsule", ".png"), ("hero", "_hero.png"), ("logo", "_logo.png"),
@@ -181,6 +198,7 @@ def resolve(game):
         "rate": game["video"]["rate"],
         "rates": game["video"].get("rates") or [game["video"]["rate"]],
         "rate_note": game["video"].get("rate_note", ""),
+        "scenes": game["video"].get("scenes"),
         "about": game.get("launcher", {}).get("about", game["title"]),
         "disc_hint": game.get("launcher", {}).get("disc_hint", ""),
         "website": game.get("launcher", {}).get("website", ""),
@@ -276,6 +294,15 @@ def header(g, source):
     w(f"#define PSXSTACK_GAME_RATE_COUNT {len(g['rates'])}")
     w(f"#define PSXSTACK_GAME_RATES {{ {', '.join(str(r) for r in g['rates'])} }}")
     w(f"#define PSXSTACK_GAME_RATE_NOTE {cstr(g['rate_note'])}")
+    w("")
+    w("/* The scenes (video.scenes): 1 when the game has a present-filter set for its 2D scenes and one for its 3D scenes,")
+    w(" * switched by game_state_scene(); 0: one set. The labels name them in the launcher; the 2D set's default filter,")
+    w(" * \"\" for a copy of the 3D set's. */")
+    sc = g["scenes"]
+    w(f"#define PSXSTACK_GAME_SCENES {int(sc is not None)}")
+    w(f"#define PSXSTACK_GAME_SCENE_2D_LABEL {cstr(sc['2d']['label'] if sc else '')}")
+    w(f"#define PSXSTACK_GAME_SCENE_3D_LABEL {cstr(sc['3d']['label'] if sc else '')}")
+    w(f"#define PSXSTACK_GAME_SCENE_2D_FILTER {cstr(sc['2d'].get('filter', '') if sc else '')}")
     w("")
     w("/* Memory: the PS1 RAM as the game addresses it, the overlay slots (1-based: the hook macros' `tier`), the heap */")
     w(f"#define PSXSTACK_GAME_RAM_BASE {g['ram_base']:#010x}u")

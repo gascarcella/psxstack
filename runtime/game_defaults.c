@@ -35,6 +35,10 @@ WEAK int game_state_player_pos(double *x, double *y) {
     return 0;
 }
 
+WEAK int32_t game_state_scene(void) {
+    return PORT_SCENE_3D;
+}
+
 WEAK uint32_t game_state_image_size(void) {
     return 0;
 }

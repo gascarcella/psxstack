@@ -31,6 +31,14 @@ int32_t game_state_random_index(void); /* the pad RNG's index (the record's rand
 /* The field player's position in pixels: 1 and the values in x and y, or 0 when there is no player (default). */
 int game_state_player_pos(double *x, double *y);
 
+/* ---- The scene (a game with `video.scenes`, GAME_CONTRACT.md "1. game.json"): whether the game shows a 3D scene or a
+ * 2D one now, which picks the present-filter set the window uses. The runtime reads it once per vsync, before the
+ * present, and only when the description declares scenes (PSXSTACK_GAME_SCENES); the game decides, the runtime does
+ * not detect. Default: PORT_SCENE_3D (the one set of a game without scenes). */
+#define PORT_SCENE_3D 0
+#define PORT_SCENE_2D 1
+int32_t game_state_scene(void);
+
 /* ---- The checkpoint image: the game-state bytes a checkpoint hashes, as the emulator dumps them from PS1 RAM:
  * game_state_image_size() bytes (0 by default: nothing to hash), written by game_state_image (pointers as the PS1
  * addresses of the host functions they hold). game_state_volatile: the [lo, hi) byte ranges of the image zeroed for
