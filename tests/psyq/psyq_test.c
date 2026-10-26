@@ -1252,6 +1252,69 @@ static void test_libc2(void) {
     psyq_reset();
 }
 
+/* A 1x1 8-bit sprite at (x, 10) from the texture page and CLUT that getTPage and getClut make of (640, ty), (0, cy). */
+static void vram_sprite(int x, int ty, int cy) {
+    u32 *ot = &arena[1000];
+    SPRT *s = (SPRT *)&arena[2000];
+    DR_TPAGE *tp = (DR_TPAGE *)&arena[2010];
+
+    ClearOTag(ot, 1);
+    setSprt(s);
+    SetShadeTex(s, 1);
+    s->x0 = (s16)x;
+    s->y0 = 10;
+    s->u0 = 0;
+    s->v0 = (u8)ty;
+    s->w = 1;
+    s->h = 1;
+    s->clut = getClut(0, cy);
+    setDrawTPage(tp, 0, 0, getTPage(1, 0, 640, ty));
+    AddPrim(ot, s);
+    AddPrim(ot, tp); /* added last: drawn first */
+    DrawOTag(ot);
+}
+
+/* The extension (gpu.c "The extension"): before it, getTPage's and getClut's y bit 9 are ignored (the 1 MB VRAM: rows
+ * 512-1023 are rows 0-511); after it the texture and the CLUT come from rows 512 and 1012, and a transfer there
+ * leaves rows 0-511 alone. Last: it stays for the run. */
+static void test_vram_extend(void) {
+    static u16 clut[256];
+    const u16 *vram = psyq_gpu_vram();
+    u16 texel = 0x0101;
+    RECT tr = { 640, 0, 1, 1 }, cr = { 0, 500, 256, 1 };
+    DRAWENV env;
+    DR_ENV *de = (DR_ENV *)&arena[3000];
+
+    SetDefDrawEnv(&env, 0, 0, 320, 240);
+    SetDrawEnv(de, &env);
+    termPrim(de);
+    DrawOTag((u32 *)de);
+    clut[1] = 0x001F;
+    LoadImage(&tr, (u32 *)&texel);
+    LoadImage(&cr, (u32 *)clut);
+    CHECK(gpu_vram_rows() == 512, "the VRAM's rows before the extension: %d", gpu_vram_rows());
+    vram_sprite(10, 512, 1012);
+    CHECK(vram[10 * 1024 + 10] == 0x001F, "1 MB: page y 512 and CLUT row 1012 read rows 0 and 500: %04x",
+          vram[10 * 1024 + 10]);
+    gpu_vram_extend();
+    CHECK(gpu_vram_rows() == 1024, "the VRAM's rows after the extension: %d", gpu_vram_rows());
+    texel = 0x0202;
+    tr.y = 512;
+    cr.y = 1012;
+    clut[1] = 0x03E0;
+    clut[2] = 0x7C00;
+    LoadImage(&tr, (u32 *)&texel);
+    LoadImage(&cr, (u32 *)clut);
+    CHECK(vram[640] == 0x0101 && vram[512 * 1024 + 640] == 0x0202 && vram[500 * 1024 + 1] == 0x001F,
+          "a transfer to rows 512 and 1012 kept rows 0 and 500: %04x %04x %04x", vram[640], vram[512 * 1024 + 640],
+          vram[500 * 1024 + 1]);
+    vram_sprite(11, 512, 1012);
+    CHECK(vram[10 * 1024 + 11] == 0x7C00, "2 MB: the texel from row 512, its colour from CLUT row 1012: %04x",
+          vram[10 * 1024 + 11]);
+    vram_sprite(12, 0, 500);
+    CHECK(vram[10 * 1024 + 12] == 0x001F, "2 MB: rows 0 and 500 as before: %04x", vram[10 * 1024 + 12]);
+}
+
 int main(void) {
     psyq_reset();
     test_scalar();
@@ -1267,6 +1330,7 @@ int main(void) {
     test_gs_setup();
     test_gs_sort();
     test_libc2();
+    test_vram_extend();
     printf("psyq_test: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
