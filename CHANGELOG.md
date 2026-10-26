@@ -4,6 +4,20 @@ Every release of psxstack, newest first. Releases are semver tags (`vMAJOR.MINOR
 `PSXSTACK_API` (`include/psxstack/game.h`) counts incompatible contract changes (docs/GAME_CONTRACT.md
 "Compatibility and versions"). Issue and pull request numbers are this repository's.
 
+## v0.3.18 (2026-10-26)
+- **Video:** separate present filters for a game's 2D and 3D scenes (dw2003recomp #122, #111, #110). A game opts in
+  with game.json's `video.scenes` (the rows' labels and the 2D set's default filter) and the adapter's
+  `game_state_scene()`, read once per vsync; each set is a filter and its crt values, kept in `video.scene_2d` beside
+  `video.filter`/`video.crt` (the 3D set), with `--filter-2d` on the command line. Both sets' pipelines stay built,
+  so a scene change builds nothing. The launcher's Video screen and the in-game menu show a Filter row per set, the
+  menu marking the one in use (`port_video_scene()`). Additive: `PSXSTACK_API` stays 1, and a game without scenes
+  sees no change.
+- **Existing players** of a game that opts in: the filter they already chose becomes the 3D scenes' filter, and the
+  2D scenes take the game's 2D default (smooth for DW2003) until they change it.
+- **VRAM:** `port_video_vram_extend`, a 1024x1024 VRAM for textures and CLUTs in Psy-Q's 2 MB layout, on both
+  renderers and in save states; `port_video_widescreen_pad`, how far past the display's edges the wide canvas shows
+  (dw2003recomp #78, #109).
+
 ## v0.3.17 (2026-10-24)
 - **Docs:** the README leads with the features, then using the stack from a game and developing it (#107);
   `CONTRIBUTING.md`, the ground rules, the gates and the pull request steps; this changelog, out of the README.
