@@ -115,7 +115,13 @@ default: the picture's pixels as whole blocks), `sharp` (sharp bilinear), `scanl
 `crt[:scanlines=,mask=,curvature=]` (a parameter not named keeps `video.crt`'s value; defaults 50, 30, 0) or `smooth`
 (xBR on the 1x software image, whatever the internal scale); it applies to
 the window and to `--gpu-screenshot`'s `@WxH` pictures, and a software-renderer run logs that its picture stays
-unfiltered (docs/PORT.md "Rendering").
+unfiltered (docs/PORT.md "Rendering"). A game with 2D and 3D scenes (game.json `video.scenes`, GAME_CONTRACT.md
+"1. game.json") has two such sets: `video.filter` and `video.crt` are the 3D scenes', `video.scene_2d` (`{ "filter",
+"crt" }`, read member by member over its default: game.json's `2d.filter` with the default crt values, else a copy of
+the 3D set) the 2D scenes'. `--filter` sets both, `--filter-2d NAME[:KEY=V,...]` the 2D set alone (over `--filter`;
+refused, status 64, for a game without scenes, where `video.scene_2d` is an unknown key). The window shows the set of
+the scene the adapter's `game_state_scene()` names, read every vsync; the log says `renderer: gpu: filter crt (3d),
+smooth (2d)` once both are built and `renderer: gpu: scene 2d (filter smooth), vsync N` at each change.
 **Widescreen** (docs/PORT.md "Rendering"): when a game mod calls `port_video_widescreen_enable` (from its start) and
 `port_video_widescreen(1)` (every vsync of the scenes that widen), the hardware renderer presents those scenes 16:9
 inside the window, the rest 4:3; the window opens 16:9 when the mod is on and `video.renderer` is `gpu`. With the

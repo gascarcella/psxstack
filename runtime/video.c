@@ -826,12 +826,12 @@ static void video_scene_follow(void) {
     if (s != video_scene) {
 #ifdef PSXSTACK_SDL
         if (render_gpu_active()) {
-            port_log("renderer: gpu: scene %s (filter %s)", s == PORT_SCENE_2D ? "2d" : "3d",
-                     port_filter_names[video_filters[s].kind]);
+            port_log("renderer: gpu: scene %s (filter %s), vsync %ld", s == PORT_SCENE_2D ? "2d" : "3d",
+                     port_filter_names[video_filters[s].kind], port_frames);
         } else
 #endif
         {
-            port_log("video: scene %s", s == PORT_SCENE_2D ? "2d" : "3d");
+            port_log("video: scene %s, vsync %ld", s == PORT_SCENE_2D ? "2d" : "3d", port_frames);
         }
     }
     video_scene = s;

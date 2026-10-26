@@ -30,7 +30,8 @@ consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp), the Dig
 - **The hardware renderer** on SDL_GPU (Vulkan; Direct3D 12 on Windows): internal resolution up to 8x, sub-pixel
   precision from the GTE's fractions, optional perspective-correct texturing (docs/PORT.md "Rendering",
   "Sub-pixel precision").
-- **Present filters:** sharp bilinear, scanlines, CRT, xBR (docs/RUNTIME.md "The window").
+- **Present filters:** sharp bilinear, scanlines, CRT, xBR (docs/RUNTIME.md "The window"); a game with 2D and 3D scenes
+  may give each its own (game.json `video.scenes`).
 - **Screen fit:** fit, integer or stretch scaling; a wide 16:9 canvas a game's mod can turn on for the scenes that
   widen.
 - **Texture dumps and texture packs**, keyed by content (docs/RUNTIME.md "Texture dump", "Texture packs").

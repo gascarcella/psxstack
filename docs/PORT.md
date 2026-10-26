@@ -415,6 +415,14 @@ against the PS1 or an emulator) are listed in `psyq/README.md` "Behaviour assume
     4:3) is smoothed from its canvas in the target read at 1x (every N-th pixel, exact for the 2D layers). The window
     and `--gpu-screenshot`'s `@WxH` pictures are filtered; the picture itself (no `@WxH`, the debug channel's) is not.
     The software renderer shows the picture unfiltered and logs it.
+    **Two sets** (a game with `video.scenes`: GAME_CONTRACT.md "1. game.json"): a filter and its parameters for the
+    2D scenes and another for the 3D scenes, in two slots that are both built at the start and at a live apply
+    (pipelines per filter kind, so two slots of one kind share them; smooth's edges texture when either slot is
+    smooth). video.c reads `game_state_scene()` once per vsync before the present and passes the slot to every
+    present call: the switch snaps at that vsync and creates or frees nothing (DECISIONS "Two filter sets: the game
+    names its scene, both pipelines stay built"). A game without scenes has one set; the probe is never called. The in-game menu, over
+    whichever scene, is drawn after the filtered picture, which covers the whole frame; `port_video_scene()` tells it
+    the set in use.
   - **Widescreen** (`runtime/render_gpu_wide.c`, its header comment; DECISIONS "Widescreen: a wide canvas beside the
     VRAM"): a game mod asks for it (`port_video_widescreen_enable`, then `port_video_widescreen(on)` every vsync, on for
     the scenes whose 3D the game already sends past the display's edges). The target gets a strip of 512 VRAM columns
