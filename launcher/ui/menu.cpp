@@ -34,8 +34,12 @@
 extern "C" {
 #include "port_harness.h"
 #include "port_runtime.h"
+#include "psxstack/game.h"     // PORT_SCENE_*
 #include "psxstack/settings.h" // the runtime's: the settings file the game was started with
 }
+
+static_assert(psxstack::Screens::SCENE_3D == PORT_SCENE_3D && psxstack::Screens::SCENE_2D == PORT_SCENE_2D,
+              "the screens' scenes are the adapter's");
 
 namespace {
 
@@ -397,6 +401,9 @@ int port_menu_frame(void) {
         return PORT_MENU_NONE;
     }
     menu_style_for_window();
+    // The scenes' set the present uses now, marked on the Settings page (a game with scenes; the game is paused, so it
+    // holds while the menu is up).
+    mn.screens.set_scene(PSXSTACK_GAME_SCENES ? (int)port_video_scene() : psxstack::Screens::SCENE_NONE);
     if (mn.renderer != nullptr) {
         ImGui_ImplSDLRenderer3_NewFrame();
     } else {
