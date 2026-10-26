@@ -72,9 +72,9 @@ struct FilterSet {
     }
     bool operator!=(const FilterSet &o) const { return !(*this == o); }
 };
-// video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Settings screen's order.
+// video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Video screen's order.
 inline const char *const SCALING_NAMES[] = { "fit", "integer", "stretch" };
-// video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
+// video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Video screen's order.
 inline const char *const MENU_SIZE_NAMES[] = { "smaller", "auto", "larger" };
 // input.player2's values (the game's runtime/input.c): none, or the gamepad by connection order that is player 2.
 inline const char *const PLAYER2_NAMES[] = { "off", "first", "second" };

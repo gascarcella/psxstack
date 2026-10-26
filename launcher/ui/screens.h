@@ -1,5 +1,5 @@
 // The screens the launcher's window (launcher/src/app.cpp) and the game's in-game menu (launcher/ui/menu.cpp) share:
-// Settings, Controls and Mods, over the settings file (settings.h) and the mods' manifests (mods.h), with the
+// Video, Graphics, Audio, Controls, Mods and System, over the settings file (settings.h) and the mods' manifests (mods.h), with the
 // controls' "press an input" prompt (input.h InputCapture). Both hosts drive it the same way: load() once,
 // handle_event() for every SDL event before ImGui's backend sees it, begin_frame() before ImGui::NewFrame, a draw_*
 // per frame, end_frame() after ImGui::Render (the save, once no widget is in use).
@@ -32,13 +32,13 @@ public:
               bool game_found);
     // In the game's menu: every screen says that changes take effect at the next start.
     void set_in_game(bool on) { in_game_ = on; }
-    // The scenes' present-filter set the game shows now, which the Settings screen marks (a game with scenes; the
+    // The scenes' present-filter set the game shows now, which the Graphics screen marks (a game with scenes; the
     // in-game menu, every frame, from the runtime): SCENE_3D or SCENE_2D (game.h PORT_SCENE_*), SCENE_NONE unmarked.
     static constexpr int SCENE_NONE = -1, SCENE_3D = 0, SCENE_2D = 1;
     void set_scene(int scene) { scene_ = scene; }
-    // A part of the Settings screen its host draws itself, after "Memory cards" (the launcher's Updates); given the
-    // label column's width. The in-game menu sets none.
-    void set_settings_extra(std::function<void(float label_w)> draw) { settings_extra_ = std::move(draw); }
+    // A part of the System screen its host draws itself, after "Memory cards" (the launcher's Updates and Steam);
+    // given the label column's width. The in-game menu sets none.
+    void set_system_extra(std::function<void(float label_w)> draw) { system_extra_ = std::move(draw); }
 
     // True when the event belonged to the controls' prompt (it then does not reach ImGui).
     bool handle_event(const SDL_Event &e);
@@ -55,7 +55,10 @@ public:
         return s;
     }
 
-    void draw_settings();
+    void draw_video();
+    void draw_graphics();
+    void draw_audio();
+    void draw_system();
     void draw_controls();
     void draw_mods();
 
@@ -103,7 +106,7 @@ private:
     bool in_game_ = false;
     int scene_ = SCENE_NONE;
     std::string controls_tab_; // show_controls_tab's, until the Controls screen is drawn
-    std::function<void(float)> settings_extra_;
+    std::function<void(float)> system_extra_;
     std::string error_; // the last save error
 
     // The controls: the "press a key" prompt and what it is for (section 0 keyboard, 1 gamepad, 2 hotkeys).

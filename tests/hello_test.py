@@ -120,9 +120,10 @@ def script_check(runner, exe, build, env):
 def menu_check(build, env, gpu):
     """--menu: hello with the window and the in-game menu (-DPSXSTACK_SDL=ON -DPSXSTACK_MENU=ON: tools/sdl3, dxc and
     imgui), its input self-test on SDL's offscreen driver, which ends with the menu's round trip (runtime/input.c), and
-    the picture of the menu up on its Settings page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
-    build/menu.png; with gpu the same on the hardware renderer, build/menu-gpu.png (menu_gpu); then the Mods page's at
-    three window sizes and one menu size (MENU_SIZES), build/menu-mods-*.png; then the input self-test again with each
+    the picture of the menu up on its Graphics page (HELLO_PORT_MENU_SHOT and _SCREEN, launcher/ui/menu.cpp) at
+    build/menu.png; with gpu the same on the hardware renderer, build/menu-gpu.png (menu_gpu); then the other settings
+    pages' at 640x480 (MENU_PAGES), build/menu-<page>.png; then the Mods page's at three window sizes and one menu size
+    (MENU_SIZES), build/menu-mods-*.png; then the input self-test again with each
     input.player2 that gives a second pad (PLAYER2: its players' part), the first also with the picture of the Controls
     screen's Gamepad tab at 640x480, build/menu-controls-gamepad.png."""
     for tool in ("cmake", "ninja", "gcc", "g++", "objcopy", "objdump", "nm"):
@@ -151,7 +152,7 @@ def menu_check(build, env, gpu):
         print("\n".join(lines[-15:]))
     fit = shot_fit(lines)
     if fit != "nothing wider than its window":
-        print(f"FAIL the Settings page at 640x480: {fit}")
+        print(f"FAIL the Graphics page at 640x480: {fit}")
         ok = False
     if shot.exists() and shot.stat().st_size > 1000 and shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n":
         print(f"ok   the menu's picture: {shot} ({shot.stat().st_size} bytes)")
@@ -160,6 +161,7 @@ def menu_check(build, env, gpu):
         ok = False
     if gpu:
         ok &= menu_gpu(exe, cfg, shot, env)
+    ok &= menu_pages(exe, cfg, env)
     ok &= menu_sizes(exe, cfg, env)
     ok &= players_check(exe, cfg, env)
     print("hello: " + ("pass" if ok else "FAIL"))
@@ -167,7 +169,8 @@ def menu_check(build, env, gpu):
 
 
 def menu_run(exe, cfg, shot, env, *extra):
-    """The input self-test with the menu on its Settings page, its picture to `shot`. The game starts muted, from a
+    """The input self-test with the menu on its Graphics page (the largest of the settings pages: every setting of
+    the hardware renderer, greyed out under the software one), its picture to `shot`. The game starts muted, from a
     settings file of its own, so the menu's pages have something to edit. The live apply with a change
     (runtime/input.c HELLO_PORT_MENU_LIVE_FILE): a second file, put in place while the menu is up, rebinds the menu
     hotkey, switches fast-forward on and the mute off; the round trip then closes the menu with the new key, the mod's
@@ -177,7 +180,7 @@ def menu_run(exe, cfg, shot, env, *extra):
     (cfg / "live.json").write_text('{ "schema": 1, "input": { "hotkeys": { "menu": "F10" } }, '
                                    '"mods": { "fast_forward": { "enabled": true } }, "audio": { "mute": false } }\n')
     run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", HELLO_PORT_MENU_SHOT=str(shot),
-                   HELLO_PORT_MENU_SCREEN="settings", HELLO_PORT_MENU_LIVE_FILE=str(cfg / "live.json"))
+                   HELLO_PORT_MENU_SCREEN="graphics", HELLO_PORT_MENU_LIVE_FILE=str(cfg / "live.json"))
     return subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--mods-dir", str(cfg / "mods"),
                            "--input-test", "--fps", "0", *extra], capture_output=True, text=True, env=run_env,
                           timeout=600)
@@ -268,6 +271,33 @@ def png_rgb(path):
         out += line if bpp == 3 else bytes(v for i, v in enumerate(line) if i % 4 != 3)
         prev = line
     return w, h, bytes(out)
+
+
+# The settings pages menu_run does not take (it takes Graphics), at the smallest window: nothing may be wider than it.
+MENU_PAGES = ["video", "audio", "system"]
+
+
+def menu_pages(exe, cfg, env):
+    ok = True
+    pages = cfg / "pages"
+    pages.mkdir(exist_ok=True)
+    (pages / "settings.json").write_text('{ "schema": 1 }\n')
+    for page in MENU_PAGES:
+        shot = exe.parent / f"menu-{page}.png"
+        shot.unlink(missing_ok=True)
+        run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy", SDL_RENDER_DRIVER="software",
+                       HELLO_PORT_MENU_SHOT=str(shot), HELLO_PORT_MENU_SCREEN=page, HELLO_PORT_MENU_WINDOW="640x480")
+        r = subprocess.run([str(exe), "--config", str(pages / "settings.json"), "--input-test", "--fps", "0"],
+                           capture_output=True, text=True, env=run_env, timeout=600)
+        lines = r.stderr.strip().splitlines()
+        fit = shot_fit(lines)
+        good = (r.returncode == 0 and fit == "nothing wider than its window" and shot.exists() and
+                shot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n")
+        print(("ok   " if good else "FAIL ") + f"the {page.capitalize()} page at 640x480: {fit}; {shot}")
+        if not good and r.returncode != 0:
+            print("\n".join(lines[-15:]))
+        ok &= good
+    return ok
 
 
 # The Mods page's pictures (#92): a desktop's 1920x1080, the Steam Deck's 1280x800 and the smallest window, 640x480,

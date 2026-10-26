@@ -44,7 +44,7 @@ constexpr const char *ENV_UPDATE_NOW = PSXSTACK_GAME_ENV_PREFIX "_LAUNCHER_UPDAT
 constexpr const char *ENV_SELFTEST_DISC = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_DISC";
 constexpr const char *ENV_SELFTEST_GAME = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_GAME";
 constexpr const char *ENV_SELFTEST_VIDEO_DRIVER = PSXSTACK_GAME_ENV_PREFIX "_SELFTEST_VIDEO_DRIVER";
-// The rates: the nominal one (the settings' default) and the ones the Settings screen offers.
+// The rates: the nominal one (the settings' default) and the ones the Video screen offers.
 constexpr int GAME_RATE = PSXSTACK_GAME_RATE;
 constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;

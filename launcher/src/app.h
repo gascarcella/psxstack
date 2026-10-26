@@ -21,7 +21,7 @@
 
 namespace psxstack {
 
-enum class Screen { Play, Disc, Settings, Controls, Mods, Count };
+enum class Screen { Play, Disc, Video, Graphics, Audio, Controls, Mods, System, Count };
 const char *screen_name(Screen s);
 
 // SDL video, the window, the renderer and ImGui's context and backends. False with the reason in `err`.
@@ -54,7 +54,7 @@ struct AppOptions {
     std::vector<std::string> args;
     std::function<UpdateSystem()> update_system;
     bool update_now = false;
-    // The Settings screen's Steam section (docs/LAUNCHER.md "Steam"): this system's Steam; the self-test's fixtures.
+    // The System screen's Steam section (docs/LAUNCHER.md "Steam"): this system's Steam; the self-test's fixtures.
     SteamOptions steam;
 };
 
@@ -134,7 +134,7 @@ public:
     const std::string &update_message() const { return update_message_; }
     const HttpDownload &update_download() const { return download_; }
     void update_cancel(); // the download's Cancel: stopped, its file removed, the prompt closed (Later)
-    // The Settings screen's Steam section (its buttons; nothing looks for Steam before one is pressed).
+    // The System screen's Steam section (its buttons; nothing looks for Steam before one is pressed).
     SteamSection &steam() { return steam_; }
 
 private:

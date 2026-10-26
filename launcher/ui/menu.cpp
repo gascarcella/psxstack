@@ -1,16 +1,16 @@
 // The in-game menu (include/psxstack/menu.h; docs/LAUNCHER.md "In-game menu"): Dear ImGui inside the game's window,
 // on the present path the window chose (SDL_Renderer, or SDL_GPU for the hardware renderer), shown while the pump
 // holds the game paused. Its pages: Game (the title, Resume, Quit) and the launcher's shared screens (screens.h:
-// Settings, Controls, Mods) over the settings file the game was started with (--config) and the mods beside the
+// Video, Graphics, Audio, Controls, Mods, System) over the settings file the game was started with (--config) and the mods beside the
 // game, so a change made here is the same change the launcher would make; it takes effect at the next start. The
 // runtime stays C: this file is the C++ behind the C API, compiled into the game only with PSXSTACK_MENU
 // (cmake/psxstack.cmake).
 //
 // <PREFIX>_PORT_MENU_SHOT=PATH writes the window's output with the menu up, once, as a PNG: the second present after
 // it is shown, on either present path (the hardware renderer's through a texture render_gpu.c reads back: menu.h
-// port_menu_shot_due). <PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods picks the page it opens on (the picture
-// of a page; default game), `mods:<id>` with that mod chosen, `controls:<tab>` on that tab (keyboard, gamepad,
-// hotkeys).
+// port_menu_shot_due). <PREFIX>_PORT_MENU_SCREEN=game|video|graphics|audio|controls|mods|system picks the page it
+// opens on (the picture of a page; default game; `settings`, the page before the split, is video), `mods:<id>` with
+// that mod chosen, `controls:<tab>` on that tab (keyboard, gamepad, hotkeys).
 #include "menu.h"
 
 #include <algorithm>
@@ -43,8 +43,8 @@ static_assert(psxstack::Screens::SCENE_3D == PORT_SCENE_3D && psxstack::Screens:
 
 namespace {
 
-enum Page { PAGE_GAME, PAGE_SETTINGS, PAGE_CONTROLS, PAGE_MODS, PAGE_COUNT };
-const char *const PAGE_NAMES[PAGE_COUNT] = { "Game", "Settings", "Controls", "Mods" };
+enum Page { PAGE_GAME, PAGE_VIDEO, PAGE_GRAPHICS, PAGE_AUDIO, PAGE_CONTROLS, PAGE_MODS, PAGE_SYSTEM, PAGE_COUNT };
+const char *const PAGE_NAMES[PAGE_COUNT] = { "Game", "Video", "Graphics", "Audio", "Controls", "Mods", "System" };
 
 struct Menu {
     SDL_Window *window = nullptr;
@@ -99,6 +99,9 @@ bool menu_open_common(SDL_Window *window) {
             if (SDL_strcasecmp(name.c_str(), PAGE_NAMES[i]) == 0) {
                 mn.start_page = i;
             }
+        }
+        if (SDL_strcasecmp(name.c_str(), "settings") == 0) {
+            mn.start_page = PAGE_VIDEO;
         }
     }
     int win_w = 0, win_h = 0;
@@ -239,14 +242,23 @@ int menu_draw() {
     }
     ImGui::BeginChild("page", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
     switch (mn.page) {
-    case PAGE_SETTINGS:
-        mn.screens.draw_settings();
+    case PAGE_VIDEO:
+        mn.screens.draw_video();
+        break;
+    case PAGE_GRAPHICS:
+        mn.screens.draw_graphics();
+        break;
+    case PAGE_AUDIO:
+        mn.screens.draw_audio();
         break;
     case PAGE_CONTROLS:
         mn.screens.draw_controls();
         break;
     case PAGE_MODS:
         mn.screens.draw_mods();
+        break;
+    case PAGE_SYSTEM:
+        mn.screens.draw_system();
         break;
     default:
         action = menu_draw_game();
@@ -401,7 +413,7 @@ int port_menu_frame(void) {
         return PORT_MENU_NONE;
     }
     menu_style_for_window();
-    // The scenes' set the present uses now, marked on the Settings page (a game with scenes; the game is paused, so it
+    // The scenes' set the present uses now, marked on the Graphics page (a game with scenes; the game is paused, so it
     // holds while the menu is up).
     mn.screens.set_scene(PSXSTACK_GAME_SCENES ? (int)port_video_scene() : psxstack::Screens::SCENE_NONE);
     if (mn.renderer != nullptr) {

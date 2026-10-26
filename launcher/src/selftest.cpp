@@ -1259,7 +1259,7 @@ static void drop_file(SDL_Window *w, const std::string &path) {
 }
 
 // The play path with the game's stand-in and a verified disc (a file of the BIN's size and the right disc.sha1).
-// The mouse over the page, its wheel turned down: the Settings screen scrolled to its end (the Updates part), or by
+// The mouse over the page, its wheel turned down: the System screen scrolled to its end (the Updates part), or by
 // `notches` of the wheel.
 static void scroll_page_down(SDL_Window *w, App &app, float notches = 40) {
     int width = 0, height = 0;
@@ -1431,20 +1431,21 @@ static void test_play(SDL_Window *window, const std::string &root) {
         app.screens().show_controls_tab("keyboard");
         pump(app, 2);
     }
-    app.set_screen(Screen::Settings);
+    // The Graphics screen under the Software renderer: the GPU renderer's settings greyed out (a picture); then the
+    // GPU renderer at x4 with them in use (a picture), then back to the default.
+    app.set_screen(Screen::Graphics);
     pump(app, 2);
-    png = path_join(shots, "9-Settings.png");
+    png = path_join(shots, "9-Graphics.png");
     app.frame(png.c_str());
-    // The GPU renderer shows its internal-resolution slider (a picture), then back to the default.
     app.settings().values.renderer = "gpu";
     app.settings().values.internal_scale = 4;
     pump(app, 2);
-    png = path_join(shots, "9b-Settings-gpu.png");
+    png = path_join(shots, "9b-Graphics-gpu.png");
     app.frame(png.c_str());
     // The CRT filter shows its sliders (a picture).
     app.settings().values.present.filter = "crt";
     pump(app, 2);
-    png = path_join(shots, "9c-Settings-crt.png");
+    png = path_join(shots, "9c-Graphics-crt.png");
     app.frame(png.c_str());
     // A game with scenes: the Filter row for its 3D scenes and the one for its 2D scenes, the latter marked as the one
     // on screen as the in-game menu marks it (a picture; the launcher marks none).
@@ -1452,7 +1453,7 @@ static void test_play(SDL_Window *window, const std::string &root) {
         app.settings().values.present_2d.filter = "scanlines";
         app.screens().set_scene(Screens::SCENE_2D);
         scroll_page_down(window, app, 4);
-        png = path_join(shots, "9d-Settings-scenes.png");
+        png = path_join(shots, "9d-Graphics-scenes.png");
         app.frame(png.c_str());
         app.screens().set_scene(Screens::SCENE_NONE);
         app.settings().values.present_2d = Settings::scene_2d_default(app.settings().values.present);
@@ -1555,7 +1556,7 @@ static void test_mods_window(SDL_Window *window, const std::string &root) {
 }
 
 // ---- the update check (docs/LAUNCHER.md "Updates"): the version rules, GitHub's answer, curl through its stand-in,
-// the prompt and the Settings screen. Never the network: the stand-in answers.
+// the prompt and the System screen. Never the network: the stand-in answers.
 
 static void set_env(const char *name, const std::string &value) {
     SDL_SetEnvironmentVariable(SDL_GetEnvironment(), name, value.c_str(), true);
@@ -1818,7 +1819,7 @@ static void test_http(const std::string &root) {
 
 // The flow in the window: the check at start, the prompt over Play (Escape is Later, the Release page, Skip and a
 // newer release), the setting off and Check now, --no-update-check, the game running, curl missing, a cut answer, a
-// development build, no repository; pictures of the prompt and of the Settings screen's part.
+// development build, no repository; pictures of the prompt and of the System screen's part.
 static void test_update_window(SDL_Window *window, const std::string &root) {
     const std::string dir = path_join(root, "updates-ui"), shots = path_join(root, "screens");
     const std::string files = path_join(root, "updates-files");
@@ -1867,10 +1868,10 @@ static void test_update_window(SDL_Window *window, const std::string &root) {
         pump(app, 3);
         check(!app.update_prompt() && !app.update_prompt_shown() && app.settings().values.update_skipped.empty(),
               "Escape is Later: the prompt closes, nothing is written");
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         pump(app, 3);
         scroll_page_down(window, app);
-        png = path_join(shots, "18-Settings-update.png");
+        png = path_join(shots, "18-System-update.png");
         app.frame(png.c_str());
         check(opened.empty(), "no page opened by itself");
     }
@@ -1931,10 +1932,10 @@ static void test_update_window(SDL_Window *window, const std::string &root) {
         wait_check(app);
         check(app.update_check().state() == UpdateCheck::State::Newer && !app.update_prompt(),
               "Check now reports the release without a prompt: " + app.update_check().summary());
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         pump(app, 3);
         scroll_page_down(window, app);
-        png = path_join(shots, "18b-Settings-update-off.png");
+        png = path_join(shots, "18b-System-update-off.png");
         app.frame(png.c_str());
         app.settings().values.update_check = true; // the checkbox: written back
         app.settings().values.update_skipped.clear(); // the Forget button
@@ -1984,10 +1985,10 @@ static void test_update_window(SDL_Window *window, const std::string &root) {
                   app.update_check().summary().find("curl was not found") != std::string::npos &&
                   app.update_check().release_page() == "https://github.com/owner/game/releases/latest",
               "curl missing: reported, the releases page offered: " + app.update_check().summary());
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         pump(app, 3);
         scroll_page_down(window, app);
-        png = path_join(shots, "18c-Settings-update-no-curl.png");
+        png = path_join(shots, "18c-System-update-no-curl.png");
         app.frame(png.c_str());
     }
     set_env(ENV_FAKE_CURL, self_exe());
@@ -2017,13 +2018,13 @@ static void test_update_window(SDL_Window *window, const std::string &root) {
         AppOptions none = o;
         none.update_repo = "";
         App app(window, renderer, location, none);
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         pump(app, 3);
         scroll_page_down(window, app);
         check(!app.update_check().available() && app.update_check().state() == UpdateCheck::State::Idle &&
                   !app.update_prompt(),
               "no repository: no update check");
-        png = path_join(shots, "18d-Settings-no-repo.png");
+        png = path_join(shots, "18d-System-no-repo.png");
         app.frame(png.c_str());
         check(app.last_error().empty(), "no error in the status bar: " + app.last_error());
     }
@@ -2159,10 +2160,10 @@ static void test_update_flow(SDL_Window *window, const std::string &root) {
         check(app.update_step() == UpdateStep::None && !app.update_prompt() && !app.update_prompt_shown() &&
                   !path_is_file(download) && read(image) == old_image && !app.quit_requested(),
               "Cancel (Escape): the download stopped and removed, the prompt closed, the install unchanged");
-        app.set_screen(Screen::Settings); // the Settings screen's Update now
+        app.set_screen(Screen::System); // the System screen's Update now
         pump(app, 3);
         scroll_page_down(window, app);
-        png = path_join(shots, "19e-Settings-update-now.png");
+        png = path_join(shots, "19e-System-update-now.png");
         app.frame(png.c_str());
     }
     set_env(ENV_SELFTEST_CURL_DOWNLOAD, new_image);

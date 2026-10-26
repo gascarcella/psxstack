@@ -132,13 +132,21 @@ void Screens::draw_filter(float label_w, FilterSet &set, const char *id, const c
     ImGui::PopID();
 }
 
-void Screens::draw_settings() {
+// A line of help under a setting's widget, in its value column.
+static void help_line(float label_w, const char *text) {
+    ImGui::Indent(label_w);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", text);
+    ImGui::PopTextWrapPos();
+    ImGui::Unindent(label_w);
+}
+
+// Video: the window and the picture's place in it, the rate, the in-game menu's size.
+void Screens::draw_video() {
     Settings &s = settings_.values;
     const float label_w = label_width();
     draw_restart_note();
     ImGui::BeginDisabled(!settings_.writable());
-
-    section_title("Video");
     ImGui::TextDisabled("Window size");
     ImGui::SameLine(label_w);
     ImGui::SetNextItemWidth(item_width(label_w));
@@ -167,12 +175,31 @@ void Screens::draw_settings() {
                 dirty_ = true;
             }
         }
-        ImGui::Indent(label_w);
-        ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Fit: as large as the screen allows. Integer: every line the same height, with black bars "
-                            "where the screen is not a whole multiple. Stretch: the whole screen, out of shape.");
-        ImGui::PopTextWrapPos();
-        ImGui::Unindent(label_w);
+        help_line(label_w, "Fit: as large as the screen allows. Integer: every line the same height, with black bars "
+                           "where the screen is not a whole multiple. Stretch: the whole screen, out of shape.");
+    }
+    // The rates the game offers (brand.h GAME_RATES): the nominal one named by its TV standard; one rate: no choice.
+    if (GAME_RATE_COUNT > 1) {
+        ImGui::TextDisabled("Refresh");
+        ImGui::SameLine(label_w);
+        for (int i = 0; i < GAME_RATE_COUNT; i++) {
+            const int rate = GAME_RATES[i];
+            char label[32];
+            SDL_snprintf(label, sizeof(label), "%d Hz%s", rate,
+                         rate != GAME_RATE ? "" : rate == 50 ? " (PAL)" : " (NTSC)");
+            if (i > 0) {
+                ImGui::SameLine();
+                wrap_for(radio_width(label), label_w);
+            }
+            if (ImGui::RadioButton(label, s.refresh == rate)) {
+                s.refresh = rate;
+                dirty_ = true;
+            }
+        }
+        restart_mark(label_w);
+        if (s.refresh != GAME_RATE && GAME_RATE_NOTE[0] != '\0') {
+            help_line(label_w, GAME_RATE_NOTE);
+        }
     }
     // video.menu_size: the in-game menu's size, applied as soon as it is chosen (launcher/ui/menu.cpp).
     {
@@ -194,26 +221,17 @@ void Screens::draw_settings() {
             }
         }
     }
-    // The rates the game offers (brand.h GAME_RATES): the nominal one named by its TV standard; one rate: no choice.
-    if (GAME_RATE_COUNT > 1) {
-        ImGui::TextDisabled("Refresh");
-        ImGui::SameLine(label_w);
-        for (int i = 0; i < GAME_RATE_COUNT; i++) {
-            const int rate = GAME_RATES[i];
-            char label[32];
-            SDL_snprintf(label, sizeof(label), "%d Hz%s", rate,
-                         rate != GAME_RATE ? "" : rate == 50 ? " (PAL)" : " (NTSC)");
-            if (i > 0) {
-                ImGui::SameLine();
-                wrap_for(radio_width(label), label_w);
-            }
-            if (ImGui::RadioButton(label, s.refresh == rate)) {
-                s.refresh = rate;
-                dirty_ = true;
-            }
-        }
-        restart_mark(label_w);
-    }
+    ImGui::EndDisabled();
+}
+
+// Graphics: the renderer and what the hardware one does with the picture. Under the Software renderer its settings
+// are shown greyed out under a line that says so (the page keeps its shape when the renderer changes).
+void Screens::draw_graphics() {
+    Settings &s = settings_.values;
+    const float label_w = label_width();
+    const bool gpu = s.renderer == "gpu";
+    draw_restart_note();
+    ImGui::BeginDisabled(!settings_.writable());
     ImGui::TextDisabled("Renderer");
     ImGui::SameLine(label_w);
     if (ImGui::RadioButton("Software", s.renderer == "software")) {
@@ -222,76 +240,84 @@ void Screens::draw_settings() {
     }
     ImGui::SameLine();
     wrap_for(radio_width("GPU (experimental)"), label_w);
-    if (ImGui::RadioButton("GPU (experimental)", s.renderer == "gpu")) {
+    if (ImGui::RadioButton("GPU (experimental)", gpu)) {
         s.renderer = "gpu";
         dirty_ = true;
     }
     restart_mark(label_w);
-    if (s.renderer == "gpu") {
-        char res[64];
-        ImGui::TextDisabled("Resolution");
-        ImGui::SameLine(label_w);
-        ImGui::SetNextItemWidth(item_width(label_w));
-        SDL_snprintf(res, sizeof(res), "x%d  (%d x %d)", s.internal_scale, 320 * s.internal_scale,
-                     240 * s.internal_scale);
-        dirty_ |= ImGui::SliderInt("##internal_scale", &s.internal_scale, 1, 8, res, ImGuiSliderFlags_AlwaysClamp);
-        restart_mark(label_w);
-        ImGui::Indent(label_w);
-        ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("SDL_GPU (Vulkan; Direct3D 12 on Windows). x1 is the Software picture, pixel for pixel; above it the game is drawn "
-                            "at that resolution, without dithering, in 8-bit colour. Without a usable GPU the game "
-                            "falls back to Software.");
-        ImGui::PopTextWrapPos();
-        ImGui::Unindent(label_w);
+    help_line(label_w, gpu ? "SDL_GPU (Vulkan; Direct3D 12 on Windows). Without a usable GPU the game falls back to "
+                             "Software."
+                           : "The PS1's picture as it drew it. The settings below need the GPU renderer.");
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(!gpu);
+    char res[64];
+    ImGui::TextDisabled("Resolution");
+    ImGui::SameLine(label_w);
+    ImGui::SetNextItemWidth(item_width(label_w));
+    SDL_snprintf(res, sizeof(res), "x%d  (%d x %d)", s.internal_scale, 320 * s.internal_scale, 240 * s.internal_scale);
+    dirty_ |= ImGui::SliderInt("##internal_scale", &s.internal_scale, 1, 8, res, ImGuiSliderFlags_AlwaysClamp);
+    restart_mark(label_w);
+    help_line(label_w, "x1 is the Software picture, pixel for pixel; above it the game is drawn at that resolution, "
+                       "without dithering, in 8-bit colour.");
+    // video.subpixel (docs/LAUNCHER.md): the 3D at the GTE's sub-pixel positions, above x1 only.
+    ImGui::BeginDisabled(s.internal_scale <= 1);
+    ImGui::TextDisabled("3D vertices");
+    ImGui::SameLine(label_w);
+    if (ImGui::RadioButton("Sub-pixel", s.subpixel == "on")) {
+        s.subpixel = "on";
+        dirty_ = true;
     }
-    if (s.renderer == "gpu" && s.internal_scale > 1) {
-        // video.subpixel (docs/LAUNCHER.md): the 3D at the GTE's sub-pixel positions, above x1 only.
-        ImGui::TextDisabled("3D vertices");
-        ImGui::SameLine(label_w);
-        if (ImGui::RadioButton("Sub-pixel", s.subpixel == "on")) {
-            s.subpixel = "on";
-            dirty_ = true;
-        }
-        ImGui::SameLine();
-        wrap_for(radio_width("Perspective"), label_w);
-        if (ImGui::RadioButton("Perspective", s.subpixel == "perspective")) {
-            s.subpixel = "perspective";
-            dirty_ = true;
-        }
-        ImGui::SameLine();
-        wrap_for(radio_width("PS1 pixels"), label_w);
-        if (ImGui::RadioButton("PS1 pixels", s.subpixel == "off")) {
-            s.subpixel = "off";
-            dirty_ = true;
-        }
-        ImGui::Indent(label_w);
-        ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Sub-pixel: the 3D moves smoothly. Perspective: also textured perspective-correct (not the "
-                            "PS1's look). PS1 pixels: the 3D steps a whole PS1 pixel at a time.");
-        ImGui::PopTextWrapPos();
-        ImGui::Unindent(label_w);
+    ImGui::SameLine();
+    wrap_for(radio_width("Perspective"), label_w);
+    if (ImGui::RadioButton("Perspective", s.subpixel == "perspective")) {
+        s.subpixel = "perspective";
+        dirty_ = true;
     }
-    if (s.renderer == "gpu" && !GAME_SCENES) {
+    ImGui::SameLine();
+    wrap_for(radio_width("PS1 pixels"), label_w);
+    if (ImGui::RadioButton("PS1 pixels", s.subpixel == "off")) {
+        s.subpixel = "off";
+        dirty_ = true;
+    }
+    help_line(label_w, s.internal_scale <= 1
+                           ? "Above Resolution x1 only: at x1 the 3D steps a whole PS1 pixel at a time."
+                           : "Sub-pixel: the 3D moves smoothly. Perspective: also textured perspective-correct (not "
+                             "the PS1's look). PS1 pixels: the 3D steps a whole PS1 pixel at a time.");
+    ImGui::EndDisabled();
+    ImGui::Spacing();
+    if (!GAME_SCENES) {
         draw_filter(label_w, s.present, "filter", nullptr, false);
-    } else if (s.renderer == "gpu") {
+    } else {
         // A game with scenes (docs/LAUNCHER.md "Members"): a set for its 3D scenes (video.filter, video.crt) and one
         // for its 2D scenes (video.scene_2d), each under its scenes' label; the game switches between them.
-        draw_filter(label_w, s.present, "filter_3d", GAME_SCENE_3D_LABEL, scene_ == SCENE_3D);
-        draw_filter(label_w, s.present_2d, "filter_2d", GAME_SCENE_2D_LABEL, scene_ == SCENE_2D);
+        draw_filter(label_w, s.present, "filter_3d", GAME_SCENE_3D_LABEL, gpu && scene_ == SCENE_3D);
+        draw_filter(label_w, s.present_2d, "filter_2d", GAME_SCENE_2D_LABEL, gpu && scene_ == SCENE_2D);
     }
-    if (s.refresh != GAME_RATE && GAME_RATE_NOTE[0] != '\0') {
-        ImGui::Indent(label_w);
-        ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("%s", GAME_RATE_NOTE);
-        ImGui::PopTextWrapPos();
-        ImGui::Unindent(label_w);
-    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+}
 
-    section_title("Audio");
+// Audio: the mute (the page for the audio settings to come).
+void Screens::draw_audio() {
+    Settings &s = settings_.values;
+    const float label_w = label_width();
+    draw_restart_note();
+    ImGui::BeginDisabled(!settings_.writable());
     ImGui::TextDisabled("Mute");
     ImGui::SameLine(label_w);
     dirty_ |= ImGui::Checkbox("##mute", &s.mute);
+    help_line(label_w, "No sound: the game leaves the audio device closed.");
+    ImGui::EndDisabled();
+}
 
+// System: the memory cards, the host's own sections (set_system_extra: the launcher's Updates and Steam), the
+// settings file.
+void Screens::draw_system() {
+    Settings &s = settings_.values;
+    const float label_w = label_width();
+    draw_restart_note();
+    ImGui::BeginDisabled(!settings_.writable());
     section_title("Memory cards");
     if (in_game_) {
         ImGui::TextDisabled("(restart)");
@@ -317,16 +343,12 @@ void Screens::draw_settings() {
         ImGui::EndDisabled();
         ImGui::PopID();
     }
-    ImGui::Indent(label_w);
-    ImGui::PushTextWrapPos(0);
-    ImGui::TextDisabled("A .mcd card image, relative to the settings directory; the game creates a formatted card when "
-                        "the file is missing. Unticked: no card in the slot.");
-    ImGui::PopTextWrapPos();
-    ImGui::Unindent(label_w);
+    help_line(label_w, "A .mcd card image, relative to the settings directory; the game creates a formatted card "
+                       "when the file is missing. Unticked: no card in the slot.");
     ImGui::EndDisabled();
 
-    if (settings_extra_) {
-        settings_extra_(label_w);
+    if (system_extra_) {
+        system_extra_(label_w);
     }
 
     section_title("Settings file");

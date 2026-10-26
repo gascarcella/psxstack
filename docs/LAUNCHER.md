@@ -103,7 +103,7 @@ and absolute paths and exits 0, or exits 64 naming the bad key.
 | `video.filter` | `"none"`, `"sharp"`, `"scanlines"`, `"crt"` or `"smooth"` | `"none"` | The hardware renderer's present filter (docs/PORT.md "Rendering"): `none` shows the picture's pixels as whole blocks, `sharp` is sharp bilinear, `scanlines` sharp with dark lines, `crt` a TV, `smooth` xBR on the 1x picture (the internal scale does not apply to it). The software renderer shows the picture unfiltered and logs it. The launcher's "Filter" combo, shown for the GPU renderer; it writes the member only once it is set. A game with scenes (GAME_CONTRACT.md "1. game.json" Scenes): the set of its 3D scenes, the row "Filter: <the 3D label>" |
 | `video.crt` | `{ "scanlines", "mask", "curvature" }`, integers 0-100 | 50, 30, 0 | The filters' parameters: `scanlines` (the lines' strength) for `scanlines` and `crt`, `mask` (the aperture grille) and `curvature` for `crt`. The launcher's sliders under the Filter combo; written once set, as `video.filter` |
 | `video.scene_2d` | `{ "filter", "crt" }`, as `video.filter` and `video.crt` | game.json's `video.scenes.2d.filter` with the default `crt`; without one, `video.filter` and `video.crt` | A game with scenes: the present-filter set of its 2D scenes (`video.filter` and `video.crt` are then its 3D scenes'); the window switches between the two at the vsync where the game's scene changes. A member it lacks is the default's. The launcher's second Filter row, "Filter: <the 2D label>"; it writes the member whole once the set differs from the default, and keeps it once the file has it. A game without scenes logs the key and ignores it (the launcher leaves it as it is) |
-| `video.menu_size` | `"smaller"`, `"auto"` or `"larger"` | `"auto"` | The in-game menu's size ("In-game menu"): its fit to the window, a step smaller or larger. The Settings screen's "Menu size"; written once set. The menu reads it, the runtime does not (`--print-settings` leaves it out); a game built before it logs the key and ignores it |
+| `video.menu_size` | `"smaller"`, `"auto"` or `"larger"` | `"auto"` | The in-game menu's size ("In-game menu"): its fit to the window, a step smaller or larger. The Video screen's "Menu size"; written once set. The menu reads it, the runtime does not (`--print-settings` leaves it out); a game built before it logs the key and ignores it |
 | `audio.mute` | bool | false | No audio device (switched off in the in-game menu: the device opens then) |
 | `memcard1`, `memcard2` | string or `null` | `"card1.mcd"`, `"card2.mcd"` | A `.mcd` image, created formatted when missing; `null`: no card in that slot. An empty string is an error |
 | `watchdog` | integer 0-3600 | 0 | Seconds without a vsync before the game exits 4; 0 is off. The bare binary (no `--config`) keeps its 10 s |
@@ -283,10 +283,12 @@ game stays C. Every name, string, hash and number it shows comes from the game's
 over the generated header). It finds the settings directory, edits `settings.json` (keeping every member it does not
 edit, unknown ones included), and starts the game. Screens: **Disc** (file dialog, drag-and-drop, or a typed path; only
 the described discs' SHA-1s are accepted), **Play** (starts the game; on an error shows the exit status, the crash
-report and the last lines of output, "Crash report"), **Settings** (scale, fullscreen, the rate when the game offers
-two, renderer, mute, memory cards, the update check when the game has one: "Updates", Add to Steam: "Steam"), **Controls** (keyboard, gamepad
-with the second player's gamepad, hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data mods in the settings
-directory's `mods/` in priority order, "Data mods"). Build, run, details and the self-test: `launcher/README.md`.
+report and the last lines of output, "Crash report"), **Video** (scale, fullscreen, scaling, the rate when the game
+offers two, the in-game menu's size), **Graphics** (the renderer, then the hardware renderer's resolution, sub-pixel
+mode and filters, greyed out under the software renderer), **Audio** (mute), **Controls** (keyboard, gamepad with the
+second player's gamepad, hotkeys), **Mods** (an on/off switch per mod and a page generated from its manifest; the data
+mods in the settings directory's `mods/` in priority order, "Data mods"), **System** (memory cards, the update check
+when the game has one: "Updates", Add to Steam: "Steam", the settings file's location and state). Build, run, details and the self-test: `launcher/README.md`.
 
 ## Updates
 
@@ -300,7 +302,7 @@ the release's page in the browser.
 ### The check
 
 - **When:** at the launcher's start, on a worker thread, when `launcher.updates.check` is true (the default) and the
-  launcher was not started with `--no-update-check`; and at the Settings screen's **Check now**, whatever the setting.
+  launcher was not started with `--no-update-check`; and at the System screen's **Check now**, whatever the setting.
 - **What:** one GET of `https://api.github.com/repos/<repo>/releases/latest` (GitHub leaves drafts and prereleases
   out) through the system's `curl` as a child process (`launcher/src/http.cpp`; DECISIONS "Updates: GitHub releases,
   curl as a process"): `-fsSL`, the User-Agent `<id>-launcher/<version>`, 10 s at most. The answer is read with the
@@ -317,12 +319,12 @@ the release's page in the browser.
   the browser), **Later** (or Escape: asked again at the next start) and **Skip this version** (writes
   `launcher.updates.skipped`: that release and older ones are not offered again, a newer one is). When the install
   cannot update itself, a line says why ("This build cannot update itself. ..."; the plan's reason, "Applying one")
-  and Release page is the action. Check now only reports, on the Settings screen.
-- **The Settings screen** ("Updates"): the checkbox "Check for updates when the launcher starts"
+  and Release page is the action. Check now only reports, on the System screen.
+- **The System screen** ("Updates"): the checkbox "Check for updates when the launcher starts"
   (`launcher.updates.check`), the launcher's version, the last check's result and time, the skipped release
   (**Forget** clears it), **Update now** when a newer release was found and the install can update itself (else the
-  line saying why), **Check now** and **Release page**. The launcher's window only: the shared Settings screen
-  (`launcher/ui/screens.cpp`) leaves a place after "Memory cards" that its host fills (`Screens::set_settings_extra`),
+  line saying why), **Check now** and **Release page**. The launcher's window only: the shared System screen
+  (`launcher/ui/screens.cpp`) leaves a place after "Memory cards" that its host fills (`Screens::set_system_extra`),
   and the in-game menu fills none, so the game's menu has no update check.
 - **Failures** are reported in words and never retried by themselves: curl missing (Windows 10 before 1803, a Linux
   without it; **Release page** then opens the repository's latest release), no network (curl's own error), an HTTP
@@ -350,7 +352,7 @@ update check is started while it goes on (Check now is disabled).
 
 A failure at any step (curl's error, a wrong size, a digest that does not match, the swap's own failures) leaves the
 old install as it was, removes the downloaded file and shows the message in the prompt with **Release page** and
-**Close** (Escape); Update now can be pressed again from the Settings screen. If the swap succeeded but the new
+**Close** (Escape); Update now can be pressed again from the System screen. If the swap succeeded but the new
 launcher could not be started, the prompt says so (the update is in place; start the launcher again).
 
 `$<PREFIX>_LAUNCHER_UPDATE_NOW=1` makes the check at start answer its own prompt with Update now: for a test run of
@@ -400,7 +402,7 @@ The launcher can put the game in the player's Steam library as a non-Steam short
 of it runs until the player asks: the launcher never looks for Steam, reads its files or checks that it is installed
 at its start or in the self-test's normal path.
 
-- **The Settings section** (`launcher/src/steam_section.cpp`; the launcher's window only, through the shared Settings
+- **The System screen's section** (`launcher/src/steam_section.cpp`; the launcher's window only, through the shared System
   screen's hook: the in-game menu has none). **Add to Steam** looks for Steam (below) and shows what it found: the
   Steam folder and the account, each a choice when there is more than one (the most recent account first), then
   **Add** or **Cancel**; nothing found, or no account yet, is said with where it looked. **Add** writes the shortcut
@@ -450,7 +452,7 @@ at its start or in the self-test's normal path.
   pressed (counted), a running Steam refuses Add, Update and Remove with the files unchanged, Add keeps the other
   shortcuts byte for byte and the old file as `.bak`, the record is saved at once and read back at the next start
   (still nothing looked up), a moved launcher gets Update shortcut, Remove gives back the file as it was before Add,
-  and the not-found, already-removed and damaged-file cases; pictures of each state (`20*-Settings-steam*.png`). The
+  and the not-found, already-removed and damaged-file cases; pictures of each state (`20*-System-steam*.png`). The
   artwork: written by appid with the icon the shortcut's, moved by Update, removed by Remove with another shortcut's
   left; the build's own pictures checked as PNGs. CI also builds the launcher of `examples/hello`, whose game.json
   names artwork of its own (`examples/hello/steam/`, drawn by its `make_art.py`), and runs its self-test, so the path
@@ -477,14 +479,15 @@ at a time), where leaving the game for the launcher's window is a chore.
   with the keyboard, the mouse and every gamepad; the pause, save and load hotkeys do not act while it is up. The
   hotkey again, or **Resume**, closes it and the game goes on; **Quit** ends the run with status 0.
 - **The pages** (the navigation on the left; the shoulder buttons or Ctrl+PageUp/PageDown step through them): **Game**
-  (the title, Resume, Quit) and the launcher's own **Settings**, **Controls** and **Mods** screens
+  (the title, Resume, Quit) and the launcher's own **Video**, **Graphics**, **Audio**, **Controls**, **Mods** and
+  **System** screens
   (`launcher/ui/screens.cpp`, the one implementation both draw; the update check, "Updates", is the window's own),
   over the settings file the game was started with (`--config`: the runtime's `settings.c` read it; the menu reads it
   again through the launcher's `SettingsFile` and writes it as the launcher would, keeping every member it does not
   edit) and the mods beside the executable plus the user's data mods (`--mods-dir`). A change is saved when no widget
   is in use (and when the menu closes), and the runtime then re-reads the file and applies it (`runtime/live.c`
   `port_live_apply`): the window's scale and fullscreen, the hardware renderer's filter (both sets, for a game with
-  scenes: the Settings page marks the one on screen, `port_video_scene()`) and sub-pixel mode,
+  scenes: the Graphics page marks the one on screen, `port_video_scene()`) and sub-pixel mode,
   `audio.mute` (a game started muted opens its audio device when the mute goes off), the pad map and every hotkey (the
   table starts over, the enabled mods' bindings registered again) and the mods (`port_mods_apply`: one switched on
   gets its hotkeys and its `start`, one switched off its `stop`, one that stays on with other values its `start`
@@ -496,7 +499,7 @@ at a time), where leaving the game for the launcher's window is a chore.
 - **The style** (`launcher/ui/style.cpp`, shared with the launcher's window) is scaled to fit the launcher's canvas,
   its window at scale 1 (960x620, `launcher/ui/style.h` `CANVAS_W`/`CANVAS_H`), into the game's window, so a page the
   launcher fits fits the menu too: about 1.74 at 1920x1080, 1.29 at 1280x800, at least 1. `video.menu_size` steps
-  it ("smaller" 0.8 times, "larger" 1.25 times; Settings, "Menu size", applied as soon as it is chosen), never past
+  it ("smaller" 0.8 times, "larger" 1.25 times; Video, "Menu size", applied as soon as it is chosen), never past
   the scale that leaves a 640x480 canvas. The shared screens fit that smallest canvas: the Mods screen's list
   becomes a combo above the mod's page when the two do not fit side by side, a mod's options stack (the name and
   Default on a line, the widget across the page) when the table's widget would be narrower than 160, rows of
@@ -508,7 +511,8 @@ at a time), where leaving the game for the launcher's window is a chore.
   window's output with the menu up as a PNG, on either renderer (the hardware renderer's swapchain cannot be read
   back, so the present that takes it draws the picture and the menu into a texture of the swapchain's format, blits
   that into the swapchain and reads it back: `runtime/render_gpu.c`), on the page
-  `<PREFIX>_PORT_MENU_SCREEN=game|settings|controls|mods` names (`mods:<id>`: with that mod chosen;
+  `<PREFIX>_PORT_MENU_SCREEN=game|video|graphics|audio|controls|mods|system` names (`settings`, the one page before
+  the split, is `video`; `mods:<id>`: with that mod chosen;
   `controls:keyboard|gamepad|hotkeys`: on that tab), with the window first sized to `<PREFIX>_PORT_MENU_WINDOW=WxH`
   when it is set (SDL's software renderer follows it: `SDL_RENDER_DRIVER=software`). The shot's log line names the
   windows whose content reaches past their right edge ("nothing wider than its window" when none does).
@@ -516,9 +520,10 @@ at a time), where leaving the game for the launcher's window is a chore.
   `<PREFIX>_PORT_MENU_LIVE_FILE=PATH` that file is put in place of the settings first (the hotkey pressed next is the
   file's binding, so a rebinding must take). `tests/hello_test.py --menu` builds `examples/hello` that way and runs
   both on SDL's offscreen driver with a settings file of its own, muted (the live file rebinds the menu hotkey,
-  switches fast-forward on and the mute off, so the audio device must open), the picture its Settings page (with
+  switches fast-forward on and the mute off, so the audio device must open), the picture its Graphics page (with
   `--gpu` also on the hardware renderer, on Mesa's lavapipe, which presents to the offscreen driver: the software
-  picture but for the anti-aliased edges, at most 0.1 % of the pixels off by more than 8 levels), then the Mods page's
+  picture but for the anti-aliased edges, at most 0.1 % of the pixels off by more than 8 levels), then the Video,
+  Audio and System pages' at 640x480, then the Mods page's
   at 1920x1080, 1280x800 and 640x480 and at 1280x800 "larger" (`tests/fixtures/mods/multipliers` chosen, a page larger
   than any a game ships so far), none of them wider than its window; CI's `launcher` job runs it and keeps the
   pictures. The screens' logic is the launcher self-test's.

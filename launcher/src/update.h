@@ -87,7 +87,7 @@ public:
     const Release &release() const { return release_; } // UpToDate, Newer, DevBuild
     const std::string &message() const { return message_; } // NoCurl, Failed
     SDL_Time checked_at() const { return checked_at_; } // when the last answer came (0: never)
-    // The state in words, for the Settings screen ("0.5.0 is available (you have 0.4.1)").
+    // The state in words, for the System screen ("0.5.0 is available (you have 0.4.1)").
     std::string summary() const;
     // The page to open: the release's, else the repository's latest release.
     std::string release_page() const;

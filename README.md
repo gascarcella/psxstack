@@ -55,7 +55,7 @@ consumer is [dw2003recomp](https://github.com/gascarcella/dw2003recomp), the Dig
   (docs/LAUNCHER.md "Updates").
 - **Add to Steam:** the game as a non-Steam shortcut with its artwork, for Steam's library, Game Mode on the Steam
   Deck and its controller configuration (docs/LAUNCHER.md "Steam").
-- **The in-game menu:** the launcher's Settings, Controls and Mods inside the game's window on Escape or Back+Start,
+- **The in-game menu:** the launcher's Video, Graphics, Audio, Controls, Mods and System screens inside the game's window on Escape or Back+Start,
   applied live (docs/LAUNCHER.md "In-game menu").
 
 ### Mods

@@ -319,7 +319,7 @@ static void test_system() {
           "the shortcut's path is this executable: " + steam_launcher_path());
 }
 
-// ---- the Settings screen's section
+// ---- the System screen's section
 
 static void pump(App &app, int frames) {
     for (int i = 0; i < frames; i++) {
@@ -420,9 +420,9 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
     const uint32_t appid = steam_shortcut_appid(launcher, GAME_TITLE);
     {
         App app(window, renderer, location, o);
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         pump(app, 3);
-        shot(window, app, shots, "20-Settings-steam.png");
+        shot(window, app, shots, "20-System-steam.png");
         check(lookups == 0 && !app.steam().choosing(), "nothing looks for Steam before Add to Steam is pressed");
         SteamSection &st = app.steam();
         st.begin_add();
@@ -430,12 +430,12 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
         check(lookups == 1 && st.installs().size() == 2 && st.install() == 0 && st.account() == 1 &&
                   st.message().empty(),
               "Add to Steam: two Steam folders, the most recent account chosen");
-        shot(window, app, shots, "20b-Settings-steam-choose.png");
+        shot(window, app, shots, "20b-System-steam-choose.png");
         running = true;
         check(!st.add() && st.message().find("Steam is running") != std::string::npos && !path_is_file(recent) &&
                   !app.settings().values.steam.added(),
               "Steam running: nothing is written, the player is asked to quit it");
-        shot(window, app, shots, "20c-Settings-steam-running.png");
+        shot(window, app, shots, "20c-System-steam-running.png");
         running = false;
         st.choose(0, 0); // the account whose file has two shortcuts already
         check(st.add() && !st.choosing() && app.settings().values.steam.appid == appid,
@@ -456,13 +456,13 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
         check(record_in_file(location.dir) == "39734383 " + std::to_string(appid) + " " + launcher,
               "launcher.steam saved at once: the account, the appid, the path");
         pump(app, 2);
-        shot(window, app, shots, "20d-Settings-steam-added.png");
+        shot(window, app, shots, "20d-System-steam-added.png");
     }
     {
         // The next start: the record read back, still nothing looked up; the launcher moved: Update shortcut.
         lookups = 0;
         App app(window, renderer, location, o);
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         SteamSection &st = app.steam();
         check(app.settings().values.steam.added() && !st.moved() && lookups == 0,
               "the next start reads the record and does not look for Steam");
@@ -470,7 +470,7 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
         launcher = path_join(path_join(dir, "Moved"), LAUNCHER_EXE);
         pump(app, 3);
         check(st.moved(), "the launcher moved: Update shortcut offered");
-        shot(window, app, shots, "20e-Settings-steam-moved.png");
+        shot(window, app, shots, "20e-System-steam-moved.png");
         running = true;
         check(!st.update_shortcut() && get(first + ".bak") == fixture && names_in(first).size() == 3 &&
                   app.settings().values.steam.exe == old_launcher,
@@ -493,7 +493,7 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
         check(art_of(moved_id) == no_art && get(path_join(grid, "12345p.png")) == "another game's",
               "Remove: its pictures gone, another shortcut's left");
         pump(app, 2);
-        shot(window, app, shots, "20f-Settings-steam-removed.png");
+        shot(window, app, shots, "20f-System-steam-removed.png");
 
         // Removed in Steam meanwhile: Remove forgets it and says so.
         st.begin_add();
@@ -514,12 +514,12 @@ void self_test_steam_window(SDL_Window *window, const std::string &root, int *ch
     }
     {
         App app(window, renderer, location, o);
-        app.set_screen(Screen::Settings);
+        app.set_screen(Screen::System);
         app.steam().begin_add();
         pump(app, 2);
         check(app.steam().installs().empty() && app.steam().message().find("not found") != std::string::npos,
               "no Steam: said, with where the launcher looked");
-        shot(window, app, shots, "20g-Settings-steam-not-found.png");
+        shot(window, app, shots, "20g-System-steam-not-found.png");
     }
 }
 
