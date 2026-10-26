@@ -197,16 +197,18 @@ drops `SDL_VIDEO_DRIVER` from the program's environment.)
 
 No disc and no display needed (CI runs it). It replaces `DIR/launcher-self-test/` and checks: the path helpers (Windows
 forms too), the JSON writer, the lookup order, the settings file's round trips (the documented example with its unknown
-members kept, invalid values, a broken file, a newer schema), the binding grammar, `input.player2`, and the input prompt
+members kept, invalid values, a broken file, a newer schema; `video.scene_2d` for a game with scenes, left as it is by
+one without), the binding grammar, `input.player2`, and the input prompt
 (keys, gamepad buttons, stick directions, chords, Escape), the `.cue` reader and the SHA-1 check (against the described
 discs), the launch path with **the launcher itself as the game's stand-in** (`<PREFIX>_LAUNCHER_FAKE_GAME=mode`: a game
 with and without `--config`, one that rejects the file, one that crashes, one that fails after 250 lines), then opens
 the window, walks every screen with injected key events and a virtual gamepad, plays with the stand-in (a file of the
 first described disc's size stands for the verified disc), rebinds a key through the prompt and checks the file, shows
-the Gamepad tab with player 2 set and two virtual gamepads connected, drops a wrong file on the window, renders the mods
-screen over the fixture manifests (`tests/fixtures/mods/`: the first game's `fast_forward` as shipped, the documented
-`skip_dialogues` example, one with every option type, one with presets and a slider whose toggle makes it a typed
-number; three unusable ones written at test time) and rebinds a mod's key through the prompt, and saves a picture of
+the Gamepad tab with player 2 set and two virtual gamepads connected, the GPU renderer's rows (for a game with scenes
+the two Filter rows, the 2D one marked as the in-game menu marks the set on screen), drops a wrong file on the window,
+renders the mods screen over the fixture manifests (`tests/fixtures/mods/`: the first game's `fast_forward` as shipped,
+the documented `skip_dialogues` example, one with every option type, one with presets and a slider whose toggle makes
+it a typed number; three unusable ones written at test time) and rebinds a mod's key through the prompt, and saves a picture of
 each screen in `DIR/launcher-self-test/screens/`. The update check never touches the network:
 `<PREFIX>_LAUNCHER_FAKE_CURL` points at **the launcher itself as curl's stand-in** (it answers with a file, in pieces
 for a download, or with curl's errors; `<PREFIX>_SELFTEST_CURL_REPLY` says which), and every check of the self-test goes

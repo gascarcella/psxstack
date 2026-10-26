@@ -302,23 +302,23 @@ static void test_settings_file(const std::string &root) {
     write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"renderer":"gpu","filter":"sharp"}})");
     SettingsFile fl;
     fl.load(filtered);
-    check(fl.messages().empty() && fl.values.filter == "sharp", "video.filter is read");
-    fl.values.filter = "none";
+    check(fl.messages().empty() && fl.values.present.filter == "sharp", "video.filter is read");
+    fl.values.present.filter = "none";
     check(fl.save(&err), "saving the filter: " + err);
     const Json written = Json::parse(read(fl.path()), nullptr);
     const Json *saved = written.find("video") != nullptr ? written.find("video")->find("filter") : nullptr;
     check(saved != nullptr && saved->as_string() == "none", "a filter the file had is written back, \"none\" too");
     write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"filter":"blur"}})");
     fl.load(filtered);
-    check(fl.messages().size() == 1 && fl.values.filter == "none", "a bad filter: a warning, \"none\"");
+    check(fl.messages().size() == 1 && fl.values.present.filter == "none", "a bad filter: a warning, \"none\"");
     // video.crt (the scanlines and crt filters' parameters): read, written once set, bad values warned about.
     write(path_join(filtered, SETTINGS_FILE),
           R"({"schema":1,"video":{"filter":"crt","crt":{"scanlines":80,"mask":10,"curvature":25}}})");
     fl.load(filtered);
-    check(fl.messages().empty() && fl.values.filter == "crt" && fl.values.crt_scanlines == 80 &&
-              fl.values.crt_mask == 10 && fl.values.crt_curvature == 25,
+    check(fl.messages().empty() && fl.values.present.filter == "crt" && fl.values.present.scanlines == 80 &&
+              fl.values.present.mask == 10 && fl.values.present.curvature == 25,
           "video.crt is read");
-    fl.values.crt_mask = 60;
+    fl.values.present.mask = 60;
     check(fl.save(&err), "saving video.crt: " + err);
     const Json crt_written = Json::parse(read(fl.path()), nullptr);
     const Json *crt = crt_written.find("video") != nullptr ? crt_written.find("video")->find("crt") : nullptr;
@@ -327,8 +327,80 @@ static void test_settings_file(const std::string &root) {
           "video.crt is written back");
     write(path_join(filtered, SETTINGS_FILE), R"({"schema":1,"video":{"crt":{"scanlines":101,"mask":-1}}})");
     fl.load(filtered);
-    check(fl.messages().size() == 2 && fl.values.crt_scanlines == 50 && fl.values.crt_mask == 30,
+    check(fl.messages().size() == 2 && fl.values.present.scanlines == 50 && fl.values.present.mask == 30,
           "bad video.crt values: a warning each, the defaults");
+    // video.scene_2d (the 2D scenes' set, a game with scenes): absent, what the game's 2d.filter or the 3D set means,
+    // and not added; read member by member over that; written whole once it differs, and kept once the file has it;
+    // bad members warned about. A game without scenes leaves it as it is, unread.
+    {
+        const std::string sc = path_join(root, "scene_2d");
+        path_make_dir(sc, nullptr);
+        auto scene_2d = [&](const SettingsFile &f) {
+            const Json doc = Json::parse(read(f.path()), nullptr);
+            const Json *video = doc.find("video");
+            const Json *m = video != nullptr ? video->find("scene_2d") : nullptr;
+            return m != nullptr ? m->dump() : std::string();
+        };
+        write(path_join(sc, SETTINGS_FILE), R"({"schema":1,"video":{"filter":"crt","crt":{"scanlines":70}}})");
+        SettingsFile f;
+        f.load(sc);
+        FilterSet want;
+        if (GAME_SCENE_2D_FILTER[0] != '\0') {
+            want.filter = GAME_SCENE_2D_FILTER;
+        } else {
+            want.filter = "crt";
+            want.scanlines = 70;
+        }
+        check(f.messages().empty() && f.values.present.filter == "crt" && f.values.present_2d == want,
+              "a file without video.scene_2d: the 2D set is the game's 2d.filter, else the 3D set");
+        f.values.mute = true;
+        check(f.save(&err) && scene_2d(f).empty(), "a file that never chose a 2D set gets no video.scene_2d");
+        if (GAME_SCENES) {
+            f.values.present_2d.filter = "scanlines";
+            f.values.present_2d.scanlines = 90;
+            check(f.save(&err), "saving video.scene_2d: " + err);
+            SettingsFile g;
+            g.load(sc);
+            check(g.messages().empty() && g.values.present_2d == f.values.present_2d &&
+                      g.values.present == f.values.present,
+                  "video.scene_2d is written and read back, the 3D set as it was");
+            const Json whole = Json::parse(scene_2d(g), nullptr);
+            const Json *crt2 = whole.find("crt");
+            check(crt2 != nullptr && crt2->find("mask") != nullptr && crt2->find("curvature") != nullptr,
+                  "video.scene_2d is written whole: " + scene_2d(g));
+            const std::string kept = scene_2d(g);
+            g.values.mute = false;
+            check(g.save(&err) && scene_2d(g) == kept, "an untouched video.scene_2d stays as it was");
+            g.values.present_2d = Settings::scene_2d_default(g.values.present);
+            check(g.save(&err) && !scene_2d(g).empty(),
+                  "a video.scene_2d the file had is written back, the default too");
+            write(path_join(sc, SETTINGS_FILE),
+                  R"({"schema":1,"video":{"filter":"sharp","scene_2d":{"filter":"crt"}}})");
+            g.load(sc);
+            FilterSet partial = Settings::scene_2d_default(g.values.present);
+            partial.filter = "crt";
+            check(g.messages().empty() && g.values.present_2d == partial,
+                  "a partial video.scene_2d: its missing members are what an absent one means");
+            write(path_join(sc, SETTINGS_FILE),
+                  R"({"schema":1,"video":{"scene_2d":{"filter":"blur","crt":{"mask":101}}}})");
+            g.load(sc);
+            check(g.messages().size() == 2 && g.values.present_2d == Settings::scene_2d_default(g.values.present),
+                  "bad video.scene_2d members: a warning each, the defaults");
+            write(path_join(sc, SETTINGS_FILE), R"({"schema":1,"video":{"scene_2d":"crt"}})");
+            g.load(sc);
+            check(g.messages().size() == 1 && g.values.present_2d == Settings::scene_2d_default(g.values.present),
+                  "a video.scene_2d that is not an object: a warning, the default");
+        } else {
+            write(path_join(sc, SETTINGS_FILE), R"({"schema":1,"video":{"scene_2d":{"filter":"blur"}}})");
+            SettingsFile g;
+            g.load(sc);
+            const std::string kept = scene_2d(g);
+            g.values.mute = true;
+            g.values.present.filter = "sharp";
+            check(g.messages().empty() && g.save(&err) && scene_2d(g) == kept,
+                  "a game without scenes neither reads nor writes video.scene_2d");
+        }
+    }
 
     // Not JSON: the defaults; the first save keeps the old file aside.
     const std::string broken = path_join(root, "broken");
@@ -1187,6 +1259,32 @@ static void drop_file(SDL_Window *w, const std::string &path) {
 }
 
 // The play path with the game's stand-in and a verified disc (a file of the BIN's size and the right disc.sha1).
+// The mouse over the page, its wheel turned down: the Settings screen scrolled to its end (the Updates part), or by
+// `notches` of the wheel.
+static void scroll_page_down(SDL_Window *w, App &app, float notches = 40) {
+    int width = 0, height = 0;
+    SDL_GetWindowSize(w, &width, &height);
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_EVENT_MOUSE_MOTION;
+    e.motion.windowID = SDL_GetWindowID(w);
+    e.motion.x = (float)width * 0.6f;
+    e.motion.y = (float)height * 0.5f;
+    SDL_PushEvent(&e);
+    pump(app, 2);
+    for (int i = 0; notches > 0 && i < 4; i++) {
+        SDL_zero(e);
+        e.type = SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.windowID = SDL_GetWindowID(w);
+        e.wheel.y = -std::min(notches, 10.0f);
+        notches -= 10;
+        e.wheel.mouse_x = (float)width * 0.6f;
+        e.wheel.mouse_y = (float)height * 0.5f;
+        SDL_PushEvent(&e);
+        pump(app, 2);
+    }
+}
+
 static void test_play(SDL_Window *window, const std::string &root) {
     const std::string dir = path_join(root, "play"), shots = path_join(root, "screens");
     if (GAME_DISC_COUNT == 0) {
@@ -1344,11 +1442,22 @@ static void test_play(SDL_Window *window, const std::string &root) {
     png = path_join(shots, "9b-Settings-gpu.png");
     app.frame(png.c_str());
     // The CRT filter shows its sliders (a picture).
-    app.settings().values.filter = "crt";
+    app.settings().values.present.filter = "crt";
     pump(app, 2);
     png = path_join(shots, "9c-Settings-crt.png");
     app.frame(png.c_str());
-    app.settings().values.filter = "none";
+    // A game with scenes: the Filter row for its 3D scenes and the one for its 2D scenes, the latter marked as the one
+    // on screen as the in-game menu marks it (a picture; the launcher marks none).
+    if (GAME_SCENES) {
+        app.settings().values.present_2d.filter = "scanlines";
+        app.screens().set_scene(Screens::SCENE_2D);
+        scroll_page_down(window, app, 4);
+        png = path_join(shots, "9d-Settings-scenes.png");
+        app.frame(png.c_str());
+        app.screens().set_scene(Screens::SCENE_NONE);
+        app.settings().values.present_2d = Settings::scene_2d_default(app.settings().values.present);
+    }
+    app.settings().values.present.filter = "none";
     app.settings().values.renderer = "software";
     app.settings().values.internal_scale = 1;
     pump(app, 2);
@@ -1447,30 +1556,6 @@ static void test_mods_window(SDL_Window *window, const std::string &root) {
 
 // ---- the update check (docs/LAUNCHER.md "Updates"): the version rules, GitHub's answer, curl through its stand-in,
 // the prompt and the Settings screen. Never the network: the stand-in answers.
-
-// The mouse over the page, its wheel turned down: the Settings screen scrolled to its end (the Updates part).
-static void scroll_page_down(SDL_Window *w, App &app) {
-    int width = 0, height = 0;
-    SDL_GetWindowSize(w, &width, &height);
-    SDL_Event e;
-    SDL_zero(e);
-    e.type = SDL_EVENT_MOUSE_MOTION;
-    e.motion.windowID = SDL_GetWindowID(w);
-    e.motion.x = (float)width * 0.6f;
-    e.motion.y = (float)height * 0.5f;
-    SDL_PushEvent(&e);
-    pump(app, 2);
-    for (int i = 0; i < 4; i++) {
-        SDL_zero(e);
-        e.type = SDL_EVENT_MOUSE_WHEEL;
-        e.wheel.windowID = SDL_GetWindowID(w);
-        e.wheel.y = -10.0f;
-        e.wheel.mouse_x = (float)width * 0.6f;
-        e.wheel.mouse_y = (float)height * 0.5f;
-        SDL_PushEvent(&e);
-        pump(app, 2);
-    }
-}
 
 static void set_env(const char *name, const std::string &value) {
     SDL_SetEnvironmentVariable(SDL_GetEnvironment(), name, value.c_str(), true);

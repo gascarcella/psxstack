@@ -49,6 +49,12 @@ constexpr int GAME_RATE = PSXSTACK_GAME_RATE;
 constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 constexpr const char *GAME_RATE_NOTE = PSXSTACK_GAME_RATE_NOTE;
+// The scenes (the description's video.scenes): a present-filter set for the 2D scenes and one for the 3D scenes,
+// named by their labels in the Filter rows; the 2D set's default filter ("" = a copy of the 3D set's).
+constexpr bool GAME_SCENES = PSXSTACK_GAME_SCENES != 0;
+constexpr const char *GAME_SCENE_2D_LABEL = PSXSTACK_GAME_SCENE_2D_LABEL;
+constexpr const char *GAME_SCENE_3D_LABEL = PSXSTACK_GAME_SCENE_3D_LABEL;
+constexpr const char *GAME_SCENE_2D_FILTER = PSXSTACK_GAME_SCENE_2D_FILTER;
 // The discs the game accepts (disc.h: disc_by_sha1, disc_known, disc_labels). A disc-free game (examples/hello)
 // describes none: the generated list then holds one empty entry, which the count keeps out of reach.
 constexpr int GAME_DISC_COUNT = PSXSTACK_GAME_DISC_COUNT;

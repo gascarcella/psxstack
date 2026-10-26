@@ -51,10 +51,14 @@ int render_gpu_readback(const u32 *pixels, int w, int h, const int *vram_xy, int
 int render_gpu_read_vram(u16 *out);
 /* The target set to the VRAM as it is now (tests/host/gpu_hw_replay.py, after a case that differed). */
 void render_gpu_raster_resync(void);
-/* The present's filter (port_harness.h PortFilter; render_gpu_present.c) for the window and for --gpu-screenshot's
- * @WxH pictures; the picture itself (no @WxH, the debug channel's) stays unfiltered. A filter whose pipelines cannot
- * be created is logged and the present stays nearest. */
-void render_gpu_set_filter(const PortFilter *f);
+/* The present's filters (port_harness.h PortFilter; render_gpu_present.c) for the window and for --gpu-screenshot's
+ * @WxH pictures; the picture itself (no @WxH, the debug channel's) stays unfiltered. Two sets, the slots 0 and 1
+ * (PORT_SCENE_3D's and PORT_SCENE_2D's values), both built now; `sets` 1 for a game without scenes (f[1], the same as
+ * f[0], shares its pipelines, and the log names one filter). render_gpu_set_scene picks the slot the presents use
+ * (once per vsync: it builds nothing). A filter whose pipelines cannot be created is logged and that slot's present
+ * stays nearest. */
+void render_gpu_set_filters(const PortFilter f[2], int sets);
+void render_gpu_set_scene(int slot);
 /* Widescreen (render_gpu_wide.c; video.c port_video_widescreen): enable before render_gpu_raster_start (the target gets
  * the wide canvas strip, 1.5 times as wide); on or off every vsync (the scenes that widen; off without the
  * rasteriser); the canvas's aspect a:b (from 4:3 to 16:9, the window's: video.c video_wide_follow; 16:9 until it is

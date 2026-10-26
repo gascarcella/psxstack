@@ -265,6 +265,56 @@ static void write_input(const Settings &s, Json *doc) {
     }
 }
 
+FilterSet Settings::scene_2d_default(const FilterSet &present_3d) {
+    if (GAME_SCENE_2D_FILTER[0] == '\0') {
+        return present_3d;
+    }
+    FilterSet set;
+    set.filter = GAME_SCENE_2D_FILTER;
+    return set;
+}
+
+// A present-filter set's members in `obj` (video, video.scene_2d): its filter and its crt; a bad one keeps the value
+// `set` has, with a warning.
+static void read_filter_set(const Json *obj, const char *where, FilterSet *set, std::vector<std::string> *w) {
+    const std::string at = where;
+    const std::string was = set->filter;
+    read_string(obj, where, "filter", &set->filter, w);
+    if (std::find(std::begin(FILTER_NAMES), std::end(FILTER_NAMES), set->filter) == std::end(FILTER_NAMES)) {
+        warn(w, at + ".filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"" + was + "\"");
+        set->filter = was;
+    }
+    if (const Json *crt = obj->find("crt")) {
+        if (!crt->is_object()) {
+            warn(w, at + ".crt: expected an object; using the defaults");
+        } else {
+            read_int(crt, (at + ".crt").c_str(), "scanlines", 0, 100, &set->scanlines, w);
+            read_int(crt, (at + ".crt").c_str(), "mask", 0, 100, &set->mask, w);
+            read_int(crt, (at + ".crt").c_str(), "curvature", 0, 100, &set->curvature, w);
+        }
+    }
+}
+
+// A present-filter set into `obj`, its other members kept: all of it when `whole`, else the filter once it is not
+// "none" or `obj` has one and the crt once it differs from the defaults or `obj` has one (a file that never chose
+// them stays as it was).
+static void write_filter_set(const FilterSet &set, bool whole, Json *obj) {
+    if (whole || set.filter != "none" || obj->find("filter") != nullptr) {
+        obj->set("filter", Json::string(set.filter));
+    }
+    const FilterSet defaults;
+    if (whole || set.scanlines != defaults.scanlines || set.mask != defaults.mask ||
+        set.curvature != defaults.curvature || obj->find("crt") != nullptr) {
+        if (const Json *crt = obj->find("crt"); crt != nullptr && !crt->is_object()) {
+            obj->erase("crt");
+        }
+        Json &crt = obj->member("crt");
+        crt.set("scanlines", Json::number(set.scanlines));
+        crt.set("mask", Json::number(set.mask));
+        crt.set("curvature", Json::number(set.curvature));
+    }
+}
+
 Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
     Settings s;
     if (const Json *disc = section(doc, "disc", w)) {
@@ -290,10 +340,14 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
             warn(w, "video.subpixel: expected \"off\", \"on\" or \"perspective\"; using \"on\"");
             s.subpixel = "on";
         }
-        read_string(video, "video", "filter", &s.filter, w);
-        if (std::find(std::begin(FILTER_NAMES), std::end(FILTER_NAMES), s.filter) == std::end(FILTER_NAMES)) {
-            warn(w, "video.filter: expected a filter's name (docs/LAUNCHER.md \"Members\"); using \"none\"");
-            s.filter = "none";
+        read_filter_set(video, "video", &s.present, w);
+        s.present_2d = Settings::scene_2d_default(s.present);
+        if (const Json *scene = GAME_SCENES ? video->find("scene_2d") : nullptr) { // unknown to a game without scenes
+            if (!scene->is_object()) {
+                warn(w, "video.scene_2d: expected an object; using the defaults");
+            } else {
+                read_filter_set(scene, "video.scene_2d", &s.present_2d, w);
+            }
         }
         read_string(video, "video", "scaling", &s.scaling, w);
         if (std::find(std::begin(SCALING_NAMES), std::end(SCALING_NAMES), s.scaling) == std::end(SCALING_NAMES)) {
@@ -304,15 +358,6 @@ Settings settings_from_json(const Json &doc, std::vector<std::string> *w) {
         if (std::find(std::begin(MENU_SIZE_NAMES), std::end(MENU_SIZE_NAMES), s.menu_size) == std::end(MENU_SIZE_NAMES)) {
             warn(w, "video.menu_size: expected \"smaller\", \"auto\" or \"larger\"; using \"auto\"");
             s.menu_size = "auto";
-        }
-        if (const Json *crt = video->find("crt")) {
-            if (!crt->is_object()) {
-                warn(w, "video.crt: expected an object; using the defaults");
-            } else {
-                read_int(crt, "video.crt", "scanlines", 0, 100, &s.crt_scanlines, w);
-                read_int(crt, "video.crt", "mask", 0, 100, &s.crt_mask, w);
-                read_int(crt, "video.crt", "curvature", 0, 100, &s.crt_curvature, w);
-            }
         }
     }
     if (const Json *audio = section(doc, "audio", w)) {
@@ -390,25 +435,20 @@ void settings_to_json(const Settings &s, Json *doc) {
     video.set("renderer", Json::string(s.renderer));
     video.set("internal_scale", Json::number(s.internal_scale));
     video.set("subpixel", Json::string(s.subpixel));
-    if (s.filter != "none" || video.find("filter") != nullptr) { // a file that never chose one stays as it was
-        video.set("filter", Json::string(s.filter));
-    }
+    write_filter_set(s.present, false, &video);
     if (s.scaling != "fit" || video.find("scaling") != nullptr) { // as video.filter
         video.set("scaling", Json::string(s.scaling));
     }
     if (s.menu_size != "auto" || video.find("menu_size") != nullptr) { // as video.filter
         video.set("menu_size", Json::string(s.menu_size));
     }
-    const Settings defaults;
-    if (s.crt_scanlines != defaults.crt_scanlines || s.crt_mask != defaults.crt_mask ||
-        s.crt_curvature != defaults.crt_curvature || video.find("crt") != nullptr) { // as video.filter
-        if (const Json *crt = video.find("crt"); crt != nullptr && !crt->is_object()) {
-            video.erase("crt");
+    // video.scene_2d (a game with scenes): written once it differs from what a file without one means, or the file has
+    // it; then whole, so the file says the set exactly (an absent member would read as the default, not the 3D set's).
+    if (GAME_SCENES && (s.present_2d != Settings::scene_2d_default(s.present) || video.find("scene_2d") != nullptr)) {
+        if (const Json *scene = video.find("scene_2d"); scene != nullptr && !scene->is_object()) {
+            video.erase("scene_2d");
         }
-        Json &crt = video.member("crt");
-        crt.set("scanlines", Json::number(s.crt_scanlines));
-        crt.set("mask", Json::number(s.crt_mask));
-        crt.set("curvature", Json::number(s.crt_curvature));
+        write_filter_set(s.present_2d, true, &video.member("scene_2d"));
     }
     doc->member("audio").set("mute", Json::boolean(s.mute));
     for (int i = 0; i < 2; i++) {

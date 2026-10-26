@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """tools/game_gen.py on examples/dw2003.game.json: the header compiles as C and as C++, a few values are right, the
-descriptions that must fail do, the update check's repository (and its absence), the Steam artwork's files, and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
+descriptions that must fail do, the update check's repository (and its absence), the Steam artwork's files, the scenes (and
+their absence), and a one-slot game and a game without a stack heap generate. Run: python3 tests/game_gen_test.py (needs cc and c++; ~1 s)."""
 import copy
 import json
 import os
@@ -28,10 +29,12 @@ static const PsxstackGameDisc discs[PSXSTACK_GAME_DISC_COUNT] = PSXSTACK_GAME_DI
 static const PsxstackGameBiosStandin bios[] = PSXSTACK_GAME_BIOS_STANDINS;
 static const int rates[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 int main(void) {{
-    printf("%s|%s|%s|%s|%d|%d|%d|%u|%u|%u|%u|%s|%llu|%s|%s|%u|%s|%s\\n", PSXSTACK_GAME_ID, PSXSTACK_GAME_ID_UPPER,
-           PSXSTACK_GAME_TITLE, PSXSTACK_GAME_ENV_PREFIX, PSXSTACK_GAME_RATE, rates[PSXSTACK_GAME_RATE_COUNT - 1],
-           PORT_SLOT_COUNT, PORT_SLOT1_BASE, PORT_SLOT2_BASE, PORT_HEAP_START_ADDR, PORT_HEAP_SIZE, discs[0].sha1,
-           discs[0].size, discs[0].cue, PORT_SLOT2_NAME, bios[0].address, bios[0].text, PSXSTACK_GAME_WEBSITE);
+    printf("%s|%s|%s|%s|%d|%d|%d|%u|%u|%u|%u|%s|%llu|%s|%s|%u|%s|%s|%d|%s|%s|%s\\n", PSXSTACK_GAME_ID,
+           PSXSTACK_GAME_ID_UPPER, PSXSTACK_GAME_TITLE, PSXSTACK_GAME_ENV_PREFIX, PSXSTACK_GAME_RATE,
+           rates[PSXSTACK_GAME_RATE_COUNT - 1], PORT_SLOT_COUNT, PORT_SLOT1_BASE, PORT_SLOT2_BASE, PORT_HEAP_START_ADDR,
+           PORT_HEAP_SIZE, discs[0].sha1, discs[0].size, discs[0].cue, PORT_SLOT2_NAME, bios[0].address, bios[0].text,
+           PSXSTACK_GAME_WEBSITE, PSXSTACK_GAME_SCENES, PSXSTACK_GAME_SCENE_2D_LABEL, PSXSTACK_GAME_SCENE_3D_LABEL,
+           PSXSTACK_GAME_SCENE_2D_FILTER);
     return 0;
 }}
 ''')
@@ -74,7 +77,7 @@ def main():
               "the CMake variables")
         expect = ("dw2003|DW2003|Digimon World 2003|DW3|50|60|2|2148019376|2148163040|2148186112|4194304|"
                   "457cb233349ba841e03b33d8060f8fbcadd45cb3|692146560|dw2003.cue|file|532676908|PC-PORT-M1|"
-                  "https://github.com/gascarcella/dw2003recomp")
+                  "https://github.com/gascarcella/dw2003recomp|1|the field and the menus|battles|smooth")
         for lang, cc in (("c", "cc"), ("c++", "c++")):
             if shutil.which(cc) is None:
                 print(f"skipped: no {cc}")
@@ -203,6 +206,37 @@ def main():
         (tmp / "art.json").write_text(json.dumps(g))
         r = run(str(tmp / "art.json"), "--check")
         check(r.returncode == 0, f"a PNG path relative to the description is taken: {r.stderr}")
+
+        # video.scenes: the bad shapes refused; without it the macros say one set; without 2d.filter its default is "".
+        def scenes(mutate):
+            def f(g):
+                mutate(g["video"]["scenes"])
+            return f
+        failing(scenes(lambda s: s.pop("3d")), "scenes without 3d", "scenes")
+        failing(scenes(lambda s: s["2d"].update(filter="blur")), "an unknown 2d filter", "filter")
+        failing(scenes(lambda s: s["3d"].update(filter="none")), "a 3d filter (the 3D default is the stack's)", "3d")
+        failing(scenes(lambda s: s["3d"].update(label="")), "an empty label", "label")
+        failing(scenes(lambda s: s.update(menu={"label": "menus"})), "a third scene", "scenes")
+
+        def video_unknown(g):
+            g["video"]["scene"] = {}
+        failing(video_unknown, "an unknown key in video", "scene")
+        nosc = copy.deepcopy(base)
+        del nosc["video"]["scenes"]
+        (tmp / "nosc.json").write_text(json.dumps(nosc))
+        r = run(str(tmp / "nosc.json"), "--out", str(tmp / "nosc.h"))
+        t = (tmp / "nosc.h").read_text() if r.returncode == 0 else ""
+        check(r.returncode == 0 and "#define PSXSTACK_GAME_SCENES 0" in t and
+              "#define PSXSTACK_GAME_SCENE_2D_LABEL \"\"" in t and "#define PSXSTACK_GAME_SCENE_2D_FILTER \"\"" in t,
+              f"no video.scenes generates PSXSTACK_GAME_SCENES 0 and empty strings: {r.stderr}")
+        nof = copy.deepcopy(base)
+        del nof["video"]["scenes"]["2d"]["filter"]
+        (tmp / "nof.json").write_text(json.dumps(nof))
+        r = run(str(tmp / "nof.json"), "--out", str(tmp / "nof.h"))
+        t = (tmp / "nof.h").read_text() if r.returncode == 0 else ""
+        check(r.returncode == 0 and "#define PSXSTACK_GAME_SCENES 1" in t and
+              "#define PSXSTACK_GAME_SCENE_2D_FILTER \"\"" in t,
+              f"scenes without 2d.filter: PSXSTACK_GAME_SCENE_2D_FILTER \"\": {r.stderr}")
 
         def bad_addr(g):
             g["memory"]["ram"]["base"] = "80000000"

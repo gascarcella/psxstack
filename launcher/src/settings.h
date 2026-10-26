@@ -62,6 +62,16 @@ struct MemoryCard {
 
 // video.filter's values, the game's (runtime/video_filter.c port_filter_names), in the Filter combo's order.
 inline const char *const FILTER_NAMES[] = { "none", "sharp", "scanlines", "crt", "smooth" };
+// A present-filter set (docs/LAUNCHER.md "Members"): video.filter and video.crt; a game with scenes (GAME_SCENES)
+// has a second one for its 2D scenes, video.scene_2d.
+struct FilterSet {
+    std::string filter = "none"; // one of FILTER_NAMES
+    int scanlines = 50, mask = 30, curvature = 0; // crt: the scanlines and crt filters', 0..100
+    bool operator==(const FilterSet &o) const {
+        return filter == o.filter && scanlines == o.scanlines && mask == o.mask && curvature == o.curvature;
+    }
+    bool operator!=(const FilterSet &o) const { return !(*this == o); }
+};
 // video.scaling's values (the game's runtime/video_filter.c port_scaling_names), in the Settings screen's order.
 inline const char *const SCALING_NAMES[] = { "fit", "integer", "stretch" };
 // video.menu_size's values (the in-game menu's text, launcher/ui/menu.cpp), in the Settings screen's order.
@@ -92,8 +102,12 @@ struct Settings {
     std::string renderer = "software"; // "software" or "gpu" (the hardware renderer; docs/LAUNCHER.md "Members")
     int internal_scale = 1;            // the hardware renderer's resolution, 1..8 times the PS1's
     std::string subpixel = "on";       // "on", "perspective" or "off": the 3D at the GTE's sub-pixel positions above x1
-    std::string filter = "none";       // the hardware renderer's present filter (video.filter): one of FILTER_NAMES
-    int crt_scanlines = 50, crt_mask = 30, crt_curvature = 0; // video.crt: the scanlines and crt filters', 0..100
+    // The hardware renderer's present filter (video.filter, video.crt); a game with scenes: its 3D scenes' set.
+    FilterSet present;
+    // video.scene_2d (a game with scenes only): its 2D scenes' set, scene_2d_default(present) when the file has none.
+    // Written whole once it differs from that, or once the file has it. It is held as values: where the default is a
+    // copy of the 3D set, a change to the 3D set leaves it as it was (as the Filter rows show it), and it is written.
+    FilterSet present_2d = scene_2d_default(FilterSet());
     std::string menu_size = "auto";    // the in-game menu's size (video.menu_size): one of MENU_SIZE_NAMES
     bool mute = false;
     MemoryCard memcard[2] = { { true, "card1.mcd" }, { true, "card2.mcd" } };
@@ -108,6 +122,10 @@ struct Settings {
     std::map<std::string, std::vector<std::string>> gamepad;  // input.gamepad: button -> gamepad input names
     std::map<std::string, Binding> hotkeys;                   // input.hotkeys: action -> binding
     std::string player2 = "off";                              // input.player2: one of PLAYER2_NAMES
+
+    // What a file without video.scene_2d means: the game's 2d.filter with the default crt values, else a copy of the
+    // 3D set (GAME_CONTRACT.md "1. game.json" Scenes).
+    static FilterSet scene_2d_default(const FilterSet &present_3d);
 
     // The effective values (the file's, else the defaults).
     std::vector<std::string> keys_for(const std::string &button) const;

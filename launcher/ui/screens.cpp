@@ -57,9 +57,11 @@ static float item_width(float label_w) {
                     ImGui::GetContentRegionAvail().x - label_w - ImGui::GetStyle().ItemSpacing.x);
 }
 
-// The hardware renderer's present filter (video.filter; under the GPU renderer only: the Software one shows the
-// picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (video.crt), a line of help for the choice.
-void Screens::draw_filter(float label_w) {
+// A present-filter set (video.filter and video.crt, or a scene's set: video.scene_2d; under the GPU renderer only: the
+// Software one shows the picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (its crt), a line
+// of help for the choice. `scene` names the set's scenes ("Filter: battles", on a line of its own above its rows),
+// nullptr for a game with one set; `in_use` marks the set the game shows now (the in-game menu).
+void Screens::draw_filter(float label_w, FilterSet &set, const char *id, const char *scene, bool in_use) {
     static const char *const labels[] = { "None (the PS1's pixels)", "Sharp", "Scanlines", "CRT", "Smooth (2D)" };
     static const char *const help[] = {
         "Each pixel of the picture as a block of whole window pixels, as it is.",
@@ -74,34 +76,46 @@ void Screens::draw_filter(float label_w) {
     };
     static_assert(SDL_arraysize(labels) == SDL_arraysize(FILTER_NAMES) && SDL_arraysize(help) == SDL_arraysize(labels),
                   "a label and a help line per filter");
-    Settings &s = settings_.values;
     int current = 0;
     for (int i = 0; i < (int)SDL_arraysize(FILTER_NAMES); i++) {
-        if (s.filter == FILTER_NAMES[i]) {
+        if (set.filter == FILTER_NAMES[i]) {
             current = i;
         }
     }
-    ImGui::TextDisabled("Filter");
+    ImGui::PushID(id);
+    if (scene != nullptr) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Filter: %s", scene);
+        ImGui::PopTextWrapPos();
+        if (in_use) {
+            ImGui::SameLine();
+            wrap_for(ImGui::CalcTextSize("(on screen now)").x);
+            ImGui::TextColored(rgb(ACCENT), "(on screen now)");
+        }
+        ImGui::Dummy(ImVec2(0, 0));
+    } else {
+        ImGui::TextDisabled("Filter");
+    }
     ImGui::SameLine(label_w);
     ImGui::SetNextItemWidth(item_width(label_w));
     if (ImGui::BeginCombo("##filter", labels[current])) {
         for (int i = 0; i < (int)SDL_arraysize(FILTER_NAMES); i++) {
             if (ImGui::Selectable(labels[i], i == current)) {
-                s.filter = FILTER_NAMES[i];
+                set.filter = FILTER_NAMES[i];
                 dirty_ = true;
             }
         }
         ImGui::EndCombo();
     }
-    // video.crt's sliders, for the filters that read them
-    const bool lines = s.filter == "scanlines" || s.filter == "crt", crt = s.filter == "crt";
+    // the crt's sliders, for the filters that read them
+    const bool lines = set.filter == "scanlines" || set.filter == "crt", crt = set.filter == "crt";
     struct {
         bool shown;
         const char *label, *id;
         int *value;
-    } sliders[] = { { lines, "Scanlines", "##crt_scanlines", &s.crt_scanlines },
-                    { crt, "Mask", "##crt_mask", &s.crt_mask },
-                    { crt, "Curvature", "##crt_curvature", &s.crt_curvature } };
+    } sliders[] = { { lines, "Scanlines", "##crt_scanlines", &set.scanlines },
+                    { crt, "Mask", "##crt_mask", &set.mask },
+                    { crt, "Curvature", "##crt_curvature", &set.curvature } };
     for (auto &sl : sliders) {
         if (sl.shown) {
             ImGui::TextDisabled("%s", sl.label);
@@ -115,6 +129,7 @@ void Screens::draw_filter(float label_w) {
     ImGui::TextDisabled("%s", help[current]);
     ImGui::PopTextWrapPos();
     ImGui::Unindent(label_w);
+    ImGui::PopID();
 }
 
 void Screens::draw_settings() {
@@ -256,8 +271,13 @@ void Screens::draw_settings() {
         ImGui::PopTextWrapPos();
         ImGui::Unindent(label_w);
     }
-    if (s.renderer == "gpu") {
-        draw_filter(label_w);
+    if (s.renderer == "gpu" && !GAME_SCENES) {
+        draw_filter(label_w, s.present, "filter", nullptr, false);
+    } else if (s.renderer == "gpu") {
+        // A game with scenes (docs/LAUNCHER.md "Members"): a set for its 3D scenes (video.filter, video.crt) and one
+        // for its 2D scenes (video.scene_2d), each under its scenes' label; the game switches between them.
+        draw_filter(label_w, s.present, "filter_3d", GAME_SCENE_3D_LABEL, scene_ == SCENE_3D);
+        draw_filter(label_w, s.present_2d, "filter_2d", GAME_SCENE_2D_LABEL, scene_ == SCENE_2D);
     }
     if (s.refresh != GAME_RATE && GAME_RATE_NOTE[0] != '\0') {
         ImGui::Indent(label_w);

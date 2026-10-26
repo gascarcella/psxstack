@@ -317,3 +317,15 @@ the gamepad map and never reaches a hotkey: the host's player owns pause, the me
 the pad (the window, a script) sets both ports every vsync, since the shim's "connected" is part of a save state. The
 runtime's players are arrays of `PORT_PADS` and the setting is `player<n>`, so a multitap can add players without a
 new format.
+
+## Two filter sets: the game names its scene, both pipelines stay built (2026-10-26)
+
+A game may want one present filter for its 2D scenes and another for its 3D ones (dw2003recomp #122: smooth for the
+field's pixel art, another for the battles). The sets are fixed, `2d` and `3d` (a filter and its crt values;
+everything else stays global), opted in by game.json's `video.scenes`. The scene comes from the adapter,
+`game_state_scene()`, pulled once per vsync like the other probes (the adapter has no per-vsync hook, and its mods
+can be off), not detected by the runtime: a game draws rotated 2D sprites with the GTE, and counting polygons or
+textures flickers between frames. A switch must not stall a frame, so both sets' pipelines are built when the
+filters are set and a scene change only picks the slot the present binds; the cost is a second filter's shader and
+pipelines, and smooth's 640x576 16-bit texture (720 KB) when either set is smooth. The scene is read fresh each
+vsync and only chooses the present, so replays, checkpoints and save states do not hold it.

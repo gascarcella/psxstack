@@ -32,23 +32,26 @@ typedef struct {
     float param[4]; /* the filter's parameters */
 } RenderPresentView;
 
-/* The filter's pipelines (for B8G8R8A8, the readback's format, and for `swap_format` unless it is INVALID), created
- * now; PORT_FILTER_NONE releases them. 0 on failure, with the reason in `why` (the caller then presents unfiltered). */
-int render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextureFormat swap_format,
-                       const PortFilter *f, char *why, size_t why_size);
+/* The present's two filter slots (0: PORT_SCENE_3D's set, the only one of a game without scenes; 1: PORT_SCENE_2D's):
+ * both slots' pipelines (for B8G8R8A8, the readback's format, and for `swap_format` unless it is INVALID), created now,
+ * once per kind (smooth's edges texture when either slot is smooth); PORT_FILTER_NONE builds nothing. ok[i] 0 when
+ * slot i's could not be created, with the reason in `why` (that slot then presents unfiltered). The calls below take
+ * the slot the present shows: a scene change builds nothing. */
+void render_present_set(SDL_GPUDevice *device, SDL_GPUShader *vert, SDL_GPUTextureFormat swap_format,
+                        const PortFilter f[2], int ok[2], char *why, size_t why_size);
 /* The filter's first pass, if it has one (`smooth`: its decisions per source pixel), from `source` (the w x h
- * picture) on cb before the present's render pass; and its texture bound for the present's pass (slot 1). */
-void render_present_prepare(SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler,
+ * picture) on cb before the present's render pass; and its texture bound for the present's pass (sampler 1). */
+void render_present_prepare(int slot, SDL_GPUCommandBuffer *cb, SDL_GPUTexture *source, SDL_GPUSampler *sampler,
                             const RenderPresentView *view);
-void render_present_bind(SDL_GPURenderPass *pass, SDL_GPUSampler *sampler);
+void render_present_bind(int slot, SDL_GPURenderPass *pass, SDL_GPUSampler *sampler);
 /* Whether the filter takes the 32-bit image (video.c's 1x software picture) in place of the display cut from the
  * VRAM target: `smooth`, a pixel-art filter, needs the 1x picture at every internal scale. A wide picture (widescreen,
  * render_gpu_wide.c: the image is 4:3) keeps its canvas in the target, read at 1x (param[3]: every N-th pixel). */
-int render_present_image(void);
+int render_present_image(int slot);
 /* The filter's pipeline for the swapchain (swap 1) or the readback target; NULL: none (the present's own). */
-SDL_GPUGraphicsPipeline *render_present_pipeline(int swap);
+SDL_GPUGraphicsPipeline *render_present_pipeline(int slot, int swap);
 /* The filter's parameters into the view. */
-void render_present_params(RenderPresentView *v);
+void render_present_params(int slot, RenderPresentView *v);
 void render_present_release(SDL_GPUDevice *device);
 #endif
 
