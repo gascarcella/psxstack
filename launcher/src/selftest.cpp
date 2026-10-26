@@ -1447,12 +1447,12 @@ static void test_play(SDL_Window *window, const std::string &root) {
     pump(app, 2);
     png = path_join(shots, "9c-Graphics-crt.png");
     app.frame(png.c_str());
-    // A game with scenes: the Filter row for its 3D scenes and the one for its 2D scenes, the latter marked as the one
-    // on screen as the in-game menu marks it (a picture; the launcher marks none).
+    // A game with scenes: the filters' tabs, the 2D scenes' marked as the one on screen as the in-game menu marks it
+    // and chosen by the scene's change (a picture; the launcher marks none).
     if (GAME_SCENES) {
         app.settings().values.present_2d.filter = "scanlines";
         app.screens().set_scene(Screens::SCENE_2D);
-        scroll_page_down(window, app, 4);
+        pump(app, 2);
         png = path_join(shots, "9d-Graphics-scenes.png");
         app.frame(png.c_str());
         app.screens().set_scene(Screens::SCENE_NONE);

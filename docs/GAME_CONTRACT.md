@@ -64,7 +64,7 @@ the port and the launcher stay single binaries. Contents:
   filter sets, one for its 2D scenes and one for its 3D scenes, and the runtime switches between them at the vsync
   where the adapter's `game_state_scene()` changes ("4. The adapter units"). A set is a filter and its crt values;
   the sub-pixel mode, the scale, fullscreen, the scaling and the internal scale stay global. `label` names each set in
-  the launcher's Filter rows (`"the field and the menus"`, `"battles"`); `2d.filter` (optional) is the 2D set's
+  the launcher's filter tabs (`"the field and the menus"`, `"battles"`); `2d.filter` (optional) is the 2D set's
   default filter, with the default crt values (absent: the 2D set starts as a copy of the 3D set). The settings'
   `video.filter` and `video.crt` are the 3D set, `video.scene_2d` the 2D set (docs/LAUNCHER.md "Settings file").
   The sets are fixed, `2d` and `3d`. Absent: one set, and the probe is never read.

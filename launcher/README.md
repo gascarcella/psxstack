@@ -207,7 +207,7 @@ with and without `--config`, one that rejects the file, one that crashes, one th
 the window, walks every screen with injected key events and a virtual gamepad, plays with the stand-in (a file of the
 first described disc's size stands for the verified disc), rebinds a key through the prompt and checks the file, shows
 the Gamepad tab with player 2 set and two virtual gamepads connected, the GPU renderer's rows (for a game with scenes
-the two Filter rows, the 2D one marked as the in-game menu marks the set on screen), drops a wrong file on the window,
+the two filter tabs, the 2D one marked and chosen as the in-game menu marks the set on screen), drops a wrong file on the window,
 renders the mods screen over the fixture manifests (`tests/fixtures/mods/`: the first game's `fast_forward` as shipped,
 the documented `skip_dialogues` example, one with every option type, one with presets and a slider whose toggle makes
 it a typed number; three unusable ones written at test time) and rebinds a mod's key through the prompt, and saves a picture of

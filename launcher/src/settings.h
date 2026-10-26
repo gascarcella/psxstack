@@ -106,7 +106,7 @@ struct Settings {
     FilterSet present;
     // video.scene_2d (a game with scenes only): its 2D scenes' set, scene_2d_default(present) when the file has none.
     // Written whole once it differs from that, or once the file has it. It is held as values: where the default is a
-    // copy of the 3D set, a change to the 3D set leaves it as it was (as the Filter rows show it), and it is written.
+    // copy of the 3D set, a change to the 3D set leaves it as it was (as the filter tabs show it), and it is written.
     FilterSet present_2d = scene_2d_default(FilterSet());
     std::string menu_size = "auto";    // the in-game menu's size (video.menu_size): one of MENU_SIZE_NAMES
     bool mute = false;

@@ -60,14 +60,14 @@
             "2d": {
               "type": "object", "additionalProperties": false, "required": ["label"],
               "properties": {
-                "label": { "type": "string", "minLength": 1, "description": "What the 2D scenes are, for the launcher's Filter row: \"the field and the menus\"." },
+                "label": { "type": "string", "minLength": 1, "description": "What the 2D scenes are, for the launcher's filter tab (its first letter capitalised): \"the field and the menus\"." },
                 "filter": { "enum": ["none", "sharp", "scanlines", "crt", "smooth"], "description": "The 2D set's default filter (with the default crt values). Absent: a copy of the 3D set." }
               }
             },
             "3d": {
               "type": "object", "additionalProperties": false, "required": ["label"],
               "properties": {
-                "label": { "type": "string", "minLength": 1, "description": "What the 3D scenes are, for the launcher's Filter row: \"battles\"." }
+                "label": { "type": "string", "minLength": 1, "description": "What the 3D scenes are, for the launcher's filter tab (its first letter capitalised): \"battles\"." }
               }
             }
           }

@@ -34,8 +34,14 @@ public:
     void set_in_game(bool on) { in_game_ = on; }
     // The scenes' present-filter set the game shows now, which the Graphics screen marks (a game with scenes; the
     // in-game menu, every frame, from the runtime): SCENE_3D or SCENE_2D (game.h PORT_SCENE_*), SCENE_NONE unmarked.
+    // A change also chooses that set's tab.
     static constexpr int SCENE_NONE = -1, SCENE_3D = 0, SCENE_2D = 1;
-    void set_scene(int scene) { scene_ = scene; }
+    void set_scene(int scene) {
+        if (scene != scene_) {
+            filter_tab_ = scene;
+        }
+        scene_ = scene;
+    }
     // A part of the System screen its host draws itself, after "Memory cards" (the launcher's Updates and Steam);
     // given the label column's width. The in-game menu sets none.
     void set_system_extra(std::function<void(float label_w)> draw) { system_extra_ = std::move(draw); }
@@ -81,7 +87,7 @@ public:
 private:
     void draw_restart_note();
     void restart_mark(float indent = 0); // "(restart)" after the last item, in the game's menu
-    void draw_filter(float label_w, FilterSet &set, const char *id, const char *scene, bool in_use);
+    void draw_filter(float label_w, FilterSet &set, const char *id);
     void draw_names_table(bool pad);
     void draw_players();
     void draw_hotkeys();
@@ -105,6 +111,7 @@ private:
     bool saved_ = false;
     bool in_game_ = false;
     int scene_ = SCENE_NONE;
+    int filter_tab_ = SCENE_NONE; // the Graphics screen's filter tab to choose at its next frame (set_scene)
     std::string controls_tab_; // show_controls_tab's, until the Controls screen is drawn
     std::function<void(float)> system_extra_;
     std::string error_; // the last save error

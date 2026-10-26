@@ -50,7 +50,7 @@ constexpr int GAME_RATE_COUNT = PSXSTACK_GAME_RATE_COUNT;
 inline constexpr int GAME_RATES[PSXSTACK_GAME_RATE_COUNT] = PSXSTACK_GAME_RATES;
 constexpr const char *GAME_RATE_NOTE = PSXSTACK_GAME_RATE_NOTE;
 // The scenes (the description's video.scenes): a present-filter set for the 2D scenes and one for the 3D scenes,
-// named by their labels in the Filter rows; the 2D set's default filter ("" = a copy of the 3D set's).
+// named by their labels in the Graphics screen's filter tabs; the 2D set's default filter ("" = a copy of the 3D set's).
 constexpr bool GAME_SCENES = PSXSTACK_GAME_SCENES != 0;
 constexpr const char *GAME_SCENE_2D_LABEL = PSXSTACK_GAME_SCENE_2D_LABEL;
 constexpr const char *GAME_SCENE_3D_LABEL = PSXSTACK_GAME_SCENE_3D_LABEL;

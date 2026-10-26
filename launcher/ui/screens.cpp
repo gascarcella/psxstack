@@ -59,9 +59,8 @@ static float item_width(float label_w) {
 
 // A present-filter set (video.filter and video.crt, or a scene's set: video.scene_2d; under the GPU renderer only: the
 // Software one shows the picture unfiltered): a combo in FILTER_NAMES' order, the filter's sliders (its crt), a line
-// of help for the choice. `scene` names the set's scenes ("Filter: battles", on a line of its own above its rows),
-// nullptr for a game with one set; `in_use` marks the set the game shows now (the in-game menu).
-void Screens::draw_filter(float label_w, FilterSet &set, const char *id, const char *scene, bool in_use) {
+// of help for the choice. A game with scenes draws one per tab (draw_graphics).
+void Screens::draw_filter(float label_w, FilterSet &set, const char *id) {
     static const char *const labels[] = { "None (the PS1's pixels)", "Sharp", "Scanlines", "CRT", "Smooth (2D)" };
     static const char *const help[] = {
         "Each pixel of the picture as a block of whole window pixels, as it is.",
@@ -83,19 +82,7 @@ void Screens::draw_filter(float label_w, FilterSet &set, const char *id, const c
         }
     }
     ImGui::PushID(id);
-    if (scene != nullptr) {
-        ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Filter: %s", scene);
-        ImGui::PopTextWrapPos();
-        if (in_use) {
-            ImGui::SameLine();
-            wrap_for(ImGui::CalcTextSize("(on screen now)").x);
-            ImGui::TextColored(rgb(ACCENT), "(on screen now)");
-        }
-        ImGui::Dummy(ImVec2(0, 0));
-    } else {
-        ImGui::TextDisabled("Filter");
-    }
+    ImGui::TextDisabled("Filter");
     ImGui::SameLine(label_w);
     ImGui::SetNextItemWidth(item_width(label_w));
     if (ImGui::BeginCombo("##filter", labels[current])) {
@@ -287,12 +274,33 @@ void Screens::draw_graphics() {
     ImGui::EndDisabled();
     ImGui::Spacing();
     if (!GAME_SCENES) {
-        draw_filter(label_w, s.present, "filter", nullptr, false);
-    } else {
-        // A game with scenes (docs/LAUNCHER.md "Members"): a set for its 3D scenes (video.filter, video.crt) and one
-        // for its 2D scenes (video.scene_2d), each under its scenes' label; the game switches between them.
-        draw_filter(label_w, s.present, "filter_3d", GAME_SCENE_3D_LABEL, gpu && scene_ == SCENE_3D);
-        draw_filter(label_w, s.present_2d, "filter_2d", GAME_SCENE_2D_LABEL, gpu && scene_ == SCENE_2D);
+        draw_filter(label_w, s.present, "filter");
+    } else if (ImGui::BeginTabBar("filters")) {
+        // A game with scenes (docs/LAUNCHER.md "Members"): a tab for the set of its 3D scenes (video.filter, video.crt)
+        // and one for its 2D scenes' (video.scene_2d), each named by its scenes' label; the game switches between them.
+        // The set on screen (the in-game menu) says so in its tab's name, and its tab is chosen when the scene changes.
+        const struct {
+            const char *label, *id;
+            int scene;
+            FilterSet *set;
+        } tabs[] = { { GAME_SCENE_3D_LABEL, "filter_3d", SCENE_3D, &s.present },
+                     { GAME_SCENE_2D_LABEL, "filter_2d", SCENE_2D, &s.present_2d } };
+        for (const auto &t : tabs) {
+            std::string name = t.label;
+            if (!name.empty() && (unsigned char)name[0] < 0x80) {
+                name[0] = (char)SDL_toupper(name[0]);
+            }
+            if (gpu && scene_ == t.scene) {
+                name += " (on screen)";
+            }
+            name += std::string("###") + t.id; // the tab's id stays as its name changes
+            if (ImGui::BeginTabItem(name.c_str(), nullptr, filter_tab_ == t.scene ? ImGuiTabItemFlags_SetSelected : 0)) {
+                draw_filter(label_w, *t.set, t.id);
+                ImGui::EndTabItem();
+            }
+        }
+        filter_tab_ = SCENE_NONE;
+        ImGui::EndTabBar();
     }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
