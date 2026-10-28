@@ -4,7 +4,13 @@ Every release of psxstack, newest first. Releases are semver tags (`vMAJOR.MINOR
 `PSXSTACK_API` (`include/psxstack/game.h`) counts incompatible contract changes (docs/GAME_CONTRACT.md
 "Compatibility and versions"). Issue and pull request numbers are this repository's.
 
-## v0.3.19 (unreleased)
+## v0.3.19 (2026-10-28)
+- **Launcher and in-game menu:** Settings is four screens, each its own entry in the navigation: Video (window,
+  fullscreen, scaling, the rate, the menu's size), Graphics (the renderer, its resolution, 3D vertices and the filter
+  set or sets, in tabs named by a game's scene labels, greyed out on the Software renderer), Audio and System (memory
+  cards, updates, Steam, the settings file; the hook `set_settings_extra` is `set_system_extra`) (#114).
+  `<PREFIX>_PORT_MENU_SCREEN` takes the page names; `settings` still opens Video. The settings file and the contract
+  are unchanged: `PSXSTACK_API` stays 1.
 - **Save states:** a run with no game (a `disc_required` game's `--input-test` without its disc, #64) no longer arms
   them. Since v0.3.7 every window run did, and the first vsync, on main's stack, stopped the run (`state: the vsync is
   not on the game stack or a fiber's`, status 1): dcb_decomp's disc-free input self-test failed. Now the input
