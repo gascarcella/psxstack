@@ -57,7 +57,8 @@ the port and the launcher stay single binaries. Contents:
 - **Discs:** the accepted images: label, serial, SHA-1 of the whole BIN, BIN size, region. Both the port's check and
   the launcher's check use this list; the error text names the label. `disc_required` (optional, default `false`):
   the game cannot run on reads that find no data, so the port refuses to start without a disc (a message, status 64);
-  `--input-test` then runs the window's input self-test on the pump alone, without the game.
+  `--input-test` then runs the window's input self-test on the pump alone, without the game (and without save
+  states: the quick slot's round trip is skipped).
 - **Timing:** `video.rate` (the nominal vsyncs per second: 50 PAL, 60 NTSC), the rates the launcher offers and the
   text that explains the alternative.
 - **Scenes** (optional): `video.scenes`, `{ "2d": { "label", "filter" }, "3d": { "label" } }`: the game has two present

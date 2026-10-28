@@ -51,6 +51,11 @@ int port_savestate_add(const char *spec);
 void port_savestate_set_exit(void);
 void port_savestate_set_load(const char *path);
 int port_savestate_wanted(void);
+/* main.c: no game runs in this run (a disc_required game's --input-test without its disc), so states stay off: the
+ * hotkeys, the debug channel and the input self-test say so. port_savestate_off: NULL when states are on, else why
+ * they are off. */
+void port_savestate_no_game(void);
+const char *port_savestate_off(void);
 /* The game on its own stack from now on (a state option, `required`: fatal when it cannot be; or the debug channel:
  * logged); before port_savestate_run. */
 void port_savestate_arm(int required);

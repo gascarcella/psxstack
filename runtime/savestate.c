@@ -483,6 +483,18 @@ int port_savestate_wanted(void) {
     return state_save_count > 0 || state_load_path != NULL;
 }
 
+/* Why states are off when they are (the hotkeys', the channel's and the input self-test's message). */
+static const char *state_off_why = "save states are off in this run (see its log)";
+
+void port_savestate_no_game(void) {
+    state_off_why = "no game in this run";
+    port_log("state: off in this run (no game: nothing to hold)");
+}
+
+const char *port_savestate_off(void) {
+    return port_savestate_armed ? NULL : state_off_why;
+}
+
 /* The game on its own stack from now on (main, with a state option, `required`, or the debug channel): before
  * game_main. */
 void port_savestate_arm(int required) {
@@ -673,7 +685,7 @@ void port_savestate_resumed(void) {
 
 int port_savestate_save_now(const char *path, char *err, size_t err_size) {
     if (!port_savestate_armed) {
-        snprintf(err, err_size, "save states are off in this run (see its log)");
+        snprintf(err, err_size, "%s", state_off_why);
         return 0;
     }
     if (state_stack_copy_n == 0 || state_stack_copy_frame != port_frames) {
@@ -686,7 +698,7 @@ int port_savestate_save_now(const char *path, char *err, size_t err_size) {
 int port_savestate_load_prepare(const char *path, long *frame, char *err, size_t err_size) {
     StateHeader h;
     if (!port_savestate_armed) {
-        snprintf(err, err_size, "save states are off in this run (see its log)");
+        snprintf(err, err_size, "%s", state_off_why);
         return 0;
     }
     if (state_load_ready) {
@@ -720,7 +732,7 @@ const char *port_savestate_quick_get(void) {
 
 static int state_quick_on(const char *what) {
     if (!port_savestate_armed) {
-        port_log("state: quick %s: save states are off in this run (see its log)", what);
+        port_log("state: quick %s: %s", what, state_off_why);
         return 0;
     }
     if (state_quick_path == NULL) {
