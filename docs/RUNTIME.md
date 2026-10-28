@@ -377,7 +377,9 @@ and a later run of **the same binary** going on from it.
   game's fibers (docs/PORT.md "Fibers") always run on static stacks of the runtime's, so a state holds them in any
   case, and a load resumes the fiber the vsync ended on.
   Under AddressSanitizer with its fake stacks on, `--debug` alone or a window runs without states (logged; the
-  hotkeys say so in the log).
+  hotkeys say so in the log). A run with no game (a `disc_required` game's `--input-test` without its disc) has none
+  either: nothing to hold, so the input self-test skips the quick slot's round trip (`no game in this run`), and
+  `--save-state` or `--load-state` there is refused (status 64).
 
 **The state file.** A sequence of blocks, each `<tag length: 1 byte><tag><size: 8 bytes, host order><bytes>`, in an
 order fixed by the code: each module's sync function (`<module>_state(PortState *)`, `include/psxstack/savestate.h`)

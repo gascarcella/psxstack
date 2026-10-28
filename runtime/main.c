@@ -455,6 +455,11 @@ int main(int argc, char **argv) {
                             "--config settings); only --input-test runs without one\n", PSXSTACK_GAME_TITLE);
             return 64;
         }
+        if (port_savestate_wanted()) {
+            fprintf(stderr, "port: no disc: --save-state and --load-state need the game, which does not run without "
+                            "its disc\n");
+            return 64;
+        }
         no_game = 1;
     }
     if (gpu_shots && !port_video_available()) {
@@ -563,7 +568,11 @@ int main(int argc, char **argv) {
         }
         port_savestate_quick_path(quick_state != NULL ? quick_state : "quick.state");
     }
-    if (port_savestate_wanted() || debug != NULL || window) {
+    if (no_game) {
+        /* no game, no state: the vsyncs run on main's stack, which a state cannot hold (savestate.c); the hotkeys and
+         * the input self-test's quick slot say so */
+        port_savestate_no_game();
+    } else if (port_savestate_wanted() || debug != NULL || window) {
         /* the game on its own stack: a state can hold it (savestate.c); a window's run for the hotkeys' quick slot */
         port_savestate_arm(port_savestate_wanted());
     }

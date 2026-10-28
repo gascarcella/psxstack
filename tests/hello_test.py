@@ -21,7 +21,8 @@ first) and is skipped, with the reason, when none does (CI's Wine has none).
 --menu builds hello with the window and the in-game menu instead and runs it on SDL's offscreen driver (menu_check);
 --menu --gpu also takes the menu's picture on the hardware renderer (Mesa's lavapipe when it is installed: NVIDIA's
 driver cannot present to the offscreen driver), which must be the software one but for a few edge pixels
-(GPU_MENU_LEVELS, GPU_MENU_EDGES).
+(GPU_MENU_LEVELS, GPU_MENU_EDGES). It ends with hello as a game that needs its disc (nogame_check): without one it
+refuses to start, and its input self-test runs without the game (no save states: the quick slot's round trip skipped).
 """
 import argparse
 import hashlib
@@ -164,6 +165,7 @@ def menu_check(build, env, gpu):
     ok &= menu_pages(exe, cfg, env)
     ok &= menu_sizes(exe, cfg, env)
     ok &= players_check(exe, cfg, env)
+    ok &= nogame_check(build.parent / (build.name + "-nodisc"), env)
     print("hello: " + ("pass" if ok else "FAIL"))
     return 0 if ok else 1
 
@@ -378,6 +380,42 @@ def players_check(exe, cfg, env):
             print("\n".join(lines[-15:]))
         ok &= good
     return ok
+
+
+def nogame_check(build, env):
+    """A game without the disc it needs (game.json disc_required): hello configured with -DHELLO_DISC_REQUIRED=ON
+    (examples/hello/CMakeLists.txt), with the window and the menu, into build/hello-menu-nodisc. Without --disc it
+    refuses to start (status 64); with --input-test it runs the self-test on the pump alone, no game started: no save
+    states (nothing to hold), so the quick slot's round trip is skipped and the menu's still runs; status 0."""
+    if not (build / "CMakeCache.txt").exists():
+        subprocess.run(["cmake", "-S", str(ROOT / "examples/hello"), "-B", str(build), "-G", "Ninja",
+                        "-DPSXSTACK_SDL=ON", "-DPSXSTACK_MENU=ON", "-DHELLO_DISC_REQUIRED=ON"], check=True, env=env,
+                       stdout=subprocess.DEVNULL)
+    subprocess.run(["cmake", "--build", str(build)], check=True, env=env, stdout=subprocess.DEVNULL)
+    exe = build / "hello"
+    run_env = dict(env, SDL_VIDEO_DRIVER="offscreen", SDL_AUDIO_DRIVER="dummy")
+    r = subprocess.run([str(exe), "--max-frames", "10"], capture_output=True, text=True, env=run_env, timeout=600)
+    good = r.returncode == 64 and "no disc" in r.stderr
+    print(("ok   " if good else "FAIL ") + f"disc_required, no disc: status {r.returncode} (64: refused)")
+    if not good:
+        print(r.stderr.strip())
+    ok = good
+    cfg = build / "cfg"
+    cfg.mkdir(exist_ok=True)
+    (cfg / "settings.json").write_text('{ "schema": 1 }\n')
+    r = subprocess.run([str(exe), "--config", str(cfg / "settings.json"), "--input-test", "--fps", "0"],
+                       capture_output=True, text=True, env=run_env, timeout=600)
+    lines = r.stderr.strip().splitlines()
+    quick = next((l.split("input test: ", 1)[1] for l in lines if "input test: the quick slot" in l), "no quick slot line")
+    menu = next((l.split("input test: ", 1)[1] for l in lines if "input test: the menu:" in l), "no menu line")
+    good = (r.returncode == 0 and any("the input self-test runs without the game" in l for l in lines) and
+            quick == "the quick slot: skipped (no game in this run)" and menu.startswith("the menu: passed") and
+            not (cfg / "quick.state.input-test").exists())
+    print(("ok   " if good else "FAIL ") + f"disc_required, --input-test without the disc: status {r.returncode}; "
+          f"{quick}; {menu}")
+    if not good:
+        print("\n".join(lines[-15:]))
+    return ok and good
 
 
 def main():

@@ -1124,7 +1124,7 @@ static int input_test_pause_before(void) {
             return 1;
         }
         port_log("input test: the quick slot: skipped (%s)",
-                 !port_savestate_armed ? "save states are off in this run" : "no slot, or a hotkey unbound");
+                 port_savestate_off() != NULL ? port_savestate_off() : "no slot, or a hotkey unbound");
         return input_test_finish();
     }
     return 0;
