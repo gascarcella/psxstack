@@ -4,6 +4,15 @@ Every release of psxstack, newest first. Releases are semver tags (`vMAJOR.MINOR
 `PSXSTACK_API` (`include/psxstack/game.h`) counts incompatible contract changes (docs/GAME_CONTRACT.md
 "Compatibility and versions"). Issue and pull request numbers are this repository's.
 
+## v0.3.19 (unreleased)
+- **Save states:** a run with no game (a `disc_required` game's `--input-test` without its disc, #64) no longer arms
+  them. Since v0.3.7 every window run did, and the first vsync, on main's stack, stopped the run (`state: the vsync is
+  not on the game stack or a fiber's`, status 1): dcb_decomp's disc-free input self-test failed. Now the input
+  self-test skips the quick slot's round trip (`no game in this run`) and goes on to the menu's; the hotkeys and the
+  debug channel give the same reason; `--save-state` and `--load-state` without the game are refused (status 64).
+- **Tests:** `tests/hello_test.py --menu` also builds hello as a `disc_required` game (`-DHELLO_DISC_REQUIRED=ON`):
+  without a disc it refuses to start, and its input self-test passes without the game.
+
 ## v0.3.18 (2026-10-26)
 - **Video:** separate present filters for a game's 2D and 3D scenes (dw2003recomp #122, #111, #110). A game opts in
   with game.json's `video.scenes` (the rows' labels and the 2D set's default filter) and the adapter's
