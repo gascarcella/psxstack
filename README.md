@@ -103,7 +103,7 @@ A matching decompilation whose C also compiles for a 64-bit host, plus a small a
 The stack is a git submodule pinned at a release tag:
 ```sh
 git submodule add https://github.com/gascarcella/psxstack psxstack
-git -C psxstack checkout v0.3.18
+git -C psxstack checkout v0.3.19
 ```
 
 ### Building the port
